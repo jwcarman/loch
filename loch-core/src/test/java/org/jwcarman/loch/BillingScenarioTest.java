@@ -590,9 +590,25 @@ class BillingScenarioTest {
     @Test
     @DisplayName("the manifest names every operation that can weaken a label")
     void the_manifest_names_every_weakening_operation() {
-      assertThat(loch.manifest()).isNotEmpty();
-      assertThat(loch.manifest()).anySatisfy(line -> assertThat(line).contains("Card.last4"));
-      assertThat(loch.manifest()).noneSatisfy(line -> assertThat(line).contains("invoiceNumber\""));
+      Manifest manifest = loch.manifest();
+
+      assertThat(manifest.weakening()).isNotEmpty();
+      assertThat(manifest.weakening())
+          .extracting(Manifest.Entry::name)
+          .contains("Card.last4", "Card.last4.dataClassOnly")
+          .doesNotContain("DisputeClaim.invoiceNumber");
+    }
+
+    @Test
+    @DisplayName("and is readable, which is the whole point of it")
+    void and_is_readable() {
+      String report = loch.manifest().toString();
+
+      System.out.println(report);
+      assertThat(report)
+          .contains("WEAKENS LABELS")
+          .contains("payment-processor")
+          .contains("can WEAKEN a label");
     }
   }
 

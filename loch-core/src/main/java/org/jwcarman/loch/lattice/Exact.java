@@ -87,4 +87,23 @@ public record Exact<T>(T value, boolean conflicted) {
   public boolean empty() {
     return value == null && !conflicted;
   }
+
+  /**
+   * Readable, because labels end up in manifests and refusals that people read.
+   *
+   * <p>A record's generated form would print {@code Exact[value=null, conflicted=false]} for "no
+   * tenant in particular", which is a lot of characters for nothing at all.
+   *
+   * <p>Deliberately <b>not</b> "any". In a value this means nothing was said; in a ceiling it means
+   * only values that also said nothing may pass -- the fail-closed case. "any" would read as
+   * permissive, which is the opposite of what a ceiling of {@code none} does, and a manifest is
+   * read by exactly the person that would mislead.
+   */
+  @Override
+  public String toString() {
+    if (conflicted) {
+      return "CONFLICT";
+    }
+    return value == null ? "none" : String.valueOf(value);
+  }
 }

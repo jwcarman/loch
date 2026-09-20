@@ -15,7 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import java.util.List;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
@@ -120,13 +119,14 @@ public interface Loch<A> {
   Lineage lineage(Held<?> held);
 
   /**
-   * Every registered operation that can weaken a label, and what it claims to check.
+   * What this loch is configured to allow, in a form a person can read.
    *
-   * <p>Worth printing at startup. No algebra can tell you whether a check is strong enough -- an
-   * endorsement that merely confirms a record exists looks exactly like one that ties it to the
-   * person who asked -- so the list being short and readable is the control.
+   * <p>Worth printing at startup and worth pasting into a review: the destinations values may
+   * reach, the ways one value can be made from another, the questions that can be asked without
+   * taking a value, and -- the part a reviewer is looking for -- every operation that can weaken a
+   * label.
    */
-  List<String> manifest();
+  Manifest manifest();
 
   /**
    * The gate: the value, if this destination may receive it.

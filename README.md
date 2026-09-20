@@ -151,6 +151,49 @@ records rather than sealed hierarchies: a sealed type needs polymorphic type inf
 codec has to be told about separately, and `loch-core` depends on nothing and so cannot annotate
 itself for any of them.
 
+## What it will allow, in one printout
+
+`loch.manifest()` is meant to be printed at startup and pasted into a review:
+
+```
+loch manifest
+
+  unconstrained label (bottom)
+    Billing[tenant=none, integrity=ENDORSED, tlp=CLEAR, dataClass=NONE]
+
+  destinations (4)
+    payment-processor  accepts up to Billing[tenant=none, integrity=ENDORSED, tlp=RED, dataClass=CARDHOLDER]
+    approval-card      accepts up to Billing[tenant=none, integrity=ENDORSED, tlp=AMBER, dataClass=NONE]
+    vendor-llm         accepts up to Billing[tenant=none, integrity=ENDORSED, tlp=CLEAR, dataClass=NONE]
+    quarantined-llm    accepts up to Billing[tenant=none, integrity=UNENDORSED, tlp=AMBER, dataClass=PII]
+    (ceilings shown for an access naming nobody; some allow more to some callers)
+
+  derivations (4)
+    Card.last4.dataClassOnly            String -> Last4, deterministic v1   << WEAKENS LABELS
+    DisputeClaim.invoiceNumber.trustMe  DisputeClaim -> InvoiceNumber, deterministic v1   << WEAKENS LABELS
+    DisputeClaim.invoiceNumber          DisputeClaim -> InvoiceNumber, deterministic v1
+    Card.last4                          String -> Last4, deterministic v1   << WEAKENS LABELS
+
+  checks (1)
+    Account.ownedBy  asks about a Account
+
+  3 operation(s) can WEAKEN a label:
+    Card.last4.dataClassOnly  String -> Last4, deterministic v1
+    DisputeClaim.invoiceNumber.trustMe  DisputeClaim -> InvoiceNumber, deterministic v1
+    Card.last4  String -> Last4, deterministic v1
+```
+
+Everything else in the design makes labels *more* constrained; the marked operations are the only
+things that can make them less. There should be few enough to read in one sitting, and a name like
+`invoiceNumber.trustMe` should stop a reviewer dead — which is the point, because **no algebra can
+tell you whether a check is strong enough.** An endorsement confirming a record exists looks
+identical to one tying it to the person who asked. That judgement is human, so the list exists to
+put it in front of a human.
+
+Note `tenant=none` rather than "any": in a value it means nothing was said, and in a ceiling it
+means only values that also said nothing may pass. It is the fail-closed case, and "any" would read
+as its opposite.
+
 ## Every access leaves a record
 
 ```java

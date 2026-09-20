@@ -250,19 +250,40 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public List<String> manifest() {
-    List<String> lines = new ArrayList<>();
-    derivations.values().stream()
-        .filter(Derivation::privileged)
-        .forEach(
-            derivation ->
-                lines.add(
-                    "%s: %s -> %s, may weaken labels"
+  public Manifest manifest() {
+    List<Manifest.Entry> theDestinations = new ArrayList<>();
+    destinations.forEach(
+        (id, destination) -> {
+          A ceiling = ceilingOf(destination, AccessContext.empty());
+          theDestinations.add(
+              new Manifest.Entry(
+                  id.value(),
+                  "accepts up to "
+                      + (ceiling == null ? "(its ceiling could not be evaluated)" : ceiling),
+                  false));
+        });
+    List<Manifest.Entry> theDerivations = new ArrayList<>();
+    derivations.forEach(
+        (name, derivation) ->
+            theDerivations.add(
+                new Manifest.Entry(
+                    name,
+                    "%s -> %s, %s"
                         .formatted(
-                            derivation.id(),
                             derivation.inputType().rawClass().getSimpleName(),
-                            derivation.outputType().rawClass().getSimpleName())));
-    return List.copyOf(lines);
+                            derivation.outputType().rawClass().getSimpleName(),
+                            derivation.deterministic()
+                                ? "deterministic v" + derivation.version()
+                                : "not replay-safe"),
+                    derivation.privileged())));
+    List<Manifest.Entry> theChecks = new ArrayList<>();
+    checks.forEach(
+        (name, check) ->
+            theChecks.add(
+                new Manifest.Entry(
+                    name, "asks about a " + check.inputType().rawClass().getSimpleName(), false)));
+    return new Manifest(
+        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theChecks);
   }
 
   @Override
