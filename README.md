@@ -312,6 +312,29 @@ annotation burden, whole-program analysis, a compiler fork. A weaker guarantee p
 stronger one nobody adopts, which is why the design target here is that an application writes almost
 nothing.
 
+**The closest living relative is FIDES** (Flow Integrity Deterministic Enforcement System), from
+Microsoft Research and now shipping in Microsoft Agent Framework — see Costa and Köpf, *Securing AI
+Agents with Information-Flow Control* (arXiv:2505.23643), and `github.com/microsoft/fides`. It
+carries integrity and confidentiality labels on conversation content, propagates them automatically
+through tool calls, and enforces policy before a sensitive tool runs.
+
+Three things it does better than this library does today. Propagation is **automatic**, through
+middleware, where Loch only propagates when an application calls `derive` — build a value by hand
+after dereferencing and the labels are gone. Policy is declared **on the tool**, next to what it
+governs, where ours sits in a configuration class; FIDES buys that locality by being stringly-typed,
+which is a real trade rather than a free win. And a policy violation can **escalate to a human**
+rather than simply failing.
+
+Three things this library does that FIDES does not. Its two axes are fixed, so a tenant, a data
+residency region or an existing Purview taxonomy cannot be expressed at all — and with no
+exact-match dimension, cross-tenant mixing is not representable. Labels only ever ratchet upward,
+so there is no legitimate way to record that a claim has now been checked against a system of
+record, which is the whole of the billing flow above. And it is agent middleware rather than
+custody: the plaintext stays in the conversation, where here it never enters it.
+
+Those are different threat models and both are worth having. FIDES stops untrusted content driving
+control flow; this stops sensitive content being present in the first place.
+
 If your organisation already classifies data — **Microsoft Purview sensitivity labels**, say, which
 are ordered by priority and therefore already a ladder — that taxonomy is the lattice. Loch ships no
 mandatory vocabulary precisely so it can take yours.
