@@ -285,8 +285,15 @@ says what the value was; otherwise the audit log becomes the largest collection 
 the system and the least protected. It does carry the label, because an audit that cannot say *why*
 is not much of an audit — so an audit sink deserves the protection the values do.
 
-Refusals are recorded as carefully as permissions. A thousand refused attempts against one value is
-the interesting event, and a log of successes cannot show it. Checks are recorded with the answer
+Refusals are recorded as carefully as permissions, at **every** gate — dereference, derive, fold and
+check alike. A thousand refused attempts against one value is the interesting event, and a log of
+successes cannot show it.
+
+The sharpest case is a derivation that *declines*. The function has already run and already read the
+plaintext before deciding the answer is no, so a caller could read a value it was not entitled to
+act on, repeatedly, and leave nothing behind. That refusal is recorded, with the label of what was
+read — and a refusal that happened *before* the value was looked at honestly records no label at
+all. Checks are recorded with the answer
 but never the question. Holding is recorded too, since that is the one place labels are asserted
 rather than computed.
 

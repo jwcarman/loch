@@ -224,6 +224,15 @@ class BillingScenarioTest {
                               Report.class,
                               notes -> new Report(String.join(" / ", notes)))
                           .build())
+                  // Reads the value, then says no. The refusal has to be recorded because the
+                  // function already saw the plaintext.
+                  .derivation(
+                      Derivations.<Billing, DisputeClaim, InvoiceNumber>checking(
+                              DECLINES,
+                              DisputeClaim.class,
+                              InvoiceNumber.class,
+                              (claim, ctx) -> java.util.Optional.empty())
+                          .build())
                   // The whole account never leaves the loch to answer one question about it.
                   .check(
                       Check.<Billing, Account, String>of(
@@ -251,6 +260,9 @@ class BillingScenarioTest {
   static final FoldId<String, Report> SUMMARISE = FoldId.of("notes.summarise");
 
   static final CheckId<Account, String> OWNED_BY = CheckId.of("Account.ownedBy");
+
+  static final DerivationId<DisputeClaim, InvoiceNumber> DECLINES =
+      DerivationId.of("DisputeClaim.alwaysDeclines");
 
   static final DerivationId<DisputeClaim, InvoiceNumber> WISHFUL =
       DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
@@ -970,6 +982,116 @@ class BillingScenarioTest {
       assertThatThrownBy(() -> MemoryLoch.<Billing>create(c -> c.lattice(Billing.LATTICE)))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("withoutAudit");
+    }
+  }
+
+  @Nested
+  @DisplayName("refusals reach the record too")
+  class RefusalsAreRecorded {
+
+    private Held<DisputeClaim> claim() {
+      return loch.hold(
+          new DisputeClaim("INV-4471", "charged twice"),
+          DisputeClaim.class,
+          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+    }
+
+    /**
+     * The one that mattered most: a declined derivation has already read the plaintext.
+     *
+     * <p>A derivation function runs, looks at the value, decides the answer is no, and returns
+     * nothing. Before this, that left no trace at all -- so a caller could read a value it was not
+     * entitled to act on, repeatedly, and the log would be empty.
+     */
+    @Test
+    @DisplayName("a derivation that declined is recorded, because it saw the value first")
+    void a_derivation_that_declined_is_recorded() {
+      audit.clear();
+
+      loch.derive(claim(), DECLINES, acme());
+
+      assertThat(audit.of(AuditRecord.Operation.DERIVE))
+          .isNotEmpty()
+          .anySatisfy(
+              entry -> {
+                assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+                assertThat(entry.reason()).contains("DECLINED");
+                assertThat(entry.target()).contains(DECLINES.value());
+              });
+    }
+
+    /** Refused before the value was looked at, so the record honestly has no label to give. */
+    @Test
+    @DisplayName("a derivation not offered here is recorded, and says nothing about the value")
+    void a_derivation_not_offered_here_is_recorded() {
+      Held<String> token =
+          loch.hold(
+              "tok_1P9xyz4821",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+      audit.clear();
+
+      loch.derive(token, CARD_LAST4, acme());
+
+      AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
+      assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+      assertThat(entry.reason()).contains("NOT_AVAILABLE_HERE");
+      assertThat(entry.label()).isEmpty();
+    }
+
+    /** But a refusal that happened after the value was read records what was read. */
+    @Test
+    @DisplayName("a refusal that came after reading the value records its label")
+    void a_refusal_after_reading_records_its_label() {
+      audit.clear();
+
+      loch.derive(claim(), DECLINES, acme());
+
+      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().label())
+          .hasValueSatisfying(label -> assertThat(label).contains("UNENDORSED"));
+    }
+
+    /** A check leaks a bit per call, so a thousand refused ones is the interesting event. */
+    @Test
+    @DisplayName("a refused check is recorded")
+    void a_refused_check_is_recorded() {
+      audit.clear();
+
+      loch.check(claim(), CheckId.of("no-such-check"), "x", acme());
+
+      assertThat(audit.of(AuditRecord.Operation.CHECK))
+          .anySatisfy(
+              entry -> {
+                assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+                assertThat(entry.reason()).contains("NO_SUCH_CHECK");
+              });
+    }
+
+    @Test
+    @DisplayName("a fold refused at the gate is recorded")
+    void a_fold_refused_at_the_gate_is_recorded() {
+      audit.clear();
+
+      loch.<String, Report>deriveAll(java.util.List.of(), SUMMARISE, acme());
+
+      assertThat(audit.of(AuditRecord.Operation.DERIVE))
+          .anySatisfy(
+              entry -> {
+                assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+                assertThat(entry.reason()).contains("NO_PARENTS");
+              });
+    }
+
+    @Test
+    @DisplayName("and a refusal never says what the value was")
+    void a_refusal_never_says_what_the_value_was() {
+      audit.clear();
+
+      loch.derive(claim(), DECLINES, acme());
+
+      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().toString())
+          .doesNotContain("charged twice")
+          .doesNotContain("INV-4471");
     }
   }
 }

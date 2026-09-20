@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
@@ -215,9 +216,30 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public <I, Q> Answer check(Held<I> held, CheckId<I, Q> id, Q question, AccessContext context) {
-    context = asking(context);
+    AccessContext asking = asking(context);
+    AtomicReference<A> label = new AtomicReference<>();
+    Answer answer = checking(held, id, question, asking, label);
+    if (answer instanceof Answer.Refused refused) {
+      audit(
+          AuditRecord.Operation.CHECK,
+          held.id(),
+          id.value(),
+          AuditRecord.Outcome.REFUSED,
+          refused.reason().name(),
+          label.get(),
+          asking);
+    }
+    return answer;
+  }
+
+  @SuppressWarnings("unchecked")
+  private <I, Q> Answer checking(
+      Held<I> held,
+      CheckId<I, Q> id,
+      Q question,
+      AccessContext context,
+      AtomicReference<A> refused) {
     Check<A, I, Q> check = (Check<A, I, Q>) checks.get(id.value());
     if (check == null) {
       return new Answer.Refused(
@@ -232,6 +254,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
+    refused.set(entry.attribution());
     if (!entry.typeName().equals(nameOf(check.inputType()))) {
       return new Answer.Refused(
           Answer.Reason.WRONG_TYPE,
@@ -306,10 +329,27 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public <I, O> Derived<O> deriveAll(
       List<Held<I>> parents, FoldId<I, O> id, AccessContext context) {
-    context = asking(context);
+    AccessContext asking = asking(context);
+    AtomicReference<A> label = new AtomicReference<>();
+    Derived<O> result = foldingAll(parents, id, asking, label);
+    if (result instanceof Derived.Refused<O> refused) {
+      audit(
+          AuditRecord.Operation.DERIVE,
+          parents.isEmpty() ? HeldId.fresh() : parents.getFirst().id(),
+          id.value(),
+          AuditRecord.Outcome.REFUSED,
+          refused.reason().name(),
+          label.get(),
+          asking);
+    }
+    return result;
+  }
+
+  @SuppressWarnings("unchecked")
+  private <I, O> Derived<O> foldingAll(
+      List<Held<I>> parents, FoldId<I, O> id, AccessContext context, AtomicReference<A> refused) {
     Fold<A, I, O> fold = (Fold<A, I, O>) folds.get(id.value());
     if (fold == null) {
       return new Derived.Refused<>(
@@ -359,6 +399,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       parentIds.add(parent.id());
       // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
       joined = joined == null ? entry.attribution() : lattice.join(joined, entry.attribution());
+      refused.set(joined);
     }
 
     Optional<O> produced = fold.apply(List.copyOf(inputs), context);
@@ -394,9 +435,26 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> id, AccessContext context) {
-    context = asking(context);
+    AccessContext asking = asking(context);
+    AtomicReference<A> label = new AtomicReference<>();
+    Derived<O> result = deriving(parent, id, asking, label);
+    if (result instanceof Derived.Refused<O> refused) {
+      audit(
+          AuditRecord.Operation.DERIVE,
+          parent.id(),
+          id.value(),
+          AuditRecord.Outcome.REFUSED,
+          refused.reason().name(),
+          label.get(),
+          asking);
+    }
+    return result;
+  }
+
+  @SuppressWarnings("unchecked")
+  private <I, O> Derived<O> deriving(
+      Held<I> parent, DerivationId<I, O> id, AccessContext context, AtomicReference<A> refused) {
     Derivation<A, I, O> derivation = (Derivation<A, I, O>) derivations.get(id.value());
     if (derivation == null) {
       return new Derived.Refused<>(
@@ -411,6 +469,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Derived.Refused<>(
           Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
     }
+    refused.set(entry.attribution());
     if (!entry.typeName().equals(nameOf(derivation.inputType()))) {
       return new Derived.Refused<>(
           Derived.Reason.WRONG_TYPE,
