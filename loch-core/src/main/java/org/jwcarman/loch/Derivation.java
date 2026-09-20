@@ -69,7 +69,14 @@ public interface Derivation<A, I, O> {
    * <p>A derivation receives plaintext, so it is a destination. Empty means it accepts whatever the
    * loch will give it, which is the usual answer for a projection.
    */
-  default Optional<A> ceiling() {
+  /**
+   * The most constrained value this will look at, for this particular access.
+   *
+   * <p>Takes the context for the same reason a destination's ceiling does: an exact-match dimension
+   * such as a tenant cannot be held constant. There is no fixed ceiling meaning "any one tenant but
+   * not a mixture", so the tenant has to come from whoever is asking.
+   */
+  default Optional<A> ceiling(AccessContext context) {
     return Optional.empty();
   }
 

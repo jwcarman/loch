@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright © ${year} James Carman
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Boot's parent, not ours, on purpose.
+       This module is meant to look like an application somebody would actually write, and an
+       application written against Spring Boot uses spring-boot-starter-parent: it brings the
+       plugin (so `mvn spring-boot:run` works and the jar is repackaged), the parameters compiler
+       flag (without which every @PathVariable fails at runtime), and dependency management for
+       the whole ecosystem.
+
+       loch-parent still aggregates this module, since aggregation and inheritance are separate
+       things in Maven, so `mvn install` at the root still builds it. What is lost by not
+       inheriting is the licence and formatting configuration, which is re-declared below rather
+       than quietly dropped. -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.1</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>org.jwcarman.loch</groupId>
+  <artifactId>loch-example</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>Loch :: Example</name>
+  <description>A billing support desk: an ordinary Spring Boot service that happens to handle
+    cardholder data and untrusted mail.</description>
+
+  <properties>
+    <java.version>25</java.version>
+    <codec.version>0.9.0</codec.version>
+    <testcontainers.version>2.0.5</testcontainers.version>
+    <spotless.version>3.10.0</spotless.version>
+    <license.plugin.version>5.1.1</license.plugin.version>
+    <license.owner>James Carman</license.owner>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.jwcarman.codec</groupId>
+        <artifactId>codec-bom</artifactId>
+        <version>${codec.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.jwcarman.loch</groupId>
+      <artifactId>loch-jdbc</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jwcarman.codec</groupId>
+      <artifactId>codec-jackson</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jwcarman.codec</groupId>
+      <artifactId>codec-crypto</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jwcarman.codec</groupId>
+      <artifactId>codec-transforms</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- `mvn spring-boot:run` starts the compose file beside this pom and wires the datasource
+         from it, so there is nothing to set up before running the service. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-docker-compose</artifactId>
+      <scope>runtime</scope>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Boot 4 moved TestRestTemplate into its own module, which needs RestTemplateBuilder from
+         another. Tests use Testcontainers rather than the compose file: a test should bring its
+         own database rather than expect one to be running. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-resttestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-restclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+
+      <!-- Re-declared because this module does not inherit loch-parent. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless.version}</version>
+        <configuration>
+          <java>
+            <googleJavaFormat>
+              <style>GOOGLE</style>
+            </googleJavaFormat>
+          </java>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>validate</phase>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.mycila</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <version>${license.plugin.version}</version>
+        <configuration>
+          <properties>
+            <owner>${license.owner}</owner>
+          </properties>
+          <licenseSets>
+            <licenseSet>
+              <inlineHeader><![CDATA[Copyright © ${year} ${owner}
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.]]></inlineHeader>
+              <excludes>
+                <exclude>**/*.md</exclude>
+                <exclude>**/*.yaml</exclude>
+                <exclude>**/*.yml</exclude>
+                <exclude>src/main/resources/**</exclude>
+                <exclude>src/test/resources/**</exclude>
+              </excludes>
+            </licenseSet>
+          </licenseSets>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>validate</phase>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

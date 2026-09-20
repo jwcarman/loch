@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: billing-support
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/loch}
+    username: ${SPRING_DATASOURCE_USERNAME:loch}
+    password: ${SPRING_DATASOURCE_PASSWORD:loch}
+
+# A DEMO key, and the only one. Real deployments wrap data keys with a KMS-held key and rotate by
+# adding a new one beside it -- EnvelopeCodec names the wrapping key by id for exactly that reason.
+billing:
+  key: ${BILLING_KEY:c2hoLXRoaXMtaXMtYS1kZW1vLWtleS0zMi1ieXRlcyE=}
+
+logging:
+  level:
+    org.jwcarman.loch.example.billing.LochConfiguration: INFO

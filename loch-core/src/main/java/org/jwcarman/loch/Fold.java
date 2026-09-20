@@ -56,7 +56,14 @@ public interface Fold<A, I, O> {
   int version();
 
   /** The most constrained parent this will accept. Checked against each. */
-  default Optional<A> ceiling() {
+  /**
+   * The most constrained value this will look at, for this particular access.
+   *
+   * <p>Takes the context for the same reason a destination's ceiling does: an exact-match dimension
+   * such as a tenant cannot be held constant. There is no fixed ceiling meaning "any one tenant but
+   * not a mixture", so the tenant has to come from whoever is asking.
+   */
+  default Optional<A> ceiling(AccessContext context) {
     return Optional.empty();
   }
 
@@ -95,7 +102,7 @@ public interface Fold<A, I, O> {
     private final Folding<I, O> function;
     private boolean deterministic = true;
     private int version = 1;
-    private A ceiling;
+    private java.util.function.Function<AccessContext, A> ceiling;
     private UnaryOperator<A> relabel;
     private Predicate<AccessContext> availableTo = context -> true;
 
@@ -117,7 +124,13 @@ public interface Fold<A, I, O> {
       return this;
     }
 
+    /** Accepts the same thing regardless of who is asking. */
     public Builder<A, I, O> accepting(A ceiling) {
+      return accepting(context -> ceiling);
+    }
+
+    /** Accepts something that depends on who is asking -- a tenant, usually. */
+    public Builder<A, I, O> accepting(java.util.function.Function<AccessContext, A> ceiling) {
       this.ceiling = ceiling;
       return this;
     }
@@ -134,7 +147,7 @@ public interface Fold<A, I, O> {
     }
 
     public Fold<A, I, O> build() {
-      A theCeiling = ceiling;
+      java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       UnaryOperator<A> theRelabel = relabel;
       Predicate<AccessContext> theAvailability = availableTo;
       boolean isDeterministic = deterministic;
@@ -171,8 +184,8 @@ public interface Fold<A, I, O> {
         }
 
         @Override
-        public Optional<A> ceiling() {
-          return Optional.ofNullable(theCeiling);
+        public Optional<A> ceiling(AccessContext context) {
+          return Optional.ofNullable(theCeiling).map(f -> f.apply(context));
         }
 
         @Override

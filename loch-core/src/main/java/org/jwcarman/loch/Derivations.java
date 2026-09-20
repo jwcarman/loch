@@ -66,7 +66,7 @@ public final class Derivations {
     private final BiFunction<I, AccessContext, Optional<O>> function;
     private boolean deterministic = true;
     private int version = 1;
-    private A ceiling;
+    private java.util.function.Function<AccessContext, A> ceiling;
     private UnaryOperator<A> relabel;
     private Predicate<AccessContext> availableTo = context -> true;
 
@@ -99,7 +99,13 @@ public final class Derivations {
     }
 
     /** The most constrained parent this will accept. */
+    /** Accepts the same thing regardless of who is asking. */
     public Builder<A, I, O> accepting(A ceiling) {
+      return accepting(context -> ceiling);
+    }
+
+    /** Accepts something that depends on who is asking -- a tenant, usually. */
+    public Builder<A, I, O> accepting(java.util.function.Function<AccessContext, A> ceiling) {
       this.ceiling = ceiling;
       return this;
     }
@@ -123,7 +129,7 @@ public final class Derivations {
     }
 
     public Derivation<A, I, O> build() {
-      A theCeiling = ceiling;
+      java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       UnaryOperator<A> theRelabel = relabel;
       Predicate<AccessContext> theAvailability = availableTo;
       boolean isDeterministic = deterministic;
@@ -160,8 +166,8 @@ public final class Derivations {
         }
 
         @Override
-        public Optional<A> ceiling() {
-          return Optional.ofNullable(theCeiling);
+        public Optional<A> ceiling(AccessContext context) {
+          return Optional.ofNullable(theCeiling).map(f -> f.apply(context));
         }
 
         @Override

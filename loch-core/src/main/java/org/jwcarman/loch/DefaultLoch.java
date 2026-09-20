@@ -236,7 +236,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           "'%s' asks about a %s, but %s is a %s"
               .formatted(id, nameOf(check.inputType()), held.id(), entry.typeName()));
     }
-    Optional<A> ceiling = check.ceiling();
+    Optional<A> ceiling = check.ceiling(context);
     if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
@@ -341,7 +341,7 @@ public final class DefaultLoch<A> implements Loch<A> {
             "'%s' reads a %s, but %s is a %s"
                 .formatted(id, expected, parent.id(), entry.typeName()));
       }
-      Optional<A> ceiling = fold.ceiling();
+      Optional<A> ceiling = fold.ceiling(context);
       if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
@@ -422,7 +422,7 @@ public final class DefaultLoch<A> implements Loch<A> {
               .formatted(id, nameOf(derivation.inputType()), parent.id(), entry.typeName()));
     }
     // A derivation is handed plaintext, so it is a destination and passes the same gate.
-    Optional<A> ceiling = derivation.ceiling();
+    Optional<A> ceiling = derivation.ceiling(context);
     if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
       return new Derived.Refused<>(
           Derived.Reason.ABOVE_CEILING,

@@ -57,6 +57,7 @@
   <modules>
     <module>loch-core</module>
     <module>loch-jdbc</module>
+    <module>loch-example</module>
   </modules>
 
   <properties>
@@ -67,6 +68,7 @@
     <assertj.version>3.27.7</assertj.version>
 
     <codec.version>0.9.0</codec.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
     <zstd.version>1.5.7-6</zstd.version>
     <postgresql.version>42.7.9</postgresql.version>
     <testcontainers.version>2.0.5</testcontainers.version>
@@ -91,6 +93,13 @@
         <artifactId>assertj-core</artifactId>
         <version>${assertj.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
       </dependency>
       <dependency>
         <groupId>org.jwcarman.codec</groupId>
@@ -144,6 +153,16 @@
     </pluginManagement>
 
     <plugins>
+      <!-- Parameter names are kept in the bytecode. Spring resolves @PathVariable and friends by
+           name, and without this every such endpoint fails at runtime rather than at compile time.
+           spring-boot-starter-parent sets it; this build has its own parent, so it says it here. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <parameters>true</parameters>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
