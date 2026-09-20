@@ -9,8 +9,15 @@ CREATE TABLE IF NOT EXISTS loch_value (
   payload      BYTEA       NOT NULL,
   attribution  BYTEA       NOT NULL,
   derivation   TEXT,
+  dedupe_key   TEXT,
   held_at      TIMESTAMPTZ NOT NULL
 );
+
+-- Recognises work already done, so repeating a derivation does not store a second copy of the same
+-- thing. An index and never an identifier: a key computed from its inputs is computable by anyone
+-- who knows them, so handles stay random and this stays here, where no caller sees it.
+CREATE UNIQUE INDEX IF NOT EXISTS loch_value_dedupe_key
+  ON loch_value (dedupe_key) WHERE dedupe_key IS NOT NULL;
 
 -- The immediate parentage, in the order the parents were given.
 CREATE TABLE IF NOT EXISTS loch_lineage (

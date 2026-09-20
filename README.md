@@ -6,6 +6,13 @@ every sink. Built on Denning's lattice model.
 > **Status: early.** The lattice, the handle and the gate work and are tested. Derivation, lineage,
 > durable storage and encryption are not written yet.
 
+## The pattern
+
+This is a **claim check** (Hohpe and Woolf): the payload goes into a store, a token comes back, and
+the token travels instead of the thing. What Loch adds to the pattern is that redeeming the check is
+*checked* — against a label the value carries, a ceiling where it is going, and an identity the
+holder of the check does not control.
+
 ## The problem
 
 Some values should not simply become text: credentials, personal and regulated data, untrusted
@@ -156,6 +163,13 @@ compress-then-encrypt leaks most.
 
 **Decompression is bounded.** `CompressionStreamCodec` caps the decoded size, so a corrupt or
 malicious row cannot expand into an out-of-memory error.
+
+**Repeating deterministic work does not store it twice.** A derivation that is reproducible gets a
+deduplication key alongside its value, so deriving the same thing again finds what was made before.
+That is deduplication and nothing grander: storage is durable, so a re-run would otherwise simply
+write a duplicate, which is wasted space rather than a correctness problem. The key is an index and
+never an identifier — a key computed from its inputs is computable by anyone who knows them, and
+handles stay random so that holding one is something you were *given*.
 
 **Erasure is a reachability query.** Lineage is kept as values are derived, so erasing a value takes
 everything ever made from it in one indexed statement. Lineage is a DAG rather than a tree, so this

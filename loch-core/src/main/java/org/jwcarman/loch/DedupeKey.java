@@ -22,24 +22,26 @@ import java.util.Base64;
 import java.util.List;
 
 /**
- * Names a deterministic derivation's result after what produced it.
+ * Recognises work already done, so repeating it does not store a second copy.
  *
- * <p>Three things follow, and the first is the one that matters. <b>Replay is idempotent</b>: an
- * agent re-running a turn derives the same handle it derived the first time, so the story it
- * already wrote still refers to something real. A fresh id per run would orphan the first one.
+ * <p><b>Deduplication, and nothing grander.</b> An earlier version of this claimed to make replay
+ * safe, which was wrong: storage is durable, so a re-run finds the first value still there and the
+ * first handle still resolving. Deriving again would simply write a duplicate. That is wasted space
+ * rather than a correctness problem, and this exists to avoid the waste.
  *
- * <p>Deriving the same thing twice is also free rather than duplicated, and the id is itself
- * evidence of what produced it. The version is in the hash on purpose: changing an implementation
- * gives new handles rather than silently reinterpreting values derived under the old behaviour.
+ * <p><b>An index, never an identifier.</b> A key computed from its inputs is computable by anyone
+ * who knows them, and an identifier a caller can derive rather than be given is one they can use to
+ * ask questions -- does this exist, what is it labelled -- about values nobody handed them. Handles
+ * stay random; this sits beside them in storage, where no caller sees it.
  *
- * <p>This is a name, never an instruction. Nothing about presenting one causes a derivation to run;
- * an unknown id is simply unknown, which is what keeps handles inert.
+ * <p>The version is in the key on purpose: change what a derivation does and it stops matching, so
+ * old values are not silently reused under new behaviour.
  */
-final class ContentAddress {
+final class DedupeKey {
 
-  private ContentAddress() {}
+  private DedupeKey() {}
 
-  static HeldId of(List<HeldId> parents, String derivationId, int version) {
+  static String of(List<HeldId> parents, String derivationId, int version) {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       for (HeldId parent : parents) {
@@ -49,8 +51,7 @@ final class ContentAddress {
       digest.update(derivationId.getBytes(StandardCharsets.UTF_8));
       digest.update((byte) 0);
       digest.update(Integer.toString(version).getBytes(StandardCharsets.UTF_8));
-      return new HeldId(
-          "loch_" + Base64.getUrlEncoder().withoutPadding().encodeToString(digest.digest()));
+      return Base64.getUrlEncoder().withoutPadding().encodeToString(digest.digest());
     } catch (NoSuchAlgorithmException e) {
       throw new IllegalStateException("SHA-256 is required of every Java platform", e);
     }

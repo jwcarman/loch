@@ -581,7 +581,7 @@ class BillingScenarioTest {
       assertThat(loch.lineage(parent).asserted()).isTrue();
     }
 
-    /** The property replay depends on: the same work twice names the same value. */
+    /** Repeating deterministic work reuses what it made rather than storing a second copy. */
     @Test
     @DisplayName("a deterministic derivation gives the same handle every time")
     void a_deterministic_derivation_gives_the_same_handle() {
