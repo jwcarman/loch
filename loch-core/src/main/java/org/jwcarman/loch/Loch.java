@@ -19,7 +19,12 @@ import java.util.List;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
- * A store of values that are not simply text.
+ * A governed claim check.
+ *
+ * <p>A claim check stores the payload and hands back a token; the token travels instead of the
+ * thing. What is usually missing from the pattern is that anyone holding the check can redeem it.
+ * Here redemption is decided -- against the label the value carries, the ceiling of wherever it is
+ * going, and an identity the holder of the check does not control.
  *
  * <p>Put a value in with {@link #hold} and you get a {@link Held} handle. The handle goes wherever
  * you like -- an event stream, a prompt, a message to another service -- because possession of a

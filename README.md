@@ -1,21 +1,21 @@
 # Loch
 
-A labelled value store for Java. Opaque handles, labels that travel with the data, and policy at
-every sink. Built on Denning's lattice model.
+**A governed claim check for Java.**
+
+A claim check stores the payload and hands back a token; the token travels instead of the thing.
+Loch governs the redemption. Every value carries a label, every place a value might go declares what
+it will accept, and turning a check back into a payload is decided against both — plus an identity
+the holder of the check does not control.
+
+Built on Denning's lattice model.
 
 > **Status: early.** The lattice, the handle and the gate work and are tested. Derivation, lineage,
 > durable storage and encryption are not written yet.
 
-## The pattern
-
-This is a **claim check** (Hohpe and Woolf): the payload goes into a store, a token comes back, and
-the token travels instead of the thing. What Loch adds to the pattern is that redeeming the check is
-*checked* — against a label the value carries, a ceiling where it is going, and an identity the
-holder of the check does not control.
-
 ## The problem
 
-Some values should not simply become text: credentials, personal and regulated data, untrusted
+The pattern is Hohpe and Woolf's; what is usually missing from it is that anyone holding the check
+can redeem it. Some values should not simply become text: credentials, personal and regulated data, untrusted
 input from outside, anything a compliance regime has opinions about. Once such a value is a `String`
 in your application, nothing can tell you where it went.
 

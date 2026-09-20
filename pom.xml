@@ -27,8 +27,9 @@
   <packaging>pom</packaging>
 
   <name>Loch</name>
-  <description>A labelled value store for Java: opaque handles, attributions that travel with the
-    data, and policy at every sink. Built on Denning's lattice model.</description>
+  <description>A governed claim check for Java: a token travels instead of the payload, and
+    redeeming it is decided against the value's label, the destination's ceiling, and an identity
+    the holder of the token does not control.</description>
   <url>https://github.com/jwcarman/loch</url>
   <inceptionYear>2026</inceptionYear>
 
