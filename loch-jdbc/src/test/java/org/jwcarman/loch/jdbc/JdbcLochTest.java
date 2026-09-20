@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.jwcarman.codec.crypto.EnvelopeCodec;
 import org.jwcarman.codec.crypto.JceDataKeyProvider;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
+import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.DerivationId;
@@ -151,11 +152,15 @@ class JdbcLochTest {
             Billing.class,
             c ->
                 c.dataSource(dataSource)
-                    .jackson(JsonMapper.builder().build())
-                    .gzipped()
-                    .protectedBy(
-                        EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
-                            .build())
+                    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+                    // The application composes its own pipeline: squeeze, then seal.
+                    .storedThrough(
+                        StorageCodec.of(
+                            Compression.whenItHelps(new GzipCodec())
+                                .andThen(
+                                    EnvelopeCodec.builder(
+                                            new JceDataKeyProvider("k1", Map.of("k1", kek)))
+                                        .build())))
                     .lattice(Billing.LATTICE)
                     .auditor(Auditors.discarding())
                     .destination(
@@ -285,7 +290,7 @@ class JdbcLochTest {
   }
 
   @Test
-  @DisplayName("protection is a decision, not a default")
+  @DisplayName("what happens to the bytes is a decision, not a default")
   void protection_is_a_decision() {
     assertThat(
             org.assertj.core.api.Assertions.catchThrowable(
@@ -294,11 +299,11 @@ class JdbcLochTest {
                         Billing.class,
                         c ->
                             c.dataSource(dataSource)
-                                .jackson(JsonMapper.builder().build())
+                                .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
                                 .lattice(Billing.LATTICE)
                                 .withoutAudit())))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("unprotected");
+        .hasMessageContaining("storedPlainly");
   }
 
   private int rowCount(String table) throws SQLException {

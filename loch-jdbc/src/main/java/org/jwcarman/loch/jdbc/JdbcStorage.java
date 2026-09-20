@@ -41,11 +41,11 @@ import org.jwcarman.loch.StoredValue;
 /**
  * Storage in a database, with every payload encrypted.
  *
- * <p>A value is serialised, compressed if asked, then encrypted -- the only order that makes sense,
- * since ciphertext does not compress. The protection is a {@code Codec<byte[]>} appended to
- * whatever codec serialises the value, so this class contains no cryptography of its own -- {@code
- * EnvelopeCodec} mints a fresh data key per payload and wraps it with a key named by id, which is
- * what makes key rotation a matter of adding a key rather than rewriting a table.
+ * <p>A value is serialised by whatever {@link CodecFactory} the application chose, then passed
+ * through whatever {@link StorageCodec} it composed. This module contains no cryptography and no
+ * compression of its own; it applies what it was handed, so this class contains no cryptography of
+ * its own -- {@code EnvelopeCodec} mints a fresh data key per payload and wraps it with a key named
+ * by id, which is what makes key rotation a matter of adding a key rather than rewriting a table.
  *
  * <p><b>The attribution is encrypted too.</b> A label can be as sensitive as the value: a tenant's
  * name or a project codeword sitting in the clear beside the ciphertext describes what the
@@ -96,8 +96,7 @@ public final class JdbcStorage<A> implements Storage<A> {
 
   private final DataSource dataSource;
   private final CodecFactory codecs;
-  private final Codec<byte[]> compression;
-  private final Codec<byte[]> protection;
+  private final StorageCodec storageCodec;
   private final Codec<A> attributions;
   private final ClassLoader classLoader;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
@@ -105,15 +104,12 @@ public final class JdbcStorage<A> implements Storage<A> {
   JdbcStorage(
       DataSource dataSource,
       CodecFactory codecs,
-      Codec<byte[]> compression,
-      Codec<byte[]> protection,
+      StorageCodec storageCodec,
       Class<A> attributionType) {
     this.dataSource = dataSource;
     this.codecs = codecs;
-    this.compression = compression;
-    this.protection = protection;
-    // The label is encrypted but not compressed: see JdbcLochConfig#compressedWith.
-    this.attributions = codecs.create(attributionType).andThen(protection);
+    this.storageCodec = storageCodec;
+    this.attributions = codecs.create(attributionType).andThen(storageCodec);
     this.classLoader = attributionType.getClassLoader();
   }
 
@@ -275,22 +271,10 @@ public final class JdbcStorage<A> implements Storage<A> {
     return codecFor(type).decode(bytes);
   }
 
-  /**
-   * Serialise, then squeeze, then seal.
-   *
-   * <p>The order is the only one that makes sense: ciphertext does not compress, so compressing
-   * afterwards would cost the same and save nothing.
-   */
+  /** Serialise, then whatever the application said happens to bytes on the way to the table. */
   private Codec<?> codecFor(Class<?> type) {
     return byType.computeIfAbsent(
-        type.getName(),
-        name -> {
-          Codec<?> codec = codecs.create(type);
-          if (compression != null) {
-            codec = codec.andThen(compression);
-          }
-          return codec.andThen(protection);
-        });
+        type.getName(), name -> codecs.create(type).andThen(storageCodec));
   }
 
   /**

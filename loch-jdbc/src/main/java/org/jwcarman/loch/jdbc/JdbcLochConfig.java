@@ -17,7 +17,6 @@ package org.jwcarman.loch.jdbc;
 
 import java.util.Objects;
 import javax.sql.DataSource;
-import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.Auditor;
@@ -27,7 +26,6 @@ import org.jwcarman.loch.Destination;
 import org.jwcarman.loch.DestinationId;
 import org.jwcarman.loch.LochConfig;
 import org.jwcarman.loch.lattice.Lattice;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * How a durable loch is built: everything a loch needs, plus where it keeps things and how it
@@ -40,8 +38,7 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
 
   private DataSource dataSource;
   private CodecFactory codecs;
-  private Codec<byte[]> compression;
-  private Codec<byte[]> protection;
+  private StorageCodec storageCodec;
   private boolean migrate = true;
 
   /** Where the tables are. */
@@ -50,99 +47,45 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
     return this;
   }
 
-  /** How values become bytes. Any {@link CodecFactory}; {@link #jackson} is the usual one. */
+  /** How values become bytes. Any {@link CodecFactory}: Jackson, fory, protobuf, your own. */
   public JdbcLochConfig<A> codecs(CodecFactory codecs) {
     this.codecs = Objects.requireNonNull(codecs, "a durable loch needs codecs");
     return this;
   }
 
-  /** Serialises with Jackson, which is what most applications want. */
-  public JdbcLochConfig<A> jackson(ObjectMapper mapper) {
-    return codecs(new JacksonCodecFactory(mapper));
-  }
-
   /**
-   * Squeezes the serialised value before it is encrypted.
+   * What happens to those bytes on the way to the table: compression, encryption, both.
    *
-   * <p><b>Compression comes first, because ciphertext does not compress.</b> Reversing the two
-   * would cost the same CPU and save nothing.
+   * <p>Required, or say {@link #storedPlainly()}. <b>This is where encryption goes</b>, and there
+   * is no default for the same reason there is no default auditor: a store that silently keeps
+   * plaintext still looks like a vault.
    *
-   * <p>The label is deliberately <i>not</i> compressed. Labels are small and highly structured, so
-   * there is little to win, and compressing before encrypting makes the ciphertext length a
-   * function of the plaintext -- the shape of attack CRIME and BREACH exploit. For a stored value
-   * that is a remote concern; for a short, structured, guessable label it is less remote, and the
-   * saving did not justify it.
+   * <pre>{@code
+   * .storedThrough(StorageCodec.of(
+   *     Compression.whenItHelps(new GzipCodec())
+   *         .andThen(EnvelopeCodec.builder(keys).build())))
+   * }</pre>
    */
-  public JdbcLochConfig<A> compressedWith(Codec<byte[]> compression) {
-    this.compression = Objects.requireNonNull(compression, "compression must not be null");
+  public JdbcLochConfig<A> storedThrough(StorageCodec storageCodec) {
+    this.storageCodec = Objects.requireNonNull(storageCodec, "a storage codec must not be null");
     return this;
   }
 
-  /**
-   * Gzip, applied only where it helps: the ordinary choice, and the one that needs nothing extra.
-   *
-   * <p>It is in the JDK, so it costs no dependency. See {@link Compression} for why this is
-   * conditional -- most of what a loch holds is small enough that compressing it makes it bigger.
-   */
-  public JdbcLochConfig<A> gzipped() {
-    return compressedWith(Compression.gzipWhenItHelps());
-  }
+  /** Stores bytes exactly as serialised. For a throwaway database, never for real data. */
+  public JdbcLochConfig<A> storedPlainly() {
+    return storedThrough(
+        StorageCodec.of(
+            new Codec<byte[]>() {
+              @Override
+              public byte[] encode(byte[] value) {
+                return value;
+              }
 
-  /**
-   * Zstandard: better than gzip on both speed and ratio, at the cost of a native library.
-   *
-   * <p>{@code codec-zstd} is an optional dependency here, because {@code zstd-jni} is JNI and a
-   * native library is not something to inflict on every consumer -- a GraalVM native image or an
-   * unusual architecture may not want it. Add {@code org.jwcarman.codec:codec-zstd} to your own
-   * build to use this.
-   */
-  public JdbcLochConfig<A> zstd() {
-    return zstd(3);
-  }
-
-  /**
-   * Zstandard at a chosen level.
-   *
-   * @param level higher squeezes harder and takes longer; 3 is zstd's own default
-   */
-  public JdbcLochConfig<A> zstd(int level) {
-    try {
-      return compressedWith(Compression.whenItHelps(new org.jwcarman.codec.zstd.ZstdCodec(level)));
-    } catch (NoClassDefFoundError e) {
-      throw new IllegalStateException(
-          "zstd compression needs org.jwcarman.codec:codec-zstd on the classpath; it is an optional"
-              + " dependency of loch-jdbc because it arrives through a native library. Add it, or"
-              + " call gzipped(), which needs nothing.",
-          e);
-    }
-  }
-
-  /**
-   * What protects those bytes at rest -- an {@code EnvelopeCodec}, ordinarily.
-   *
-   * <p>Required, or say {@link #unprotected()}. There is no default, for the same reason there is
-   * no default auditor: a store that silently keeps plaintext still looks like a vault.
-   */
-  public JdbcLochConfig<A> protectedBy(Codec<byte[]> protection) {
-    this.protection = Objects.requireNonNull(protection, "protection must not be null");
-    return this;
-  }
-
-  /** Stores plaintext, on purpose and in writing. For a throwaway database, never for real data. */
-  public JdbcLochConfig<A> unprotected() {
-    this.protection =
-        new Codec<>() {
-          @Override
-          public byte[] encode(byte[] value) {
-            return value;
-          }
-
-          @Override
-          public byte[] decode(byte[] value) {
-            return value;
-          }
-        };
-    return this;
+              @Override
+              public byte[] decode(byte[] value) {
+                return value;
+              }
+            }));
   }
 
   /** Leaves the schema alone; something else owns it. */
@@ -214,17 +157,13 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
     return codecs;
   }
 
-  Codec<byte[]> protectionOrFail() {
-    if (protection == null) {
+  StorageCodec storageCodecOrFail() {
+    if (storageCodec == null) {
       throw new IllegalStateException(
-          "a durable loch needs protection: call protectedBy(...) with an EnvelopeCodec, or"
-              + " unprotected() if this database holds nothing that matters");
+          "a durable loch needs a storage codec: call storedThrough(...) with your compression and"
+              + " encryption, or storedPlainly() if this database holds nothing that matters");
     }
-    return protection;
-  }
-
-  Codec<byte[]> compression() {
-    return compression;
+    return storageCodec;
   }
 
   boolean migrates() {

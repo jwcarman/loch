@@ -92,27 +92,30 @@ Lattices.ladder(PUBLIC, INTERNAL, CONFIDENTIAL, SECRET)   // or Lattices.ranked(
 
 ## Durable, encrypted, and erasable
 
-`loch-jdbc` keeps values in Postgres with every payload envelope-encrypted — a fresh data key per
-value, wrapped by a key named by id, so rotating keys means adding one rather than rewriting a
-table. It contains no cryptography of its own: protection is a `Codec<byte[]>` appended to whatever
-codec serialises the value.
+`loch-jdbc` keeps values in Postgres. It contains **no cryptography and no compression of its own**
+— you compose the pipeline and it applies what it is handed:
 
 ```java
 Loch<Billing> loch = JdbcLoch.create(Billing.class, c -> c
     .dataSource(dataSource)
-    .jackson(objectMapper)                                                  // serialise
-    .gzipped()                                                              // squeeze
-    .protectedBy(EnvelopeCodec.builder(new JceDataKeyProvider("k1", keys)).build())  // seal
+    .codecs(new JacksonCodecFactory(objectMapper))          // serialise
+    .storedThrough(StorageCodec.of(                          // then your byte pipeline
+        Compression.whenItHelps(new GzipCodec())
+            .andThen(EnvelopeCodec.builder(keys).build())))
     .lattice(BILLING)
     .auditor(auditSink)
     .destination(...));
 ```
 
-**Serialise, squeeze, seal — and that order is the only one that makes sense**, because ciphertext
-does not compress. Reversing the last two costs the same CPU and saves nothing. Neither choice is
-forced: `codecs(...)` takes any `CodecFactory` and `compressedWith(...)` any `Codec<byte[]>`.
+So `loch-jdbc` depends on `loch-core` and the codec **contract**, and nothing else. Which
+serialisation, which compression and which encryption are yours to pick — Jackson or fory or
+protobuf, gzip or zstd or lz4, envelope encryption or your own KMS. `StorageCodec` exists so the
+composed pipeline is a nameable thing an application can declare and a container can inject.
 
-**Compression is conditional, because measurement says it has to be.** Most of what a loch holds is
+**Compression before encryption**, always: ciphertext does not compress, so the other order costs
+the same and saves nothing.
+
+**Compression should be conditional, because measurement says so.** Most of what a loch holds is
 small, and a compressor's framing costs more than a short payload saves:
 
 ```
@@ -121,35 +124,19 @@ small, and a compressor's framing costs more than a short payload saves:
 an email body                                      851 bytes -> gzip 79   smaller
 ```
 
-So Loch compresses, keeps the result only when it actually shrank, and marks which it did with one
-leading byte. Worst case is one byte instead of a threefold expansion.
+`Compression.whenItHelps(...)` wraps any compressor, keeps the result only when it actually shrank,
+and records which with one leading byte. Worst case is one byte instead of a threefold expansion.
 
-**Why Jackson rather than something faster.** `codec-fory` is considerably quicker and more compact,
-but stored values outlive the code that wrote them, and JSON tolerates a field being added or
-removed where a positional binary format does not. Each value is individually encrypted, so a key
-operation dominates the cost of serialising a small record — this is not a hot path, and trading
-schema-evolution tolerance for speed we do not need would be a poor bargain for a store whose whole
-job is to still make sense in three years. `codec-versioned` is the next step there.
+**The label is encrypted but not compressed.** A tenant's name in the clear beside the ciphertext
+describes what the ciphertext is; and labels are short, structured and guessable, which is where
+compress-then-encrypt leaks most.
 
-**Decompression is bounded.** `CompressionStreamCodec` caps the decoded size, so a malicious or
-corrupt row cannot expand into an out-of-memory error.
+**Decompression is bounded.** `CompressionStreamCodec` caps the decoded size, so a corrupt or
+malicious row cannot expand into an out-of-memory error.
 
-**zstd is available and optional.** Better than gzip on both speed and ratio, but it arrives through
-`zstd-jni`, and a native library is not something to inflict on every consumer — a GraalVM native
-image or an unusual architecture may object. Add `org.jwcarman.codec:codec-zstd` and call `zstd()`.
-
-The **label is encrypted but not compressed**. Labels are small and highly structured, so there is
-little to win, and compressing before encrypting makes ciphertext length a function of plaintext —
-the shape of attack CRIME and BREACH exploit. For a large stored value that is remote; for a short,
-guessable label it is less so, and the saving did not justify it.
-
-**The label is encrypted too.** A tenant's name or a project codeword sitting in the clear beside
-the ciphertext describes what the ciphertext is to anyone who can read the table.
-
-**Erasure is a reachability query.** Lineage is kept as values are derived, so "erase this customer"
-removes the value and everything ever made from it in one indexed statement. Lineage is a DAG rather
-than a tree — a value can have several parents — so this is a closure table rather than a
-materialised path, whose rows would multiply at every merge.
+**Erasure is a reachability query.** Lineage is kept as values are derived, so erasing a value takes
+everything ever made from it in one indexed statement. Lineage is a DAG rather than a tree, so this
+is a closure table rather than a materialised path, whose rows would multiply at every merge.
 
 Anything Loch stores must round-trip through your codec, which is why its own label types are plain
 records rather than sealed hierarchies: a sealed type needs polymorphic type information that every

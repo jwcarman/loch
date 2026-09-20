@@ -37,33 +37,28 @@
       <artifactId>loch-core</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- Only the codec contract. Which serialisation, which compression and which encryption are
+         the application's to choose and compose; this module just applies what it is handed. -->
     <dependency>
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-core</artifactId>
     </dependency>
-    <dependency>
-      <groupId>org.jwcarman.codec</groupId>
-      <artifactId>codec-crypto</artifactId>
-    </dependency>
-    <!-- Jackson is the blessed serialisation and gzip the blessed compression, but neither is
-         forced: codecs(...) takes any CodecFactory and compressedWith(...) any Codec<byte[]>. -->
+
     <dependency>
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-jackson</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-transforms</artifactId>
+      <scope>test</scope>
     </dependency>
-    <!-- Optional on purpose: zstd is better than gzip on both speed and ratio, but it arrives
-         through zstd-jni, and a native library is not something to inflict on every consumer.
-         Applications that want it add codec-zstd themselves and call zstd(). -->
     <dependency>
       <groupId>org.jwcarman.codec</groupId>
-      <artifactId>codec-zstd</artifactId>
-      <optional>true</optional>
+      <artifactId>codec-crypto</artifactId>
+      <scope>test</scope>
     </dependency>
-
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>

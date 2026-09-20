@@ -25,9 +25,10 @@ import org.jwcarman.loch.Loch;
  * <pre>{@code
  * Loch<Billing> loch = JdbcLoch.create(Billing.class, c -> c
  *     .dataSource(dataSource)
- *     .jackson(objectMapper)
- *     .gzipped()
- *     .protectedBy(EnvelopeCodec.builder(keys).build())
+ *     .codecs(new JacksonCodecFactory(mapper))
+ *     .storedThrough(StorageCodec.of(
+ *         Compression.whenItHelps(new GzipCodec())
+ *             .andThen(EnvelopeCodec.builder(keys).build())))
  *     .lattice(BILLING)
  *     .auditor(auditSink)
  *     .destination(...));
@@ -55,8 +56,7 @@ public final class JdbcLoch {
         new JdbcStorage<>(
             config.dataSourceOrFail(),
             config.codecsOrFail(),
-            config.compression(),
-            config.protectionOrFail(),
+            config.storageCodecOrFail(),
             attributionType);
     if (config.migrates()) {
       storage.migrate();

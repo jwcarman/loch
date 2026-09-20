@@ -17,7 +17,6 @@ package org.jwcarman.loch.jdbc;
 
 import java.util.Arrays;
 import org.jwcarman.codec.spi.Codec;
-import org.jwcarman.codec.transform.compress.GzipCodec;
 
 /**
  * Compression that cannot make things worse.
@@ -32,13 +31,16 @@ import org.jwcarman.codec.transform.compress.GzipCodec;
  * </pre>
  *
  * <p>So compressing everything is wrong, and compressing nothing leaves the large values on the
- * table. This tries, keeps the result only when it actually shrank, and marks which it did with a
- * leading byte. The worst case is one byte rather than a threefold expansion.
+ * table. This wraps any compressor, keeps its result only when it actually shrank, and marks which
+ * it did with a leading byte. The worst case is one byte rather than a threefold expansion.
  *
- * <p>That marker byte and the stored length together say roughly how compressible a value was,
- * which is the shape of thing CRIME and BREACH exploit. It is a remote concern for data at rest
- * with a distinct key per value and no oracle to query, and it is the reason labels are not
- * compressed at all.
+ * <pre>{@code
+ * Compression.whenItHelps(new GzipCodec())   // or ZstdCodec, or Lz4Codec
+ * }</pre>
+ *
+ * <p>The marker byte and the stored length together say roughly how compressible a value was, which
+ * is the shape of thing CRIME and BREACH exploit. It is a remote concern for data at rest with a
+ * distinct key per value and no oracle to query -- and it is why labels are not compressed at all.
  */
 public final class Compression {
 
@@ -47,16 +49,7 @@ public final class Compression {
 
   private Compression() {}
 
-  /** Gzip when it helps. In the JDK, so it costs no dependency. */
-  public static Codec<byte[]> gzipWhenItHelps() {
-    return whenItHelps(new GzipCodec());
-  }
-
-  /**
-   * Any compressor, applied only when the result is smaller.
-   *
-   * <p>Use with {@code ZstdCodec} or {@code Lz4Codec} if you have added them.
-   */
+  /** Applies a compressor only when the result is smaller. */
   public static Codec<byte[]> whenItHelps(Codec<byte[]> compressor) {
     return new Codec<>() {
       @Override
