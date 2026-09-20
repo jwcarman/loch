@@ -112,6 +112,32 @@ Loch<Billing> loch = JdbcLoch.create(Billing.class, c -> c
 does not compress. Reversing the last two costs the same CPU and saves nothing. Neither choice is
 forced: `codecs(...)` takes any `CodecFactory` and `compressedWith(...)` any `Codec<byte[]>`.
 
+**Compression is conditional, because measurement says it has to be.** Most of what a loch holds is
+small, and a compressor's framing costs more than a short payload saves:
+
+```
+{"number":"4111111111114821","holder":"J CARMAN"}   49 bytes -> gzip 57   BIGGER
+{"v":"4821"}                                        12 bytes -> gzip 32   BIGGER
+an email body                                      851 bytes -> gzip 79   smaller
+```
+
+So Loch compresses, keeps the result only when it actually shrank, and marks which it did with one
+leading byte. Worst case is one byte instead of a threefold expansion.
+
+**Why Jackson rather than something faster.** `codec-fory` is considerably quicker and more compact,
+but stored values outlive the code that wrote them, and JSON tolerates a field being added or
+removed where a positional binary format does not. Each value is individually encrypted, so a key
+operation dominates the cost of serialising a small record — this is not a hot path, and trading
+schema-evolution tolerance for speed we do not need would be a poor bargain for a store whose whole
+job is to still make sense in three years. `codec-versioned` is the next step there.
+
+**Decompression is bounded.** `CompressionStreamCodec` caps the decoded size, so a malicious or
+corrupt row cannot expand into an out-of-memory error.
+
+**zstd is available and optional.** Better than gzip on both speed and ratio, but it arrives through
+`zstd-jni`, and a native library is not something to inflict on every consumer — a GraalVM native
+image or an unusual architecture may object. Add `org.jwcarman.codec:codec-zstd` and call `zstd()`.
+
 The **label is encrypted but not compressed**. Labels are small and highly structured, so there is
 little to win, and compressing before encrypting makes ciphertext length a function of plaintext —
 the shape of attack CRIME and BREACH exploit. For a large stored value that is remote; for a short,

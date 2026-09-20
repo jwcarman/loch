@@ -31,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.codec.crypto.EnvelopeCodec;
 import org.jwcarman.codec.crypto.JceDataKeyProvider;
+import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.DerivationId;
@@ -325,19 +326,37 @@ class JdbcLochTest {
 
   /** Serialise, squeeze, seal. Reversing the last two would cost the same and save nothing. */
   @Test
-  @DisplayName("compresses a repetitive value before encrypting it")
-  void compresses_before_encrypting() throws SQLException {
+  @DisplayName("compresses a big repetitive value before encrypting it")
+  void compresses_a_big_value_before_encrypting() throws SQLException {
     Held<Card> small = card();
     Held<Card> repetitive =
         loch.hold(
             new Card("4111111111114821", "J CARMAN ".repeat(200)),
             Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
 
-    int smallBytes = payloadLength(small);
-    int repetitiveBytes = payloadLength(repetitive);
-
     // 1800 characters of a repeated name, stored in nothing like 1800 bytes.
-    assertThat(repetitiveBytes).isLessThan(smallBytes + 300);
+    assertThat(payloadLength(repetitive)).isLessThan(payloadLength(small) + 300);
+  }
+
+  /**
+   * The measured reason compression is conditional: a card record gzips to more than it started as,
+   * so applying it unconditionally would cost space on nearly everything a loch holds.
+   */
+  @Test
+  @DisplayName("does not make a small value bigger by compressing it")
+  void does_not_make_a_small_value_bigger() throws SQLException {
+    Held<Card> card = card();
+
+    int stored = payloadLength(card);
+    int plain =
+        new JacksonCodecFactory(JsonMapper.builder().build())
+            .create(Card.class)
+            .encode(new Card("4111111111114821", "J CARMAN"))
+            .length;
+
+    // One marker byte plus whatever the envelope adds, and nothing for compression that did not
+    // help. Gzip alone would have added eight bytes to this payload before encryption.
+    assertThat(stored).isLessThan(plain + 100);
   }
 
   private int payloadLength(Held<?> held) throws SQLException {

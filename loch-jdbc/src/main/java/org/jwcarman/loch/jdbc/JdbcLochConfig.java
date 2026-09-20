@@ -20,7 +20,6 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
-import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Check;
 import org.jwcarman.loch.Derivation;
@@ -79,9 +78,43 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
     return this;
   }
 
-  /** Gzip, the ordinary choice. */
+  /**
+   * Gzip, applied only where it helps: the ordinary choice, and the one that needs nothing extra.
+   *
+   * <p>It is in the JDK, so it costs no dependency. See {@link Compression} for why this is
+   * conditional -- most of what a loch holds is small enough that compressing it makes it bigger.
+   */
   public JdbcLochConfig<A> gzipped() {
-    return compressedWith(new GzipCodec());
+    return compressedWith(Compression.gzipWhenItHelps());
+  }
+
+  /**
+   * Zstandard: better than gzip on both speed and ratio, at the cost of a native library.
+   *
+   * <p>{@code codec-zstd} is an optional dependency here, because {@code zstd-jni} is JNI and a
+   * native library is not something to inflict on every consumer -- a GraalVM native image or an
+   * unusual architecture may not want it. Add {@code org.jwcarman.codec:codec-zstd} to your own
+   * build to use this.
+   */
+  public JdbcLochConfig<A> zstd() {
+    return zstd(3);
+  }
+
+  /**
+   * Zstandard at a chosen level.
+   *
+   * @param level higher squeezes harder and takes longer; 3 is zstd's own default
+   */
+  public JdbcLochConfig<A> zstd(int level) {
+    try {
+      return compressedWith(Compression.whenItHelps(new org.jwcarman.codec.zstd.ZstdCodec(level)));
+    } catch (NoClassDefFoundError e) {
+      throw new IllegalStateException(
+          "zstd compression needs org.jwcarman.codec:codec-zstd on the classpath; it is an optional"
+              + " dependency of loch-jdbc because it arrives through a native library. Add it, or"
+              + " call gzipped(), which needs nothing.",
+          e);
+    }
   }
 
   /**

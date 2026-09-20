@@ -55,6 +55,14 @@
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-transforms</artifactId>
     </dependency>
+    <!-- Optional on purpose: zstd is better than gzip on both speed and ratio, but it arrives
+         through zstd-jni, and a native library is not something to inflict on every consumer.
+         Applications that want it add codec-zstd themselves and call zstd(). -->
+    <dependency>
+      <groupId>org.jwcarman.codec</groupId>
+      <artifactId>codec-zstd</artifactId>
+      <optional>true</optional>
+    </dependency>
 
     <dependency>
       <groupId>org.postgresql</groupId>
