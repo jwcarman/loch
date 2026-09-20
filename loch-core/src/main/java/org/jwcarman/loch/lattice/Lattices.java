@@ -126,6 +126,159 @@ public final class Lattices {
   }
 
   /**
+   * One axis of a label: how to read it, and the order it lives in.
+   *
+   * @param read pulls this axis out of the whole label
+   * @param lattice the order over that axis alone
+   */
+  public record Axis<A, T>(java.util.function.Function<A, T> read, Lattice<T> lattice) {
+
+    T join(A left, A right) {
+      return lattice.join(read.apply(left), read.apply(right));
+    }
+  }
+
+  /** Names an axis of a label and the order it lives in. */
+  public static <A, T> Axis<A, T> axis(java.util.function.Function<A, T> read, Lattice<T> lattice) {
+    return new Axis<>(read, lattice);
+  }
+
+  /** Builds a label out of two axes. */
+  @FunctionalInterface
+  public interface Of2<T1, T2, A> {
+    A build(T1 first, T2 second);
+  }
+
+  /** Builds a label out of three axes. */
+  @FunctionalInterface
+  public interface Of3<T1, T2, T3, A> {
+    A build(T1 first, T2 second, T3 third);
+  }
+
+  /** Builds a label out of four axes. */
+  @FunctionalInterface
+  public interface Of4<T1, T2, T3, T4, A> {
+    A build(T1 first, T2 second, T3 third, T4 fourth);
+  }
+
+  /** Builds a label out of five axes. */
+  @FunctionalInterface
+  public interface Of5<T1, T2, T3, T4, T5, A> {
+    A build(T1 first, T2 second, T3 third, T4 fourth, T5 fifth);
+  }
+
+  /**
+   * A label made of independent axes, joined one axis at a time.
+   *
+   * <pre>{@code
+   * record Labels(Exact<String> tenant, Integrity integrity, Sensitivity sensitivity) {}
+   *
+   * Lattice<Labels> LATTICE =
+   *     Lattices.product(
+   *         Labels::new,
+   *         Lattices.axis(Labels::tenant, Lattices.exact()),
+   *         Lattices.axis(Labels::integrity, Integrity.LATTICE),
+   *         Lattices.axis(Labels::sensitivity, Sensitivity.LATTICE));
+   * }</pre>
+   *
+   * <p>The product of lattices is a lattice and its join is componentwise, so this satisfies the
+   * laws whenever each axis does -- which means an application that composes its label this way
+   * never writes a join at all.
+   *
+   * <p>That matters more than the saved lines. A hand-written product join is mechanical and
+   * security-relevant at the same time: forgetting to join one axis leaves that axis taking the
+   * left-hand value, which is not a merge, and the TCK only notices if the samples happen to differ
+   * on exactly that axis. Here the compiler will not let an axis go missing, because the
+   * constructor has as many arguments as there are axes.
+   */
+  public static <A, T1, T2> Lattice<A> product(
+      Of2<T1, T2, A> build, Axis<A, T1> a1, Axis<A, T2> a2) {
+    return new Lattice<>() {
+      @Override
+      public A join(A left, A right) {
+        return build.build(a1.join(left, right), a2.join(left, right));
+      }
+
+      @Override
+      public A bottom() {
+        return build.build(a1.lattice().bottom(), a2.lattice().bottom());
+      }
+    };
+  }
+
+  /** A label made of three independent axes. */
+  public static <A, T1, T2, T3> Lattice<A> product(
+      Of3<T1, T2, T3, A> build, Axis<A, T1> a1, Axis<A, T2> a2, Axis<A, T3> a3) {
+    return new Lattice<>() {
+      @Override
+      public A join(A left, A right) {
+        return build.build(a1.join(left, right), a2.join(left, right), a3.join(left, right));
+      }
+
+      @Override
+      public A bottom() {
+        return build.build(a1.lattice().bottom(), a2.lattice().bottom(), a3.lattice().bottom());
+      }
+    };
+  }
+
+  /** A label made of four independent axes. */
+  public static <A, T1, T2, T3, T4> Lattice<A> product(
+      Of4<T1, T2, T3, T4, A> build,
+      Axis<A, T1> a1,
+      Axis<A, T2> a2,
+      Axis<A, T3> a3,
+      Axis<A, T4> a4) {
+    return new Lattice<>() {
+      @Override
+      public A join(A left, A right) {
+        return build.build(
+            a1.join(left, right), a2.join(left, right), a3.join(left, right), a4.join(left, right));
+      }
+
+      @Override
+      public A bottom() {
+        return build.build(
+            a1.lattice().bottom(),
+            a2.lattice().bottom(),
+            a3.lattice().bottom(),
+            a4.lattice().bottom());
+      }
+    };
+  }
+
+  /** A label made of five independent axes. */
+  public static <A, T1, T2, T3, T4, T5> Lattice<A> product(
+      Of5<T1, T2, T3, T4, T5, A> build,
+      Axis<A, T1> a1,
+      Axis<A, T2> a2,
+      Axis<A, T3> a3,
+      Axis<A, T4> a4,
+      Axis<A, T5> a5) {
+    return new Lattice<>() {
+      @Override
+      public A join(A left, A right) {
+        return build.build(
+            a1.join(left, right),
+            a2.join(left, right),
+            a3.join(left, right),
+            a4.join(left, right),
+            a5.join(left, right));
+      }
+
+      @Override
+      public A bottom() {
+        return build.build(
+            a1.lattice().bottom(),
+            a2.lattice().bottom(),
+            a3.lattice().bottom(),
+            a4.lattice().bottom(),
+            a5.lattice().bottom());
+      }
+    };
+  }
+
+  /**
    * Agree or become unusable: see {@link Exact}.
    *
    * <p>{@code None} joined with anything is that thing; two different values are a {@code

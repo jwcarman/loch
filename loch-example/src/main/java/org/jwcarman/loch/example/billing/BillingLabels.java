@@ -28,42 +28,40 @@ import org.jwcarman.loch.lattice.Lattices;
  */
 public record BillingLabels(Exact<String> tenant, Integrity integrity, Sensitivity sensitivity) {
 
-  /** Has something we already trust agreed with this? That is the whole of it. */
+  /**
+   * Has something we already trust agreed with this? That is the whole of it.
+   *
+   * <p>Each axis owns its own order, named where the constants are, so nothing elsewhere has to
+   * remember it.
+   */
   public enum Integrity {
     ENDORSED,
-    UNENDORSED
+    UNENDORSED;
+
+    public static final Lattice<Integrity> LATTICE = Lattices.ladder(ENDORSED, UNENDORSED);
   }
 
   public enum Sensitivity {
     ORDINARY,
     PERSONAL,
-    CARDHOLDER
+    CARDHOLDER;
+
+    public static final Lattice<Sensitivity> LATTICE =
+        Lattices.ladder(ORDINARY, PERSONAL, CARDHOLDER);
   }
 
-  private static final Lattice<Exact<String>> TENANT = Lattices.exact();
-
-  // The order is said here, at the wiring, not inferred from the order of the constants above.
-  private static final Lattice<Integrity> INTEGRITY =
-      Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED);
-  private static final Lattice<Sensitivity> SENSITIVITY =
-      Lattices.ladder(Sensitivity.ORDINARY, Sensitivity.PERSONAL, Sensitivity.CARDHOLDER);
-
-  /** Componentwise. The TCK proves it, so nobody has to review it by eye. */
+  /**
+   * The three axes, joined one axis at a time.
+   *
+   * <p>No join is written here. The product of lattices is a lattice, so composing them is enough,
+   * and an axis cannot go missing: the constructor takes as many arguments as there are axes.
+   */
   public static final Lattice<BillingLabels> LATTICE =
-      new Lattice<>() {
-        @Override
-        public BillingLabels join(BillingLabels left, BillingLabels right) {
-          return new BillingLabels(
-              TENANT.join(left.tenant(), right.tenant()),
-              INTEGRITY.join(left.integrity(), right.integrity()),
-              SENSITIVITY.join(left.sensitivity(), right.sensitivity()));
-        }
-
-        @Override
-        public BillingLabels bottom() {
-          return new BillingLabels(TENANT.bottom(), INTEGRITY.bottom(), SENSITIVITY.bottom());
-        }
-      };
+      Lattices.product(
+          BillingLabels::new,
+          Lattices.axis(BillingLabels::tenant, Lattices.exact()),
+          Lattices.axis(BillingLabels::integrity, Integrity.LATTICE),
+          Lattices.axis(BillingLabels::sensitivity, Sensitivity.LATTICE));
 
   public static BillingLabels of(String tenant, Integrity integrity, Sensitivity sensitivity) {
     return new BillingLabels(Exact.of(tenant), integrity, sensitivity);
