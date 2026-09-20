@@ -196,9 +196,20 @@ codebase, and annoying safety features get routed around. So say once where the 
 ```
 
 A `ThreadLocal`, a `ScopedValue`, Spring's holders — Loch has no opinion about how your request
-scope works, and an application with no notion of identity says nothing and gets an empty context. A
-caller with something to add (a purpose, which tool is running) adds it rather than replacing
-everything, and wins where both speak about the same key.
+scope works, and an application with no notion of identity says nothing and gets an empty context.
+
+**Ambient wins, always, and a caller may only contribute keys you declared.** If a call site could
+override what the edge established, any code holding a loch could name itself whichever tenant it
+liked and the gate would agree — which is not a policy system, it is a formality. What a caller
+legitimately has is something the edge does not know, such as the purpose of an operation:
+
+```java
+.callerMayContribute("purpose", "tool")   // empty by default; never list an identity key
+```
+
+Anything else a caller says is ignored. A destination id is not a key to anything: it names *where*
+a value is going, and the ceiling attached to it — evaluated against an identity the caller does not
+control — is what decides.
 
 ## What it will allow, in one printout
 

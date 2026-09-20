@@ -135,11 +135,22 @@ class BillingScenarioTest {
 
   private final Auditors.Recording audit = Auditors.recording();
 
+  /**
+   * Standing in for the edge: a request, a message header, a session.
+   *
+   * <p>The tests set this rather than passing identity into calls, because a caller cannot be
+   * allowed to say who it is. That is not a testing detail; it is the property that makes any of
+   * the rest of this mean anything.
+   */
+  private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
+      new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
+
   private final Loch<Billing> loch =
       MemoryLoch.create(
           c ->
               c.lattice(Billing.LATTICE)
                   .auditor(audit)
+                  .askingWhoIsAsking(edge::get)
                   // A vendor's model: nothing personal, nothing unendorsed.
                   .destination(
                       tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
@@ -178,8 +189,9 @@ class BillingScenarioTest {
                               Last4.class,
                               token -> new Last4(token.substring(token.length() - 4)))
                           .accepting(
-                              Billing.ceilingFor(
-                                  acme(), Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+                              ctx ->
+                                  Billing.ceilingFor(
+                                      ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
                           // Both dimensions, deliberately: four digits are neither cardholder
                           // data nor RED any more, and saying so is the reviewed act.
                           .lowering(
@@ -243,13 +255,15 @@ class BillingScenarioTest {
   static final DerivationId<DisputeClaim, InvoiceNumber> WISHFUL =
       DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
 
-  /** Every access in this system is made on behalf of a tenant. */
-  private static AccessContext acme() {
-    return AccessContext.of("tenant", "acme");
+  /** Every access in this system is made on behalf of a tenant, established at the edge. */
+  private AccessContext acme() {
+    edge.set(AccessContext.of("tenant", "acme"));
+    return AccessContext.empty();
   }
 
-  private static AccessContext acme(String key, String value) {
-    return AccessContext.of(java.util.Map.of("tenant", "acme", key, value));
+  private AccessContext acme(String key, String value) {
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", key, value)));
+    return AccessContext.empty();
   }
 
   // ---------------------------------------------------------------- the scenario
@@ -610,7 +624,7 @@ class BillingScenarioTest {
     }
 
     private AccessContext preparingApproval() {
-      return AccessContext.of(java.util.Map.of("tenant", "acme", "tool", "prepare_approval"));
+      return acme("tool", "prepare_approval");
     }
 
     @Test
@@ -738,12 +752,14 @@ class BillingScenarioTest {
               c ->
                   c.lattice(Billing.LATTICE)
                       .withoutAudit()
+                      .askingWhoIsAsking(edge::get)
                       .check(
                           Check.<Billing, Account, String>of(
                                   OWNED_BY, Account.class, (account, sender) -> true)
                               .accepting(
-                                  Billing.ceilingFor(
-                                      acme(), Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
+                                  ctx ->
+                                      Billing.ceilingFor(
+                                          ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
                               .build()));
       Held<Account> secret =
           choosy.hold(
@@ -788,6 +804,7 @@ class BillingScenarioTest {
               c ->
                   c.lattice(Billing.LATTICE)
                       .withoutAudit()
+                      .askingWhoIsAsking(edge::get)
                       .explainRefusals()
                       .destination(
                           tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
@@ -812,6 +829,7 @@ class BillingScenarioTest {
               c ->
                   c.lattice(Billing.LATTICE)
                       .withoutAudit()
+                      .askingWhoIsAsking(edge::get)
                       .destination(
                           Destinations.varying(
                               broken,
@@ -890,10 +908,7 @@ class BillingScenarioTest {
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
-      loch.derive(
-          token,
-          CARD_LAST4,
-          AccessContext.of(java.util.Map.of("tenant", "acme", "tool", "prepare_approval")));
+      loch.derive(token, CARD_LAST4, acme("tool", "prepare_approval"));
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.reason()).hasValueSatisfying(r -> assertThat(r).startsWith("weakened from"));
@@ -922,6 +937,7 @@ class BillingScenarioTest {
           MemoryLoch.create(
               c ->
                   c.lattice(Billing.LATTICE)
+                      .askingWhoIsAsking(edge::get)
                       .auditor(
                           record -> {
                             throw new IllegalStateException("the audit sink is down");

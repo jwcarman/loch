@@ -121,8 +121,13 @@ class JdbcLochTest {
   private DataSource dataSource;
   private Loch<Billing> loch;
 
-  private static AccessContext acme() {
-    return AccessContext.of("tenant", "acme");
+  /** Standing in for the edge. A caller is not allowed to say who it is. */
+  private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
+      new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
+
+  private AccessContext acme() {
+    edge.set(AccessContext.of("tenant", "acme"));
+    return AccessContext.empty();
   }
 
   private static Billing ceiling(AccessContext ctx, Integrity integrity, DataClass dataClass) {
@@ -163,6 +168,7 @@ class JdbcLochTest {
                                             new JceDataKeyProvider("k1", Map.of("k1", kek)))
                                         .build())))
                     .lattice(Billing.LATTICE)
+                    .askingWhoIsAsking(edge::get)
                     .auditor(Auditors.discarding())
                     .destination(
                         Destinations.varying(
@@ -285,10 +291,7 @@ class JdbcLochTest {
   void another_tenants_access_is_refused() {
     Held<Card> card = card();
 
-    assertThat(
-            loch.dereference(card, PAYMENT_PROCESSOR, AccessContext.of("tenant", "globex"))
-                .allowed())
-        .isFalse();
+    assertThat(dereferenceAs("globex", card)).isFalse();
   }
 
   @Test
@@ -306,6 +309,12 @@ class JdbcLochTest {
                                 .withoutAudit())))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("storedPlainly");
+  }
+
+  /** A different tenant, established at the edge rather than claimed by the caller. */
+  private boolean dereferenceAs(String tenant, Held<Card> card) {
+    edge.set(AccessContext.of("tenant", tenant));
+    return loch.dereference(card, PAYMENT_PROCESSOR).allowed();
   }
 
   private int rowCount(String table) throws SQLException {

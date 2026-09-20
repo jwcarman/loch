@@ -42,6 +42,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final boolean explainRefusals;
   private final Auditor auditor;
   private final java.util.function.Supplier<AccessContext> ambient;
+  private final java.util.Set<String> callerMayContribute;
   private final Storage<A> storage;
 
   public DefaultLoch(LochConfig<A> config, Storage<A> storage) {
@@ -80,6 +81,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     this.explainRefusals = config.explainsRefusals();
     this.auditor = config.auditor();
     this.ambient = config.ambient();
+    this.callerMayContribute = config.callerMayContribute();
   }
 
   /**
@@ -102,7 +104,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    * <p>Resolved once per operation, because an ambient source may be doing real work to answer.
    */
   private AccessContext asking(AccessContext explicit) {
-    return explicit.over(ambient.get());
+    return explicit.contributedTo(ambient.get(), callerMayContribute);
   }
 
   /**

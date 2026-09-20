@@ -33,6 +33,7 @@ public class LochConfig<A> {
   private boolean explainRefusals;
   private Auditor auditor;
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
+  private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Check<A, ?, ?>> checks = new ArrayList<>();
@@ -141,6 +142,25 @@ public class LochConfig<A> {
   public LochConfig<A> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
     this.ambient = Objects.requireNonNull(ambient, "an ambient context source must not be null");
     return this;
+  }
+
+  /**
+   * The context keys a call site may contribute, on top of what the edge established.
+   *
+   * <p>Empty by default, deliberately. Anything a caller says about who it is would otherwise be
+   * taken at its word, and code holding a loch could name itself whichever tenant or role it
+   * pleased. Identity comes from {@link #askingWhoIsAsking}; a caller contributes only what the
+   * edge could not know, such as the purpose of an operation.
+   *
+   * <p>Never list an identity key here.
+   */
+  public LochConfig<A> callerMayContribute(String... keys) {
+    this.callerMayContribute = java.util.Set.of(keys);
+    return this;
+  }
+
+  java.util.Set<String> callerMayContribute() {
+    return callerMayContribute;
   }
 
   java.util.function.Supplier<AccessContext> ambient() {

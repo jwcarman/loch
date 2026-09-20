@@ -58,25 +58,31 @@ public record AccessContext(Map<String, String> attributes) {
   }
 
   /**
-   * This context laid over another, so ambient facts and call-site facts combine.
+   * The ambient facts, plus whichever of these a caller is permitted to contribute.
    *
-   * <p>Whoever is asking is usually known far from the call: a tenant and a principal come from a
-   * request, a session or a message header, and threading them through every layer to reach a
-   * {@code dereference} is the kind of plumbing that makes a safety feature something people route
-   * around. So a loch resolves the ambient context itself, and a call that has something to add --
-   * a purpose, which tool is running -- adds it rather than replacing everything.
+   * <p><b>Ambient wins, always.</b> Identity is established at the edge -- a request, a message, a
+   * session -- and a call site is not entitled to revise it. If a caller could override what the
+   * edge asserted, then any code holding a loch could name itself whichever tenant it liked and the
+   * gate would agree, which is not a policy system, it is a formality.
    *
-   * <p>This one wins where both say something about the same key.
+   * <p>What a caller legitimately has is something the edge does not know: the purpose of this
+   * operation, which tool is running. So it may <i>add</i> keys, and only keys the application
+   * declared it may add. Everything else it says is ignored rather than refused, because a caller
+   * naming something it should not is a bug in the caller, not an attack the gate should fail over.
+   *
+   * @param permitted the keys a caller is allowed to contribute at all
    */
-  public AccessContext over(AccessContext ambient) {
-    if (ambient.attributes().isEmpty()) {
-      return this;
-    }
-    if (attributes.isEmpty()) {
+  AccessContext contributedTo(AccessContext ambient, java.util.Set<String> permitted) {
+    if (attributes.isEmpty() || permitted.isEmpty()) {
       return ambient;
     }
     Map<String, String> combined = new java.util.LinkedHashMap<>(ambient.attributes());
-    combined.putAll(attributes);
+    attributes.forEach(
+        (key, value) -> {
+          if (permitted.contains(key)) {
+            combined.putIfAbsent(key, value);
+          }
+        });
     return new AccessContext(combined);
   }
 

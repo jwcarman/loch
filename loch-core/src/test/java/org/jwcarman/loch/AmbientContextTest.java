@@ -17,7 +17,6 @@ package org.jwcarman.loch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -85,6 +84,7 @@ class AmbientContextTest {
                 c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
                     .withoutAudit()
                     .askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
+                    .callerMayContribute("purpose")
                     .destination(
                         Destinations.varying(
                             CARD,
@@ -101,15 +101,61 @@ class AmbientContextTest {
         .containsEntry("purpose", "refund");
   }
 
+  /** A call site is not entitled to revise what the edge established about who is asking. */
   @Test
-  @DisplayName("and the caller wins where both say something about the same thing")
-  void the_caller_wins_on_a_conflict() {
-    AccessContext ambient = AccessContext.of(Map.of("tenant", "acme", "clearance", "support"));
-    AccessContext explicit = AccessContext.of("clearance", "finance");
+  @DisplayName("but a caller cannot promote itself by claiming a better clearance")
+  void a_caller_cannot_promote_itself() {
+    currentUser.set("support");
+    AtomicReference<AccessContext> seen = new AtomicReference<>();
+    Loch<Clearance> watching =
+        MemoryLoch.create(
+            c ->
+                c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
+                    .withoutAudit()
+                    .askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
+                    .callerMayContribute("purpose", "clearance")
+                    .destination(
+                        Destinations.varying(
+                            CARD,
+                            ctx -> {
+                              seen.set(ctx);
+                              return ctx.has("clearance", "finance")
+                                  ? Clearance.FINANCE
+                                  : Clearance.NONE;
+                            })));
+    Held<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
 
-    assertThat(explicit.over(ambient).attributes())
-        .containsEntry("tenant", "acme")
-        .containsEntry("clearance", "finance");
+    var claimed = watching.dereference(value, CARD, AccessContext.of("clearance", "finance"));
+
+    assertThat(seen.get().attributes()).containsEntry("clearance", "support");
+    assertThat(claimed.allowed()).isFalse();
+  }
+
+  /** And a key the application never allowed is ignored entirely. */
+  @Test
+  @DisplayName("a caller contributing an undeclared key is ignored")
+  void an_undeclared_key_is_ignored() {
+    AtomicReference<AccessContext> seen = new AtomicReference<>();
+    Loch<Clearance> watching =
+        MemoryLoch.create(
+            c ->
+                c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
+                    .withoutAudit()
+                    .askingWhoIsAsking(AccessContext::empty)
+                    .destination(
+                        Destinations.varying(
+                            CARD,
+                            ctx -> {
+                              seen.set(ctx);
+                              return Clearance.FINANCE;
+                            })));
+
+    watching.dereference(
+        watching.hold("x", String.class, Clearance.NONE),
+        CARD,
+        AccessContext.of("tenant", "whatever-i-like"));
+
+    assertThat(seen.get().attributes()).isEmpty();
   }
 
   @Test
