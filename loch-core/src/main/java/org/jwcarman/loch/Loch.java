@@ -58,6 +58,17 @@ public interface Loch<A> {
    */
   A attribution(Held<?> held);
 
+  /**
+   * Removes a value and everything ever derived from it.
+   *
+   * <p>"Erase this customer" is a reachability question rather than a cascade anyone designs, which
+   * is what lineage buys. A derived value is made of its parents, so leaving descendants behind
+   * would leave the data that was asked to be gone.
+   *
+   * @return how many values were removed, the root included
+   */
+  int erase(Held<?> root);
+
   /** Whether the loch is holding this at all. */
   boolean holds(Held<?> held);
 

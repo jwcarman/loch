@@ -27,7 +27,7 @@ import org.jwcarman.loch.lattice.Lattice;
  * permitted underneath values already stored, and a destination supplied at a call site would let
  * any code invent its own permission.
  */
-public final class LochConfig<A> {
+public class LochConfig<A> {
 
   private Lattice<A> lattice;
   private boolean explainRefusals;

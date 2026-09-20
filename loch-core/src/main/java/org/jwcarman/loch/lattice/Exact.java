@@ -22,69 +22,69 @@ import java.util.Optional;
  * domain.
  *
  * <p>Some labels do not form a ladder. Joining tenant A with tenant B does not give a "more
- * restricted tenant" — it gives something that belongs to two customers at once and may go nowhere.
- * The literature calls this an exact-match dimension; the draft spec called it "reject the
- * derivation".
+ * restricted tenant" -- it gives something that belongs to two customers at once and may go
+ * nowhere.
  *
- * <p><b>Refusing is not how it works, though.</b> A join that can fail would make the whole algebra
- * partial, and a derivation that throws tells you at the wrong moment — while combining, rather
- * than when someone tries to use the result. So the conflict is a *value*: {@link Conflict} is the
- * top of this lattice, no ceiling admits it, and the combined value exists with honest lineage to
- * both parents while being incapable of reaching any destination.
+ * <p><b>Refusing is not how it works.</b> A join that can fail would make the whole algebra
+ * partial, and a derivation that throws tells you at the wrong moment -- while combining, rather
+ * than when someone tries to use the result. So the conflict is a <i>value</i>: it is the top of
+ * this lattice, no ceiling admits it, and the combined value exists with honest lineage to both
+ * parents while being incapable of reaching any destination.
  *
  * <p>That is the design's sharpest claim made real. Cross-tenant leakage is not forbidden by a rule
  * someone remembered to write; the value that would carry it is simply unusable.
  *
  * <p><b>A trap worth knowing about before you hit it.</b> There is no ceiling meaning "any single
  * tenant, but not a mixture". That set is not of the form {@code {x : x ⊑ c}} for any {@code c} --
- * the only {@code c} above every {@code One} is {@link Conflict} itself, and a ceiling of {@code
- * Conflict} admits conflicts too, which is the opposite of what anyone wants. So a destination must
- * not hold an exact dimension constant. It takes the value from the access: this request is on
- * behalf of <i>acme</i>, so acme's data passes, another tenant's does not, and a mixture does not
- * either. With nothing named the ceiling is {@link None} and only unattributed values pass, which
- * is the fail-closed answer.
+ * the only {@code c} above every value is the conflict itself, and a ceiling of conflict admits
+ * conflicts too, which is the opposite of what anyone wants. So a destination must not hold an
+ * exact dimension constant. It takes the value from the access: this request is on behalf of
+ * <i>acme</i>, so acme's data passes, another tenant's does not, and a mixture does not either.
+ * With nothing named the ceiling is {@link #none()} and only unattributed values pass, which is the
+ * fail-closed answer.
  *
- * @param <T> the underlying label, which must have value semantics
+ * <p><b>A record rather than a sealed hierarchy, on purpose.</b> Labels are stored, which means
+ * they go through whatever codec an application uses. A sealed interface needs polymorphic type
+ * information that every codec has to be told about separately, and this module depends on nothing
+ * and so cannot annotate itself for any of them. Two plain components round-trip everywhere without
+ * configuration, and that is worth more here than exhaustive pattern matching.
+ *
+ * @param value the one agreed value, or null when nothing has been said or two things disagreed
+ * @param conflicted whether two different values were joined
  */
-public sealed interface Exact<T> {
+public record Exact<T>(T value, boolean conflicted) {
 
-  /** Nothing has been said. The identity for joining, and the bottom of this lattice. */
-  record None<T>() implements Exact<T> {}
-
-  /** Exactly one value, and everything joined with it so far agreed. */
-  record One<T>(T value) implements Exact<T> {
-    public One {
-      if (value == null) {
-        throw new IllegalArgumentException("an exact label needs a value; use None instead");
-      }
+  public Exact {
+    if (conflicted && value != null) {
+      throw new IllegalArgumentException("a conflict has no value; two of them disagreed");
     }
   }
 
-  /** Two values disagreed. The top: permitted by nothing, forever. */
-  record Conflict<T>() implements Exact<T> {}
-
-  /** Nothing said. */
-  static <T> Exact<T> none() {
-    return new None<>();
+  /** Nothing said. The identity for joining, and the bottom of this lattice. */
+  public static <T> Exact<T> none() {
+    return new Exact<>(null, false);
   }
 
   /** This value, and only this value. */
-  static <T> Exact<T> of(T value) {
-    return new One<>(value);
+  public static <T> Exact<T> of(T value) {
+    if (value == null) {
+      throw new IllegalArgumentException("an exact label needs a value; use none() instead");
+    }
+    return new Exact<>(value, false);
   }
 
-  /** Irreconcilable. */
-  static <T> Exact<T> conflict() {
-    return new Conflict<>();
+  /** Irreconcilable, forever. The top: permitted by nothing. */
+  public static <T> Exact<T> conflict() {
+    return new Exact<>(null, true);
   }
 
   /** The value, when there is exactly one; empty when nothing was said or two things disagreed. */
-  default Optional<T> resolved() {
-    return this instanceof One<T> one ? Optional.of(one.value()) : Optional.empty();
+  public Optional<T> resolved() {
+    return Optional.ofNullable(value);
   }
 
-  /** Whether two values disagreed, which is a thing worth reporting in a refusal. */
-  default boolean conflicted() {
-    return this instanceof Conflict<T>;
+  /** Whether nothing has been said yet. */
+  public boolean empty() {
+    return value == null && !conflicted;
   }
 }

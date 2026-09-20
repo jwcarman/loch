@@ -135,13 +135,13 @@ public final class Lattices {
     return new Lattice<>() {
       @Override
       public Exact<T> join(Exact<T> left, Exact<T> right) {
-        if (left instanceof Exact.Conflict<T> || right instanceof Exact.Conflict<T>) {
+        if (left.conflicted() || right.conflicted()) {
           return Exact.conflict();
         }
-        if (left instanceof Exact.None<T>) {
+        if (left.empty()) {
           return right;
         }
-        if (right instanceof Exact.None<T>) {
+        if (right.empty()) {
           return left;
         }
         return left.equals(right) ? left : Exact.conflict();

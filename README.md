@@ -90,6 +90,36 @@ So you say the order where a reviewer will see it, and every constant must appea
 Lattices.ladder(PUBLIC, INTERNAL, CONFIDENTIAL, SECRET)   // or Lattices.ranked(..., Impact::level)
 ```
 
+## Durable, encrypted, and erasable
+
+`loch-jdbc` keeps values in Postgres with every payload envelope-encrypted — a fresh data key per
+value, wrapped by a key named by id, so rotating keys means adding one rather than rewriting a
+table. It contains no cryptography of its own: protection is a `Codec<byte[]>` appended to whatever
+codec serialises the value.
+
+```java
+Loch<Billing> loch = JdbcLoch.create(Billing.class, c -> c
+    .dataSource(dataSource)
+    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+    .protectedBy(EnvelopeCodec.builder(new JceDataKeyProvider("k1", keys)).build())
+    .lattice(BILLING)
+    .auditor(auditSink)
+    .destination(...));
+```
+
+**The label is encrypted too.** A tenant's name or a project codeword sitting in the clear beside
+the ciphertext describes what the ciphertext is to anyone who can read the table.
+
+**Erasure is a reachability query.** Lineage is kept as values are derived, so "erase this customer"
+removes the value and everything ever made from it in one indexed statement. Lineage is a DAG rather
+than a tree — a value can have several parents — so this is a closure table rather than a
+materialised path, whose rows would multiply at every merge.
+
+Anything Loch stores must round-trip through your codec, which is why its own label types are plain
+records rather than sealed hierarchies: a sealed type needs polymorphic type information that every
+codec has to be told about separately, and `loch-core` depends on nothing and so cannot annotate
+itself for any of them.
+
 ## Every access leaves a record
 
 ```java
