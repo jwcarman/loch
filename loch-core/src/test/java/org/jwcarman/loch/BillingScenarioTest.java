@@ -197,6 +197,13 @@ class BillingScenarioTest {
                               InvoiceNumber.class,
                               claim -> new InvoiceNumber(claim.invoiceNumber()))
                           .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
+                          .build())
+                  // The whole account never leaves the loch to answer one question about it.
+                  .check(
+                      Check.<Billing, Account, String>of(
+                              OWNED_BY,
+                              Account.class,
+                              (account, sender) -> account.email().equalsIgnoreCase(sender))
                           .build()));
 
   record DisputeClaim(String invoiceNumber, String reason) {}
@@ -210,6 +217,11 @@ class BillingScenarioTest {
   static final DerivationId<String, Last4> CARD_LAST4 = DerivationId.of("Card.last4");
   static final DerivationId<String, Last4> CARD_LAST4_PARTIAL =
       DerivationId.of("Card.last4.dataClassOnly");
+
+  record Account(String number, String email) {}
+
+  static final CheckId<Account, String> OWNED_BY = CheckId.of("Account.ownedBy");
+
   static final DerivationId<DisputeClaim, InvoiceNumber> WISHFUL =
       DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
 
@@ -564,6 +576,128 @@ class BillingScenarioTest {
       assertThat(loch.manifest()).isNotEmpty();
       assertThat(loch.manifest()).anySatisfy(line -> assertThat(line).contains("Card.last4"));
       assertThat(loch.manifest()).noneSatisfy(line -> assertThat(line).contains("invoiceNumber\""));
+    }
+  }
+
+  @Nested
+  @DisplayName("asking instead of taking")
+  class Checks {
+
+    private Held<Account> account() {
+      return loch.hold(
+          new Account("ACC-1", "someone@acme.example"),
+          Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+    }
+
+    @Test
+    @DisplayName("answers the question without the account ever leaving")
+    void answers_without_the_account_leaving() {
+      Held<Account> account = account();
+
+      assertThat(loch.check(account, OWNED_BY, "someone@acme.example").isTrue()).isTrue();
+      assertThat(loch.check(account, OWNED_BY, "attacker@elsewhere.example").isFalse()).isTrue();
+    }
+
+    /** A refusal is not a "no". Collapsing them is how a denied check reads as a failed one. */
+    @Test
+    @DisplayName("a refusal is neither true nor false")
+    void a_refusal_is_neither_true_nor_false() {
+      CheckId<Account, String> invented = CheckId.of("whatever");
+
+      Answer answer = loch.check(account(), invented, "x");
+
+      assertThat(answer.isTrue()).isFalse();
+      assertThat(answer.isFalse()).isFalse();
+      assertThat(answer.ran()).isFalse();
+    }
+
+    @Test
+    @DisplayName("refuses to look at a value it was never meant to see")
+    void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
+      Loch<Billing> choosy =
+          MemoryLoch.create(
+              c ->
+                  c.lattice(Billing.LATTICE)
+                      .check(
+                          Check.<Billing, Account, String>of(
+                                  OWNED_BY, Account.class, (account, sender) -> true)
+                              .accepting(
+                                  Billing.ceilingFor(
+                                      acme(), Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
+                              .build()));
+      Held<Account> secret =
+          choosy.hold(
+              new Account("ACC-2", "x@y.example"),
+              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+
+      assertThat(choosy.check(secret, OWNED_BY, "x@y.example", acme()))
+          .isInstanceOfSatisfying(
+              Answer.Refused.class,
+              refused -> assertThat(refused.reason()).isEqualTo(Answer.Reason.ABOVE_CEILING));
+    }
+  }
+
+  @Nested
+  @DisplayName("not leaking by accident")
+  class NotLeaking {
+
+    @Test
+    @DisplayName("an allowed result does not print the value it is carrying")
+    void an_allowed_result_does_not_print_the_value() {
+      Dereferenced<String> allowed = loch.dereference(customerEmail(), QUARANTINED_LLM, acme());
+
+      assertThat(allowed.allowed()).isTrue();
+      assertThat(allowed.toString()).doesNotContain("123-45-6789");
+    }
+
+    @Test
+    @DisplayName("a refusal names the destination but not the labels")
+    void a_refusal_names_the_destination_but_not_the_labels() {
+      Dereferenced<String> denied = loch.dereference(customerEmail(), VENDOR_LLM, acme());
+
+      String detail = ((Dereferenced.Denied<String>) denied).detail();
+      assertThat(detail).contains("vendor-llm").doesNotContain("acme").doesNotContain("PII");
+    }
+
+    @Test
+    @DisplayName("unless the application asks for the explanation")
+    void unless_the_application_asks_for_the_explanation() {
+      Loch<Billing> chatty =
+          MemoryLoch.create(
+              c ->
+                  c.lattice(Billing.LATTICE)
+                      .explainRefusals()
+                      .destination(
+                          tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
+      Held<String> held =
+          chatty.hold("x", Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+
+      Dereferenced<String> denied = chatty.dereference(held, VENDOR_LLM, acme());
+
+      assertThat(((Dereferenced.Denied<String>) denied).detail()).contains("PII");
+    }
+
+    /** A policy that cannot be evaluated has not said yes. */
+    @Test
+    @DisplayName("a destination whose ceiling throws denies, rather than exploding")
+    void a_destination_whose_ceiling_throws_denies() {
+      DestinationId broken = DestinationId.of("broken");
+      Loch<Billing> fragile =
+          MemoryLoch.create(
+              c ->
+                  c.lattice(Billing.LATTICE)
+                      .destination(
+                          Destinations.varying(
+                              broken,
+                              ctx -> {
+                                throw new IllegalStateException("policy service is down");
+                              })));
+      Held<String> held =
+          fragile.hold("x", Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+
+      Dereferenced<String> result = fragile.dereference(held, broken, acme());
+
+      assertThat(result.allowed()).isFalse();
     }
   }
 }

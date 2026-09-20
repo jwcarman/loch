@@ -30,8 +30,10 @@ import org.jwcarman.loch.lattice.Lattice;
 public final class LochConfig<A> {
 
   private Lattice<A> lattice;
+  private boolean explainRefusals;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
+  private final List<Check<A, ?, ?>> checks = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
   public LochConfig<A> lattice(Lattice<A> lattice) {
@@ -56,8 +58,34 @@ public final class LochConfig<A> {
     return this;
   }
 
+  /** A question that can be asked of a held value without the value leaving. */
+  public LochConfig<A> check(Check<A, ?, ?> check) {
+    checks.add(Objects.requireNonNull(check, "a check must not be null"));
+    return this;
+  }
+
+  List<Check<A, ?, ?>> checks() {
+    return List.copyOf(checks);
+  }
+
   List<Derivation<A, ?, ?>> derivations() {
     return List.copyOf(derivations);
+  }
+
+  /**
+   * Includes labels and ceilings in refusal messages.
+   *
+   * <p>Off by default, because a label can itself be sensitive -- a tenant's name in a refusal
+   * shown to a different tenant is a leak, and refusal text has a way of reaching places the value
+   * never would. On for development, where the alternative is guessing.
+   */
+  public LochConfig<A> explainRefusals() {
+    this.explainRefusals = true;
+    return this;
+  }
+
+  boolean explainsRefusals() {
+    return explainRefusals;
   }
 
   Lattice<A> lattice() {

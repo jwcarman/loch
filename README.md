@@ -90,11 +90,62 @@ So you say the order where a reviewer will see it, and every constant must appea
 Lattices.ladder(PUBLIC, INTERNAL, CONFIDENTIAL, SECRET)   // or Lattices.ranked(..., Impact::level)
 ```
 
+## Where this sits in the literature
+
+The algebra is **Denning's lattice model** (1976), used the way Denning stated it — parametric over
+the lattice, so its theorems hold for whichever one you supply. Integrity as the dual of
+confidentiality is **Biba** (1977); orienting every lattice so that *up means more constrained* is
+what lets one `join` serve both. Weakening a label is **declassification** and **endorsement** from
+the **Decentralized Label Model** (Myers & Liskov, 1997) — the same move in opposite dimensions,
+which is why there is one `lowering(...)` rather than two services.
+
+The Java language that does this properly is **Jif** (Myers, originally JFlow, POPL 1999), with
+**Paragon** and **JOANA** nearby. Jif puts the label in the *type*, checks statically across the
+whole program, and proves non-interference — including **implicit flows**, the control-flow leaks
+that dynamic systems miss:
+
+```java
+if (secret) { publicFlag = 1; }   // leaks a bit without ever assigning secret
+```
+
+**Loch cannot see that, and makes no non-interference claim.** Its real ancestry is dynamic: Perl's
+taint mode, PCI tokenization vaults, and — for the agent case — the dual-LLM pattern and CaMeL.
+
+The reason to be dynamic here is not that it is easier. Static IFC assumes you can see the program,
+and in an agentic system part of the program *is a language model* whose control flow is chosen at
+runtime from text. **You cannot type-check a prompt.** Where Jif's technique is available it is
+stronger; at this boundary it is not available at all.
+
+Jif is also a cautionary tale about cost. It is excellent work that saw almost no industrial use —
+annotation burden, whole-program analysis, a compiler fork. A weaker guarantee people deploy beats a
+stronger one nobody adopts, which is why the design target here is that an application writes almost
+nothing.
+
+If your organisation already classifies data — **Microsoft Purview sensitivity labels**, say, which
+are ordered by priority and therefore already a ladder — that taxonomy is the lattice. Loch ships no
+mandatory vocabulary precisely so it can take yours.
+
 ## What it does not do
 
+**Implicit flows.** A tool that dereferences a secret and branches on it leaks through its own
+behaviour, invisibly. This is what a static type system buys and a runtime gate cannot.
+
 **Anything after a value is handed back.** That code holds a `String` and can send it anywhere. No
-Java library can follow it without bytecode instrumentation. The mitigation is to prefer narrow
-operations that answer questions without surrendering values.
+Java library can follow it without bytecode instrumentation. The mitigation is a `Check`, which
+answers a question inside the store so the value never leaves:
+
+```java
+Account account = loch.dereference(handle, SOMEWHERE).orThrow();   // Loch loses sight of it
+boolean ok = loch.check(handle, OWNED_BY, sender).isTrue();        // never leaves
+```
+
+The design target is that most callers never dereference anything.
+
+**Protect what you never handed it.** Loch only knows about values you `hold`. Perl's taint mode
+taints everything arriving from outside; here the discipline depends on minting handles at the
+boundary where data enters — the mail listener, the webhook, the tool that just queried a system of
+record. Data folded into your application as plain text before anyone decided to protect it is
+beyond reach.
 
 **Tell you your rules are right.** It can prove they're applied consistently, not that they're the
 rules you needed.

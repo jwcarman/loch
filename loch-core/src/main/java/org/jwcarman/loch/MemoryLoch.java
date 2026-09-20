@@ -34,6 +34,11 @@ import org.jwcarman.loch.lattice.Lattice;
  *
  * <p>What it does do is enforce the gate exactly as a durable implementation must, which is what
  * makes it useful for proving a policy before deploying it.
+ *
+ * <p><b>It stores references, not copies.</b> A durable implementation serialises on the way in and
+ * hands back a fresh object every time; this one does not, so a caller that mutates a value after
+ * holding it changes what was stored, and a caller that mutates what it dereferenced changes what
+ * everyone else sees. Hold immutable values and the difference never shows.
  */
 public final class MemoryLoch<A> implements Loch<A> {
 
@@ -42,6 +47,8 @@ public final class MemoryLoch<A> implements Loch<A> {
   private final Lattice<A> lattice;
   private final Map<DestinationId, Destination<A>> destinations;
   private final Map<String, Derivation<A, ?, ?>> derivations;
+  private final Map<String, Check<A, ?, ?>> checks;
+  private final boolean explainRefusals;
   private final Map<HeldId, Entry<A>> entries = new ConcurrentHashMap<>();
 
   private MemoryLoch(LochConfig<A> config) {
@@ -62,6 +69,33 @@ public final class MemoryLoch<A> implements Loch<A> {
       }
     }
     this.derivations = Map.copyOf(new HashMap<>(byName));
+    Map<String, Check<A, ?, ?>> byCheck = new LinkedHashMap<>();
+    for (Check<A, ?, ?> check : config.checks()) {
+      if (byCheck.put(check.id().value(), check) != null) {
+        throw new IllegalStateException("two checks are registered as '" + check.id() + "'");
+      }
+    }
+    this.checks = Map.copyOf(new HashMap<>(byCheck));
+    this.explainRefusals = config.explainsRefusals();
+  }
+
+  /**
+   * A ceiling is application code, and application code throws.
+   *
+   * <p>Treated as a refusal rather than allowed to propagate: a policy that cannot be evaluated has
+   * not said yes, and a caller assembling a prompt should get a handle rather than a stack trace.
+   */
+  private A ceilingOf(Destination<A> destination, AccessContext context) {
+    try {
+      return destination.ceiling(context);
+    } catch (RuntimeException e) {
+      return null;
+    }
+  }
+
+  /** What a refusal is allowed to say about labels, which by default is nothing. */
+  private String explain(A label, Object ceiling) {
+    return explainRefusals ? " (labelled " + label + "; accepts " + ceiling + ")" : "";
   }
 
   /** Builds one. The customizer is where the lattice and the destinations are declared. */
@@ -100,6 +134,44 @@ public final class MemoryLoch<A> implements Loch<A> {
   @Override
   public boolean holds(Held<?> held) {
     return entries.containsKey(held.id());
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
+  public <I, Q> Answer check(Held<I> held, CheckId<I, Q> id, Q question, AccessContext context) {
+    Check<A, I, Q> check = (Check<A, I, Q>) checks.get(id.value());
+    if (check == null) {
+      return new Answer.Refused(
+          Answer.Reason.NO_SUCH_CHECK, "no check is registered as '" + id + "'");
+    }
+    if (!check.availableTo(context)) {
+      return new Answer.Refused(
+          Answer.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
+    }
+    Entry<A> entry = entries.get(held.id());
+    if (entry == null) {
+      return new Answer.Refused(
+          Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
+    }
+    if (!check.inputType().isAssignableFrom(entry.type())) {
+      return new Answer.Refused(
+          Answer.Reason.WRONG_TYPE,
+          "'%s' asks about a %s, but %s is a %s"
+              .formatted(
+                  id, check.inputType().getSimpleName(), held.id(), entry.type().getSimpleName()));
+    }
+    Optional<A> ceiling = check.ceiling();
+    if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
+      return new Answer.Refused(
+          Answer.Reason.ABOVE_CEILING,
+          held.id()
+              + " may not be looked at by '"
+              + id
+              + "'"
+              + explain(entry.attribution(), ceiling.get()));
+    }
+    return new Answer.Answered(
+        check.test(check.inputType().cast(entry.value()), question, context));
   }
 
   @Override
@@ -218,11 +290,16 @@ public final class MemoryLoch<A> implements Loch<A> {
               + ", not a "
               + held.type().getSimpleName());
     }
-    A ceiling = destination.ceiling(context);
+    A ceiling = ceilingOf(destination, context);
+    if (ceiling == null) {
+      return new Dereferenced.Denied<>(
+          Dereferenced.Reason.ABOVE_CEILING,
+          "'" + to + "' could not say what it accepts, so it does not accept this");
+    }
     if (!lattice.permits(entry.attribution(), ceiling)) {
       return new Dereferenced.Denied<>(
           Dereferenced.Reason.ABOVE_CEILING,
-          held.id() + " is labelled " + entry.attribution() + "; '" + to + "' accepts " + ceiling);
+          held.id() + " may not reach '" + to + "'" + explain(entry.attribution(), ceiling));
     }
     return new Dereferenced.Allowed<>(held.type().cast(entry.value()));
   }

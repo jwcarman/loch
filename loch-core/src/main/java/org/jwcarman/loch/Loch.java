@@ -36,6 +36,13 @@ public interface Loch<A> {
   /**
    * Takes custody of a value, under the labels the caller asserts.
    *
+   * <p><b>Hold immutable values.</b> A loch stores what it is given. If the caller keeps a
+   * reference to a mutable object and changes it afterwards, the stored value changes underneath a
+   * label that was chosen for what it used to be -- and every check and derivation since was
+   * answering about different content. Records and strings are safe; a mutable bean is not. A
+   * durable loch serialises on the way in and is immune to this, which makes it a hazard of the
+   * in-memory one specifically, and therefore of tests rather than production.
+   *
    * <p>The caller is trusted application code at a boundary -- a mail listener, a tool that has
    * just queried a system of record -- so it is entitled to say what it is bringing in. This is the
    * only place labels are asserted rather than computed; everywhere else they are derived, and
@@ -70,6 +77,21 @@ public interface Loch<A> {
   /** For derivations that do not care who is asking, which is most of them. */
   default <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation) {
     return derive(parent, derivation, AccessContext.empty());
+  }
+
+  /**
+   * Asks a registered question about a held value, without the value being handed over.
+   *
+   * <p>The way to avoid dereferencing. A check runs inside the store, sees the plaintext, and
+   * returns a boolean, so the caller learns the one bit it needed and the value never enters code
+   * that could keep it. Prefer this to {@link #dereference} wherever a question is what you
+   * actually have.
+   */
+  <I, Q> Answer check(Held<I> held, CheckId<I, Q> check, Q question, AccessContext context);
+
+  /** For checks that do not care who is asking. */
+  default <I, Q> Answer check(Held<I> held, CheckId<I, Q> check, Q question) {
+    return check(held, check, question, AccessContext.empty());
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */

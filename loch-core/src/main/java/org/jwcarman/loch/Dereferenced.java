@@ -28,7 +28,20 @@ import java.util.Optional;
 public sealed interface Dereferenced<T> {
 
   /** The value, because the gate allowed it. */
-  record Allowed<T>(T value) implements Dereferenced<T> {}
+  record Allowed<T>(T value) implements Dereferenced<T> {
+
+    /**
+     * Says nothing about the value.
+     *
+     * <p>A record's generated {@code toString} would print it, and this object is exactly the sort
+     * of thing that ends up in a log line or an exception message by accident. Getting the value
+     * out should require asking for it.
+     */
+    @Override
+    public String toString() {
+      return "Allowed[value=<held>]";
+    }
+  }
 
   /** No value, and why. */
   record Denied<T>(Reason reason, String detail) implements Dereferenced<T> {}
