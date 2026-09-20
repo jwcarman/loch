@@ -581,16 +581,25 @@ class BillingScenarioTest {
       assertThat(loch.lineage(parent).asserted()).isTrue();
     }
 
-    /** Repeating deterministic work reuses what it made rather than storing a second copy. */
+    /**
+     * Every derivation makes a new value, and that is the whole rule.
+     *
+     * <p>There used to be deduplication here: a derivation that declared itself deterministic was
+     * keyed on its parents and reused. It went, because the function sees the access context and
+     * the key did not, so a second caller was handed the first caller's answer without the function
+     * ever running -- across tenants. Saving a row was not worth a rule with an exception in it.
+     */
     @Test
-    @DisplayName("a deterministic derivation gives the same handle every time")
-    void a_deterministic_derivation_gives_the_same_handle() {
+    @DisplayName("deriving twice makes two values, and each caller gets its own answer")
+    void deriving_twice_makes_two_values() {
       Held<DisputeClaim> parent = claim();
 
       Held<InvoiceNumber> once = loch.derive(parent, CLAIMED_INVOICE).orThrow();
       Held<InvoiceNumber> twice = loch.derive(parent, CLAIMED_INVOICE).orThrow();
 
-      assertThat(once.id()).isEqualTo(twice.id());
+      assertThat(once.id()).isNotEqualTo(twice.id());
+      assertThat(loch.lineage(once).parents()).containsExactly(parent.id());
+      assertThat(loch.lineage(twice).parents()).containsExactly(parent.id());
     }
 
     @Test

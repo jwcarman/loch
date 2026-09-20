@@ -50,11 +50,6 @@ public interface Fold<A, I, O> {
   /** Produces the new value, or declines. Receives plaintext, in the order it was given. */
   Optional<O> apply(List<I> inputs, AccessContext context);
 
-  /** See {@link Derivation#deterministic()}. The content address covers all parents, in order. */
-  boolean deterministic();
-
-  int version();
-
   /** The most constrained parent this will accept. Checked against each. */
   /**
    * The most constrained value this will look at, for this particular access.
@@ -100,8 +95,6 @@ public interface Fold<A, I, O> {
     private final TypeRef<I> inputType;
     private final TypeRef<O> outputType;
     private final Folding<I, O> function;
-    private boolean deterministic = true;
-    private int version = 1;
     private java.util.function.Function<AccessContext, A> ceiling;
     private UnaryOperator<A> relabel;
     private Predicate<AccessContext> availableTo = context -> true;
@@ -112,16 +105,6 @@ public interface Fold<A, I, O> {
       this.inputType = inputType;
       this.outputType = outputType;
       this.function = function;
-    }
-
-    public Builder<A, I, O> nondeterministic() {
-      this.deterministic = false;
-      return this;
-    }
-
-    public Builder<A, I, O> version(int version) {
-      this.version = version;
-      return this;
     }
 
     /** Accepts the same thing regardless of who is asking. */
@@ -150,8 +133,6 @@ public interface Fold<A, I, O> {
       java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       UnaryOperator<A> theRelabel = relabel;
       Predicate<AccessContext> theAvailability = availableTo;
-      boolean isDeterministic = deterministic;
-      int theVersion = version;
       return new Fold<>() {
         @Override
         public FoldId<I, O> id() {
@@ -171,16 +152,6 @@ public interface Fold<A, I, O> {
         @Override
         public Optional<O> apply(List<I> inputs, AccessContext context) {
           return function.apply(inputs, context);
-        }
-
-        @Override
-        public boolean deterministic() {
-          return isDeterministic;
-        }
-
-        @Override
-        public int version() {
-          return theVersion;
         }
 
         @Override

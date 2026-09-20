@@ -31,17 +31,8 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 public interface Storage<A> {
 
-  /**
-   * Keeps a value.
-   *
-   * @param dedupeKey recognises a deterministic derivation that may be repeated; empty for a value
-   *     that was held directly or derived by something not reproducible. It is an index, never an
-   *     identifier: see {@code DedupeKey}.
-   */
-  void put(HeldId id, StoredValue<A> value, Optional<String> dedupeKey);
-
-  /** The value an earlier run of the same deterministic work produced, if there was one. */
-  Optional<HeldId> findByDedupeKey(String dedupeKey);
+  /** Keeps a value. */
+  void put(HeldId id, StoredValue<A> value);
 
   /** The label, the lineage and what it was stored as -- without decoding the value. */
   Optional<StoredMetadata<A>> metadata(HeldId id);

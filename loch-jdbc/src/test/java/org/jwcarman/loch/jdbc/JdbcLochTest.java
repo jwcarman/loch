@@ -250,15 +250,15 @@ class JdbcLochTest {
   }
 
   @Test
-  @DisplayName("deriving the same thing twice stores it once")
-  void deriving_twice_stores_once() throws SQLException {
+  @DisplayName("deriving the same thing twice stores it twice, and says so")
+  void deriving_twice_stores_twice() throws SQLException {
     Held<Card> card = card();
 
     Held<Last4> once = loch.derive(card, CARD_LAST4, acme()).orThrow();
     Held<Last4> twice = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
-    assertThat(once.id()).isEqualTo(twice.id());
-    assertThat(rowCount("loch_value")).isEqualTo(2);
+    assertThat(once.id()).isNotEqualTo(twice.id());
+    assertThat(rowCount("loch_value")).isEqualTo(3);
   }
 
   /** Erasure is a reachability query, which is what the closure table is for. */

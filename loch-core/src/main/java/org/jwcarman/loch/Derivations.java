@@ -32,9 +32,6 @@ public final class Derivations {
    *
    * <p>The overwhelming majority. Pulling a field out of a record, formatting, normalising. Safe by
    * construction, so it needs no ceremony and no evidence.
-   *
-   * @param deterministic true when the same input always gives the same output, which makes the
-   *     derived handle content-addressed and therefore replay-safe
    */
   public static <A, I, O> Builder<A, I, O> of(
       DerivationId<I, O> id, Class<I> inputType, Class<O> outputType, Function<I, O> function) {
@@ -64,8 +61,6 @@ public final class Derivations {
     private final TypeRef<I> inputType;
     private final TypeRef<O> outputType;
     private final BiFunction<I, AccessContext, Optional<O>> function;
-    private boolean deterministic = true;
-    private int version = 1;
     private java.util.function.Function<AccessContext, A> ceiling;
     private UnaryOperator<A> relabel;
     private Predicate<AccessContext> availableTo = context -> true;
@@ -79,23 +74,6 @@ public final class Derivations {
       this.inputType = inputType;
       this.outputType = outputType;
       this.function = function;
-    }
-
-    /**
-     * Says this cannot be reproduced -- a model call, a lookup, anything reading the world.
-     *
-     * <p>Such a derivation gets a fresh handle each run rather than a content-addressed one, and is
-     * therefore not replay-safe.
-     */
-    public Builder<A, I, O> nondeterministic() {
-      this.deterministic = false;
-      return this;
-    }
-
-    /** Bump when the implementation changes, so old handles are not silently reinterpreted. */
-    public Builder<A, I, O> version(int version) {
-      this.version = version;
-      return this;
     }
 
     /** The most constrained parent this will accept. */
@@ -132,8 +110,6 @@ public final class Derivations {
       java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       UnaryOperator<A> theRelabel = relabel;
       Predicate<AccessContext> theAvailability = availableTo;
-      boolean isDeterministic = deterministic;
-      int theVersion = version;
       return new Derivation<>() {
         @Override
         public DerivationId<I, O> id() {
@@ -153,16 +129,6 @@ public final class Derivations {
         @Override
         public Optional<O> apply(I input, AccessContext context) {
           return function.apply(input, context);
-        }
-
-        @Override
-        public boolean deterministic() {
-          return isDeterministic;
-        }
-
-        @Override
-        public int version() {
-          return theVersion;
         }
 
         @Override

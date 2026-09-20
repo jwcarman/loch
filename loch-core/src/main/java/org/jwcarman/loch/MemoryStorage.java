@@ -40,17 +40,10 @@ import org.jwcarman.codec.spi.TypeRef;
 public final class MemoryStorage<A> implements Storage<A> {
 
   private final Map<HeldId, StoredValue<A>> values = new ConcurrentHashMap<>();
-  private final Map<String, HeldId> byDedupeKey = new ConcurrentHashMap<>();
 
   @Override
-  public void put(HeldId id, StoredValue<A> value, Optional<String> dedupeKey) {
+  public void put(HeldId id, StoredValue<A> value) {
     values.put(id, value);
-    dedupeKey.ifPresent(key -> byDedupeKey.putIfAbsent(key, id));
-  }
-
-  @Override
-  public Optional<HeldId> findByDedupeKey(String dedupeKey) {
-    return Optional.ofNullable(byDedupeKey.get(dedupeKey));
   }
 
   @Override
@@ -97,7 +90,6 @@ public final class MemoryStorage<A> implements Storage<A> {
         removed++;
       }
     }
-    byDedupeKey.values().removeIf(doomed::contains);
     return removed;
   }
 }

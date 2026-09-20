@@ -42,28 +42,6 @@ public interface Derivation<A, I, O> {
   Optional<O> apply(I input, AccessContext context);
 
   /**
-   * Whether the same inputs always give the same output.
-   *
-   * <p>This decides how the derived value is named, and it matters more than it looks. A
-   * deterministic derivation is content-addressed -- its id is a hash of its parents, its name and
-   * its version -- so running it twice yields the same handle. Anything that replays work (an agent
-   * re-running a turn, a retried job) depends on that: a fresh id each time would leave the first
-   * run's handle referring to a value nothing else agrees with.
-   *
-   * <p>A model call or a database lookup is not reproducible, so it gets a fresh id and is simply
-   * not replay-safe, which is a fact about the world rather than something to paper over.
-   */
-  boolean deterministic();
-
-  /**
-   * Bumped when the implementation changes.
-   *
-   * <p>Part of the content address, so changing what a derivation does gives new handles rather
-   * than silently reinterpreting values already derived under the old behaviour.
-   */
-  int version();
-
-  /**
    * The most constrained parent this will accept, if it is choosy.
    *
    * <p>A derivation receives plaintext, so it is a destination. Empty means it accepts whatever the

@@ -167,7 +167,7 @@ public final class DefaultLoch<A> implements Loch<A> {
               + " particular'");
     }
     HeldId id = HeldId.fresh();
-    storage.put(id, new StoredValue<>(value, type, attribution, Lineage.held()), Optional.empty());
+    storage.put(id, new StoredValue<>(value, type, attribution, Lineage.held()));
     audit(
         AuditRecord.Operation.HOLD,
         id,
@@ -290,13 +290,10 @@ public final class DefaultLoch<A> implements Loch<A> {
             theDerivations.add(
                 new Manifest.Entry(
                     name,
-                    "%s -> %s, %s"
+                    "%s -> %s"
                         .formatted(
                             derivation.inputType().rawClass().getSimpleName(),
-                            derivation.outputType().rawClass().getSimpleName(),
-                            derivation.deterministic()
-                                ? "deterministic v" + derivation.version()
-                                : "not replay-safe"),
+                            derivation.outputType().rawClass().getSimpleName()),
                     derivation.privileged())));
     List<Manifest.Entry> theChecks = new ArrayList<>();
     checks.forEach(
@@ -364,17 +361,6 @@ public final class DefaultLoch<A> implements Loch<A> {
       joined = joined == null ? entry.attribution() : lattice.join(joined, entry.attribution());
     }
 
-    // Already done? Reuse it rather than storing a second copy of the same thing.
-    Optional<Held<O>> alreadyDone =
-        fold.deterministic()
-            ? storage
-                .findByDedupeKey(DedupeKey.of(parentIds, id.value(), fold.version()))
-                .map(existing -> new Held<>(existing, fold.outputType()))
-            : Optional.empty();
-    if (alreadyDone.isPresent()) {
-      return new Derived.Made<>(alreadyDone.get());
-    }
-
     Optional<O> produced = fold.apply(List.copyOf(inputs), context);
     if (produced.isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
@@ -391,16 +377,11 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
 
-    Optional<String> dedupeKey =
-        fold.deterministic()
-            ? Optional.of(DedupeKey.of(parentIds, id.value(), fold.version()))
-            : Optional.<String>empty();
     HeldId newId = HeldId.fresh();
     storage.put(
         newId,
         new StoredValue<>(
-            produced.get(), fold.outputType(), label, Lineage.derivedFrom(parentIds, id.value())),
-        dedupeKey);
+            produced.get(), fold.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
     audit(
         AuditRecord.Operation.DERIVE,
         newId,
@@ -446,15 +427,6 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     List<HeldId> parents = List.of(parent.id());
-    // Already done? Reuse it rather than storing a second copy of the same thing.
-    if (derivation.deterministic()) {
-      Optional<HeldId> existing =
-          storage.findByDedupeKey(DedupeKey.of(parents, id.value(), derivation.version()));
-      if (existing.isPresent()) {
-        return new Derived.Made<>(new Held<>(existing.get(), derivation.outputType()));
-      }
-    }
-
     I input = storage.value(parent.id(), derivation.inputType()).orElse(null);
     if (input == null) {
       return new Derived.Refused<>(
@@ -479,10 +451,6 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
 
-    Optional<String> dedupeKey =
-        derivation.deterministic()
-            ? Optional.of(DedupeKey.of(parents, id.value(), derivation.version()))
-            : Optional.empty();
     HeldId newId = HeldId.fresh();
     storage.put(
         newId,
@@ -490,8 +458,7 @@ public final class DefaultLoch<A> implements Loch<A> {
             produced.get(),
             derivation.outputType(),
             label,
-            Lineage.derivedFrom(parents, id.value())),
-        dedupeKey);
+            Lineage.derivedFrom(parents, id.value())));
     audit(
         AuditRecord.Operation.DERIVE,
         newId,

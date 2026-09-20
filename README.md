@@ -164,12 +164,11 @@ compress-then-encrypt leaks most.
 **Decompression is bounded.** `CompressionStreamCodec` caps the decoded size, so a corrupt or
 malicious row cannot expand into an out-of-memory error.
 
-**Repeating deterministic work does not store it twice.** A derivation that is reproducible gets a
-deduplication key alongside its value, so deriving the same thing again finds what was made before.
-That is deduplication and nothing grander: storage is durable, so a re-run would otherwise simply
-write a duplicate, which is wasted space rather than a correctness problem. The key is an index and
-never an identifier — a key computed from its inputs is computable by anyone who knows them, and
-handles stay random so that holding one is something you were *given*.
+**Every derivation makes a new value.** There is no deduplication and no "deterministic" flag. An
+earlier version keyed reproducible derivations on their parents and reused the result — and since a
+derivation function sees the access context while the key did not, a second caller was handed the
+first caller's answer without the function running at all, across tenants. Saving a row was not
+worth a rule with an exception in it.
 
 **Erasure is a reachability query.** Lineage is kept as values are derived, so erasing a value takes
 everything ever made from it in one indexed statement. Lineage is a DAG rather than a tree, so this

@@ -60,13 +60,9 @@ public final class JdbcStorage<A> implements Storage<A> {
 
   private static final String INSERT_VALUE =
       """
-      INSERT INTO loch_value
-        (value_id, value_type, payload, attribution, derivation, dedupe_key, held_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT DO NOTHING
+      INSERT INTO loch_value (value_id, value_type, payload, attribution, derivation, held_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       """;
-  private static final String SELECT_BY_DEDUPE_KEY =
-      "SELECT value_id FROM loch_value WHERE dedupe_key = ?";
   private static final String SELECT_METADATA =
       "SELECT value_type, attribution, derivation FROM loch_value WHERE value_id = ?";
   private static final String SELECT_PAYLOAD = "SELECT payload FROM loch_value WHERE value_id = ?";
@@ -133,12 +129,12 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public void put(HeldId id, StoredValue<A> value, Optional<String> dedupeKey) {
+  public void put(HeldId id, StoredValue<A> value) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
       try {
-        insertValue(connection, id, value, dedupeKey);
+        insertValue(connection, id, value);
         insertLineage(connection, id, value.lineage());
         connection.commit();
       } catch (SQLException | RuntimeException e) {
@@ -152,8 +148,7 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private void insertValue(
-      Connection connection, HeldId id, StoredValue<A> value, Optional<String> dedupeKey)
+  private void insertValue(Connection connection, HeldId id, StoredValue<A> value)
       throws SQLException {
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id.value());
@@ -161,8 +156,7 @@ public final class JdbcStorage<A> implements Storage<A> {
       statement.setBytes(3, encode(value.type(), value.value()));
       statement.setBytes(4, attributions.encode(value.attribution()));
       statement.setString(5, value.lineage().derivation().orElse(null));
-      statement.setString(6, dedupeKey.orElse(null));
-      statement.setTimestamp(7, Timestamp.from(Instant.now()));
+      statement.setTimestamp(6, Timestamp.from(Instant.now()));
       statement.executeUpdate();
     }
   }
@@ -187,19 +181,6 @@ public final class JdbcStorage<A> implements Storage<A> {
         closure.setString(2, parents.get(i).value());
         closure.executeUpdate();
       }
-    }
-  }
-
-  @Override
-  public Optional<HeldId> findByDedupeKey(String dedupeKey) {
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement = connection.prepareStatement(SELECT_BY_DEDUPE_KEY)) {
-      statement.setString(1, dedupeKey);
-      try (ResultSet rows = statement.executeQuery()) {
-        return rows.next() ? Optional.of(new HeldId(rows.getString("value_id"))) : Optional.empty();
-      }
-    } catch (SQLException e) {
-      throw new IllegalStateException("could not look for earlier work", e);
     }
   }
 

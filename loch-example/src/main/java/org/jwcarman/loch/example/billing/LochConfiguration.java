@@ -109,7 +109,6 @@ public class LochConfiguration {
                             Domain.Mail.class,
                             Domain.Invoice.class,
                             (mail, ctx) -> confirm(invoices, mail, ctx))
-                        .nondeterministic()
                         .lowering(joined -> joined.withIntegrity(ENDORSED))
                         .build())
 
