@@ -16,8 +16,12 @@
 package org.jwcarman.loch.lattice;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.ToIntFunction;
 
 /**
  * The lattices most labels turn out to be, so that defining one is a line rather than a puzzle.
@@ -31,27 +35,87 @@ public final class Lattices {
   private Lattices() {}
 
   /**
-   * A ladder, ordered by the order the constants are declared in.
+   * A ladder, listed least-constrained first.
    *
-   * <p><b>Declare least-constrained first.</b> {@code PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED}
-   * and {@code ENDORSED, UNENDORSED} are both right, because in each the last constant is the one
-   * that may go fewest places. Declaring an enum the other way round produces a lattice that
-   * type-checks, passes every law, and permits exactly what it should refuse — which is the most
-   * dangerous mistake available here and the reason this reads its order from the declaration
-   * rather than from a name or an annotation someone might disagree with.
+   * <pre>{@code
+   * Lattices.ladder(PUBLIC, INTERNAL, CONFIDENTIAL, SECRET)
+   * }</pre>
    *
-   * <p>The bottom is the first constant.
+   * <p><b>There is deliberately no version of this that reads {@code Enum::ordinal}.</b>
+   * Declaration order is a terrible place to keep a security-relevant contract: someone sorts a
+   * list of constants alphabetically in an unrelated tidy-up, every test still passes, and the gate
+   * now permits the exact opposite of what it should. Nothing about the enum declaration says "the
+   * order of these lines is load-bearing", so nothing stops it. Saying the order here, at the
+   * wiring site, is the whole point -- it is the line a reviewer reads and a diff shows.
+   *
+   * <p>Every constant of the enum must appear exactly once, which is checked: an omitted constant
+   * would otherwise have no rung and no honest answer at the gate.
+   *
+   * @param leastConstrainedFirst the rungs, in order; the first is the bottom
    */
-  public static <E extends Enum<E>> Lattice<E> ordinal(Class<E> type) {
+  @SafeVarargs
+  public static <E extends Enum<E>> Lattice<E> ladder(E... leastConstrainedFirst) {
+    if (leastConstrainedFirst == null || leastConstrainedFirst.length == 0) {
+      throw new IllegalArgumentException("a ladder needs at least one rung");
+    }
+    Map<E, Integer> rungs = new HashMap<>();
+    for (int i = 0; i < leastConstrainedFirst.length; i++) {
+      E constant = Objects.requireNonNull(leastConstrainedFirst[i], "a rung must not be null");
+      if (rungs.put(constant, i) != null) {
+        throw new IllegalArgumentException(constant + " appears twice in the ladder");
+      }
+    }
+    E[] declared = leastConstrainedFirst[0].getDeclaringClass().getEnumConstants();
+    for (E constant : declared) {
+      if (!rungs.containsKey(constant)) {
+        throw new IllegalArgumentException(
+            constant
+                + " is missing from the ladder; every constant needs a rung, or the gate has no"
+                + " honest answer for it");
+      }
+    }
+    return ranked(rungs::get, leastConstrainedFirst[0]);
+  }
+
+  /**
+   * A ladder ordered by a rank the label already carries.
+   *
+   * <p>For domains that come with their own numbering -- FIPS 199 impact levels, a clearance grade,
+   * anything where the rung is data rather than a position in a list. Higher is more constrained.
+   * Gaps and negatives are fine; ties are not, because two constants sharing a rung would make
+   * {@code join} depend on argument order and quietly break commutativity.
+   *
+   * @param type the enum whose constants are the rungs
+   * @param rank higher means more constrained
+   */
+  public static <E extends Enum<E>> Lattice<E> ranked(Class<E> type, ToIntFunction<E> rank) {
     E[] constants = type.getEnumConstants();
     if (constants == null || constants.length == 0) {
       throw new IllegalArgumentException(type.getName() + " has no constants to order");
     }
-    E bottom = constants[0];
+    Map<Integer, E> seen = new HashMap<>();
+    E bottom = null;
+    for (E constant : constants) {
+      int rung = rank.applyAsInt(constant);
+      E clash = seen.put(rung, constant);
+      if (clash != null) {
+        throw new IllegalArgumentException(
+            "%s and %s are both ranked %d; ranks must be distinct, or joining them would depend on"
+                    .formatted(clash, constant, rung)
+                + " which came first");
+      }
+      if (bottom == null || rung < rank.applyAsInt(bottom)) {
+        bottom = constant;
+      }
+    }
+    return ranked(rank::applyAsInt, bottom);
+  }
+
+  private static <E> Lattice<E> ranked(java.util.function.Function<E, Integer> rank, E bottom) {
     return new Lattice<>() {
       @Override
       public E join(E left, E right) {
-        return left.ordinal() >= right.ordinal() ? left : right;
+        return rank.apply(left) >= rank.apply(right) ? left : right;
       }
 
       @Override

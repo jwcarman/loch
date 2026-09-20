@@ -46,7 +46,7 @@ class LatticesTest {
 
     @Override
     protected Lattice<Tlp> lattice() {
-      return Lattices.ordinal(Tlp.class);
+      return Lattices.ladder(Tlp.CLEAR, Tlp.GREEN, Tlp.AMBER, Tlp.RED);
     }
 
     @Override
@@ -57,7 +57,7 @@ class LatticesTest {
     @Test
     @DisplayName("takes the more constrained of the two")
     void takes_the_more_constrained() {
-      Lattice<Tlp> tlp = Lattices.ordinal(Tlp.class);
+      Lattice<Tlp> tlp = Lattices.ladder(Tlp.CLEAR, Tlp.GREEN, Tlp.AMBER, Tlp.RED);
       assertThat(tlp.join(Tlp.CLEAR, Tlp.AMBER)).isEqualTo(Tlp.AMBER);
       assertThat(tlp.bottom()).isEqualTo(Tlp.CLEAR);
     }
@@ -65,7 +65,7 @@ class LatticesTest {
     @Test
     @DisplayName("a value may reach a ceiling at or above it, and no further")
     void a_value_may_reach_a_ceiling_at_or_above_it() {
-      Lattice<Tlp> tlp = Lattices.ordinal(Tlp.class);
+      Lattice<Tlp> tlp = Lattices.ladder(Tlp.CLEAR, Tlp.GREEN, Tlp.AMBER, Tlp.RED);
       assertThat(tlp.permits(Tlp.GREEN, Tlp.RED)).isTrue();
       assertThat(tlp.permits(Tlp.RED, Tlp.GREEN)).isFalse();
     }
@@ -74,7 +74,7 @@ class LatticesTest {
     @Test
     @DisplayName("an unendorsed value cannot reach a ceiling that wants endorsement")
     void unendorsed_cannot_reach_an_endorsed_ceiling() {
-      Lattice<Integrity> integrity = Lattices.ordinal(Integrity.class);
+      Lattice<Integrity> integrity = Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED);
       assertThat(integrity.permits(Integrity.UNENDORSED, Integrity.ENDORSED)).isFalse();
       assertThat(integrity.permits(Integrity.ENDORSED, Integrity.UNENDORSED)).isTrue();
     }
@@ -82,11 +82,90 @@ class LatticesTest {
     @Test
     @DisplayName("an enum with no constants is refused, because it has no bottom")
     void an_enum_with_no_constants_is_refused() {
-      assertThatThrownBy(() -> Lattices.ordinal(Empty.class))
+      assertThatThrownBy(() -> Lattices.ranked(Empty.class, Enum::ordinal))
           .isInstanceOf(IllegalArgumentException.class);
     }
 
     enum Empty {}
+  }
+
+  @Nested
+  @DisplayName("a ladder whose order is said out loud")
+  class Ranked extends LatticeTck<Classification> {
+
+    @Override
+    protected Lattice<Classification> lattice() {
+      return Lattices.ranked(Classification.class, Classification::rung);
+    }
+
+    @Override
+    protected List<Classification> samples() {
+      return List.of(Classification.values());
+    }
+
+    /**
+     * The hazard this whole API shape exists to prevent.
+     *
+     * <p>These constants are alphabetical, which is the sort of tidy-up nobody thinks twice about.
+     * Read as declaration order it makes CONFIDENTIAL the least constrained thing in the system,
+     * and confidential data sails through a ceiling that accepts only public data. There is
+     * deliberately no factory that would do this, so the closest we can get is to show what the
+     * ranks actually are.
+     */
+    @Test
+    @DisplayName("declaration order is nothing like the real order here")
+    void declaration_order_is_nothing_like_the_real_order() {
+      assertThat(Classification.CONFIDENTIAL.ordinal()).isZero();
+      assertThat(Classification.PUBLIC.ordinal()).isEqualTo(2);
+      assertThat(Classification.PUBLIC.rung()).isLessThan(Classification.CONFIDENTIAL.rung());
+    }
+
+    @Test
+    @DisplayName("an explicit rank gets it right, whatever the constants are reordered to")
+    void an_explicit_rank_gets_it_right() {
+      Lattice<Classification> byRung = Lattices.ranked(Classification.class, Classification::rung);
+
+      assertThat(byRung.bottom()).isEqualTo(Classification.PUBLIC);
+      assertThat(byRung.permits(Classification.CONFIDENTIAL, Classification.PUBLIC)).isFalse();
+      assertThat(byRung.permits(Classification.SECRET, Classification.PUBLIC)).isFalse();
+      assertThat(byRung.permits(Classification.PUBLIC, Classification.SECRET)).isTrue();
+      assertThat(byRung.join(Classification.INTERNAL, Classification.SECRET))
+          .isEqualTo(Classification.SECRET);
+    }
+
+    @Test
+    @DisplayName("gaps in the ranks are fine")
+    void gaps_in_the_ranks_are_fine() {
+      assertThat(Lattices.ranked(Classification.class, Classification::rung).bottom())
+          .isEqualTo(Classification.PUBLIC);
+    }
+
+    @Test
+    @DisplayName(
+        "two constants on the same rung are refused, because joining them would not commute")
+    void two_constants_on_the_same_rung_are_refused() {
+      assertThatThrownBy(() -> Lattices.ranked(Classification.class, c -> 1))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("distinct");
+    }
+  }
+
+  /** Deliberately alphabetical, to show why the rung is written down. */
+  enum Classification {
+    CONFIDENTIAL(20),
+    INTERNAL(10),
+    PUBLIC(0),
+    SECRET(30);
+
+    private final int rung;
+
+    Classification(int rung) {
+      this.rung = rung;
+    }
+
+    int rung() {
+      return rung;
+    }
   }
 
   @Nested

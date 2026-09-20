@@ -70,9 +70,24 @@ equality doesn't fail loudly — it silently permits everything, or silently per
 
 ```java
 class ClearanceLatticeTest extends LatticeTck<Clearance> {
-  protected Lattice<Clearance> lattice() { return Lattices.ordinal(Clearance.class); }
+  protected Lattice<Clearance> lattice() {
+    return Lattices.ladder(PUBLIC, EMPLOYEE, MANAGEMENT, EXECUTIVE);
+  }
   protected List<Clearance> samples() { return List.of(Clearance.values()); }
 }
+```
+
+## No footguns in the ordering
+
+There is deliberately **no** factory that reads `Enum::ordinal`. Declaration order is a terrible
+place to keep a security-relevant contract: someone sorts a list of constants alphabetically in an
+unrelated tidy-up, every test still passes, and the gate now permits the opposite of what it should.
+Nothing about an enum declaration says "the order of these lines is load-bearing".
+
+So you say the order where a reviewer will see it, and every constant must appear:
+
+```java
+Lattices.ladder(PUBLIC, INTERNAL, CONFIDENTIAL, SECRET)   // or Lattices.ranked(..., Impact::level)
 ```
 
 ## What it does not do

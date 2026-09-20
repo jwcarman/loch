@@ -58,9 +58,11 @@ class BillingScenarioTest {
   record Billing(Exact<String> tenant, Integrity integrity, Tlp tlp, DataClass dataClass) {
 
     static final Lattice<Exact<String>> TENANT = Lattices.exact();
-    static final Lattice<Integrity> INTEGRITY = Lattices.ordinal(Integrity.class);
-    static final Lattice<Tlp> TLP = Lattices.ordinal(Tlp.class);
-    static final Lattice<DataClass> DATA_CLASS = Lattices.ordinal(DataClass.class);
+    static final Lattice<Integrity> INTEGRITY =
+        Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED);
+    static final Lattice<Tlp> TLP = Lattices.ladder(Tlp.CLEAR, Tlp.GREEN, Tlp.AMBER, Tlp.RED);
+    static final Lattice<DataClass> DATA_CLASS =
+        Lattices.ladder(DataClass.NONE, DataClass.PII, DataClass.CARDHOLDER);
 
     /** The componentwise join. Twelve lines, and the TCK proves it. */
     static final Lattice<Billing> LATTICE =

@@ -37,12 +37,12 @@ import java.util.Optional;
  *
  * <p><b>A trap worth knowing about before you hit it.</b> There is no ceiling meaning "any single
  * tenant, but not a mixture". That set is not of the form {@code {x : x ⊑ c}} for any {@code c} --
- * the only {@code c} above every {@code One} is {@link Conflict} itself, and a ceiling of
- * {@code Conflict} admits conflicts too, which is the opposite of what anyone wants. So a
- * destination must not hold an exact dimension constant. It takes the value from the access: this
- * request is on behalf of <i>acme</i>, so acme's data passes, another tenant's does not, and a
- * mixture does not either. With nothing named the ceiling is {@link None} and only unattributed
- * values pass, which is the fail-closed answer.
+ * the only {@code c} above every {@code One} is {@link Conflict} itself, and a ceiling of {@code
+ * Conflict} admits conflicts too, which is the opposite of what anyone wants. So a destination must
+ * not hold an exact dimension constant. It takes the value from the access: this request is on
+ * behalf of <i>acme</i>, so acme's data passes, another tenant's does not, and a mixture does not
+ * either. With nothing named the ceiling is {@link None} and only unattributed values pass, which
+ * is the fail-closed answer.
  *
  * @param <T> the underlying label, which must have value semantics
  */

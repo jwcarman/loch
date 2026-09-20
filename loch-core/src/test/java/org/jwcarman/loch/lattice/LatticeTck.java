@@ -30,7 +30,9 @@ import org.junit.jupiter.api.Test;
  *
  * <pre>{@code
  * class ClearanceLatticeTest extends LatticeTck<Clearance> {
- *   protected Lattice<Clearance> lattice() { return Lattices.ordinal(Clearance.class); }
+ *   protected Lattice<Clearance> lattice() {
+ *     return Lattices.ladder(PUBLIC, EMPLOYEE, MANAGEMENT, EXECUTIVE);
+ *   }
  *   protected List<Clearance> samples() { return List.of(Clearance.values()); }
  * }
  * }</pre>
