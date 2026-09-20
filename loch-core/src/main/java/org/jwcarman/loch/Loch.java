@@ -15,6 +15,7 @@
  */
 package org.jwcarman.loch;
 
+import java.util.List;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
@@ -95,7 +96,7 @@ public interface Loch<A> {
    */
   <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation, AccessContext context);
 
-  /** For derivations that do not care who is asking, which is most of them. */
+  /** Using whatever the loch was told about who is asking. */
   default <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation) {
     return derive(parent, derivation, AccessContext.empty());
   }
@@ -110,9 +111,24 @@ public interface Loch<A> {
    */
   <I, Q> Answer check(Held<I> held, CheckId<I, Q> check, Q question, AccessContext context);
 
-  /** For checks that do not care who is asking. */
+  /** Using whatever the loch was told about who is asking. */
   default <I, Q> Answer check(Held<I> held, CheckId<I, Q> check, Q question) {
     return check(held, check, question, AccessContext.empty());
+  }
+
+  /**
+   * Makes a new value from several already held.
+   *
+   * <p>The new value's label is the join of <b>every</b> parent's, so combining data from two
+   * tenants yields something labelled for both -- a conflict, in an exact-match dimension, which no
+   * destination admits. The value exists and keeps its lineage; it simply cannot be dereferenced
+   * anywhere. Cross-tenant leakage is not forbidden by a rule someone remembered to write.
+   */
+  <I, O> Derived<O> deriveAll(List<Held<I>> parents, FoldId<I, O> fold, AccessContext context);
+
+  /** Using whatever the loch was told about who is asking. */
+  default <I, O> Derived<O> deriveAll(List<Held<I>> parents, FoldId<I, O> fold) {
+    return deriveAll(parents, fold, AccessContext.empty());
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */
@@ -137,7 +153,7 @@ public interface Loch<A> {
    */
   <T> Dereferenced<T> dereference(Held<T> held, DestinationId to, AccessContext context);
 
-  /** For machine destinations, where nobody in particular is asking. */
+  /** Using whatever the loch was told about who is asking. */
   default <T> Dereferenced<T> dereference(Held<T> held, DestinationId to) {
     return dereference(held, to, AccessContext.empty());
   }

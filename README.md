@@ -166,6 +166,40 @@ records rather than sealed hierarchies: a sealed type needs polymorphic type inf
 codec has to be told about separately, and `loch-core` depends on nothing and so cannot annotate
 itself for any of them.
 
+## Combining values, and the thing that makes it matter
+
+```java
+Held<Report> report = loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE);
+```
+
+The result carries the join of **every** parent's label. Nobody marked anything as conflicted:
+somebody wrote a perfectly reasonable summariser and gave it perfectly reasonable inputs. But an
+exact-match dimension like tenant joins two different values to a conflict, and a conflict is below
+no ceiling — so the report exists, remembers both parents, and **cannot be dereferenced anywhere, by
+anyone, ever**.
+
+That is the difference between a rule and a property. Nothing had to be remembered.
+
+The same arithmetic does the quieter, more common job: fold one ordinary note with one containing a
+home address and the result is `PII`, so it reaches the quarantined model and not the vendor's.
+
+## Who is asking
+
+Identity is known at the edge and needed at the gate, which may be many layers down. Threading an
+`AccessContext` through all of them would make the safety feature the most annoying thing in the
+codebase, and annoying safety features get routed around. So say once where the answer lives:
+
+```java
+.askingWhoIsAsking(() -> AccessContext.of(Map.of(
+    "tenant", CurrentTenant.get(),
+    "principal", SecurityContextHolder.getContext().getAuthentication().getName())))
+```
+
+A `ThreadLocal`, a `ScopedValue`, Spring's holders — Loch has no opinion about how your request
+scope works, and an application with no notion of identity says nothing and gets an empty context. A
+caller with something to add (a purpose, which tool is running) adds it rather than replacing
+everything, and wins where both speak about the same key.
+
 ## What it will allow, in one printout
 
 `loch.manifest()` is meant to be printed at startup and pasted into a review:

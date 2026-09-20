@@ -18,6 +18,7 @@ package org.jwcarman.loch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -203,6 +204,14 @@ class BillingScenarioTest {
                               claim -> new InvoiceNumber(claim.invoiceNumber()))
                           .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
                           .build())
+                  // Several values in, one out. Every parent's label lands on the result.
+                  .fold(
+                      Fold.<Billing, String, Report>of(
+                              SUMMARISE,
+                              String.class,
+                              Report.class,
+                              notes -> new Report(String.join(" / ", notes)))
+                          .build())
                   // The whole account never leaves the loch to answer one question about it.
                   .check(
                       Check.<Billing, Account, String>of(
@@ -224,6 +233,10 @@ class BillingScenarioTest {
       DerivationId.of("Card.last4.dataClassOnly");
 
   record Account(String number, String email) {}
+
+  record Report(String text) {}
+
+  static final FoldId<String, Report> SUMMARISE = FoldId.of("notes.summarise");
 
   static final CheckId<Account, String> OWNED_BY = CheckId.of("Account.ownedBy");
 
@@ -349,20 +362,92 @@ class BillingScenarioTest {
   @DisplayName("tenants")
   class Tenants {
 
-    /** The claim the whole design rests on: a mixed value is unusable, not merely discouraged. */
+    /**
+     * The claim the whole design rests on, produced the way an application would produce it.
+     *
+     * <p>Nobody labels anything as conflicted. Two tenants' notes are folded into one report,
+     * because somebody wrote a perfectly reasonable summariser and passed it perfectly reasonable
+     * inputs. The result is unusable everywhere, and no rule had to be remembered for that to
+     * happen.
+     */
     @Test
-    @DisplayName("a value carrying two tenants can go nowhere at all")
-    void a_value_carrying_two_tenants_can_go_nowhere() {
-      Billing acme = Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE);
-      Billing globex = Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE);
+    @DisplayName("folding two tenants' data makes a report that can go nowhere at all")
+    void folding_two_tenants_data_makes_a_report_that_can_go_nowhere() {
+      Held<String> acmeNote =
+          loch.hold(
+              "acme disputes INV-1",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+      Held<String> globexNote =
+          loch.hold(
+              "globex disputes INV-2",
+              String.class,
+              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      Billing mixed = Billing.LATTICE.join(acme, globex);
+      Held<Report> report =
+          loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE, acme()).orThrow();
 
-      assertThat(mixed.tenant().conflicted()).isTrue();
-      Held<String> held = loch.hold("a report covering both customers", String.class, mixed);
-      assertThat(loch.dereference(held, VENDOR_LLM, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(held, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(held, QUARANTINED_LLM, acme()).allowed()).isFalse();
+      assertThat(loch.attribution(report).tenant().conflicted()).isTrue();
+      assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
+      assertThat(loch.dereference(report, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
+      assertThat(loch.dereference(report, QUARANTINED_LLM, acme()).allowed()).isFalse();
+      assertThat(
+              loch.dereference(report, VENDOR_LLM, AccessContext.of("tenant", "globex")).allowed())
+          .isFalse();
+      // It exists, and it remembers where it came from.
+      assertThat(loch.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
+    }
+
+    @Test
+    @DisplayName("folding one tenant's own notes is perfectly usable")
+    void folding_one_tenants_notes_is_usable() {
+      Held<String> first =
+          loch.hold(
+              "first note",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+      Held<String> second =
+          loch.hold(
+              "second note",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+
+      Held<Report> report = loch.deriveAll(List.of(first, second), SUMMARISE, acme()).orThrow();
+
+      assertThat(loch.dereference(report, VENDOR_LLM, acme()).granted())
+          .contains(new Report("first note / second note"));
+    }
+
+    /** The fold takes the most constrained of everything it read, not the first thing it read. */
+    @Test
+    @DisplayName("one restricted parent constrains the whole result")
+    void one_restricted_parent_constrains_the_whole_result() {
+      Held<String> ordinary =
+          loch.hold(
+              "nothing special",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+      Held<String> personal =
+          loch.hold(
+              "and their home address",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+
+      Held<Report> report =
+          loch.deriveAll(List.of(ordinary, personal), SUMMARISE, acme()).orThrow();
+
+      assertThat(loch.attribution(report).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
+      assertThat(loch.dereference(report, QUARANTINED_LLM, acme()).allowed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a fold with nothing to fold is refused")
+    void a_fold_with_nothing_to_fold_is_refused() {
+      assertThat(loch.<String, Report>deriveAll(List.of(), SUMMARISE, acme()))
+          .isInstanceOfSatisfying(
+              Derived.Refused.class,
+              refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NO_PARENTS));
     }
 
     @Test

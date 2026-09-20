@@ -30,6 +30,10 @@ public sealed interface Derived<O> {
   enum Reason {
     /** No derivation registered under that name. A bug: startup validated the registry. */
     NO_SUCH_DERIVATION,
+    /** No fold registered under that name. */
+    NO_SUCH_FOLD,
+    /** A fold was given nothing to fold. */
+    NO_PARENTS,
     /** No such parent value. */
     NO_SUCH_VALUE,
     /** The parent is not the type this derivation takes. */

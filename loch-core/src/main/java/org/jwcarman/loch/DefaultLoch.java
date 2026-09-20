@@ -38,8 +38,10 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final Map<DestinationId, Destination<A>> destinations;
   private final Map<String, Derivation<A, ?, ?>> derivations;
   private final Map<String, Check<A, ?, ?>> checks;
+  private final Map<String, Fold<A, ?, ?>> folds;
   private final boolean explainRefusals;
   private final Auditor auditor;
+  private final java.util.function.Supplier<AccessContext> ambient;
   private final Storage<A> storage;
 
   public DefaultLoch(LochConfig<A> config, Storage<A> storage) {
@@ -68,8 +70,16 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
     this.checks = Map.copyOf(new HashMap<>(byCheck));
+    Map<String, Fold<A, ?, ?>> byFold = new LinkedHashMap<>();
+    for (Fold<A, ?, ?> fold : config.folds()) {
+      if (byFold.put(fold.id().value(), fold) != null) {
+        throw new IllegalStateException("two folds are registered as '" + fold.id() + "'");
+      }
+    }
+    this.folds = Map.copyOf(new HashMap<>(byFold));
     this.explainRefusals = config.explainsRefusals();
     this.auditor = config.auditor();
+    this.ambient = config.ambient();
   }
 
   /**
@@ -84,6 +94,15 @@ public final class DefaultLoch<A> implements Loch<A> {
     } catch (RuntimeException e) {
       return null;
     }
+  }
+
+  /**
+   * Who is asking: what the loch was told, with anything the caller added laid over it.
+   *
+   * <p>Resolved once per operation, because an ambient source may be doing real work to answer.
+   */
+  private AccessContext asking(AccessContext explicit) {
+    return explicit.over(ambient.get());
   }
 
   /**
@@ -196,6 +215,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   @Override
   @SuppressWarnings("unchecked")
   public <I, Q> Answer check(Held<I> held, CheckId<I, Q> id, Q question, AccessContext context) {
+    context = asking(context);
     Check<A, I, Q> check = (Check<A, I, Q>) checks.get(id.value());
     if (check == null) {
       return new Answer.Refused(
@@ -288,7 +308,99 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @Override
   @SuppressWarnings("unchecked")
+  public <I, O> Derived<O> deriveAll(
+      List<Held<I>> parents, FoldId<I, O> id, AccessContext context) {
+    context = asking(context);
+    Fold<A, I, O> fold = (Fold<A, I, O>) folds.get(id.value());
+    if (fold == null) {
+      return new Derived.Refused<>(
+          Derived.Reason.NO_SUCH_FOLD, "no fold is registered as '" + id + "'");
+    }
+    if (parents.isEmpty()) {
+      return new Derived.Refused<>(
+          Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value to fold");
+    }
+    if (!fold.availableTo(context)) {
+      return new Derived.Refused<>(
+          Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
+    }
+
+    String expected = nameOf(fold.inputType());
+    List<I> inputs = new ArrayList<>();
+    List<HeldId> parentIds = new ArrayList<>();
+    A joined = null;
+    for (Held<I> parent : parents) {
+      StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
+      if (entry == null) {
+        return new Derived.Refused<>(
+            Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
+      }
+      if (!entry.typeName().equals(expected)) {
+        return new Derived.Refused<>(
+            Derived.Reason.WRONG_TYPE,
+            "'%s' reads a %s, but %s is a %s"
+                .formatted(id, expected, parent.id(), entry.typeName()));
+      }
+      Optional<A> ceiling = fold.ceiling();
+      if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
+        return new Derived.Refused<>(
+            Derived.Reason.ABOVE_CEILING,
+            parent.id()
+                + " may not reach '"
+                + id
+                + "'"
+                + explain(entry.attribution(), ceiling.get()));
+      }
+      I input = storage.value(parent.id(), fold.inputType()).orElse(null);
+      if (input == null) {
+        return new Derived.Refused<>(
+            Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
+      }
+      inputs.add(input);
+      parentIds.add(parent.id());
+      // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
+      joined = joined == null ? entry.attribution() : lattice.join(joined, entry.attribution());
+    }
+
+    Optional<O> produced = fold.apply(List.copyOf(inputs), context);
+    if (produced.isEmpty()) {
+      return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
+    }
+
+    A label = joined;
+    Optional<java.util.function.UnaryOperator<A>> relabel = fold.relabel();
+    if (relabel.isPresent()) {
+      label = relabel.get().apply(joined);
+      if (!lattice.permits(label, joined)) {
+        return new Derived.Refused<>(
+            Derived.Reason.NOT_A_LOWERING,
+            "'%s' relabelled %s as %s, which is not below it".formatted(id, joined, label));
+      }
+    }
+
+    HeldId newId =
+        fold.deterministic()
+            ? ContentAddress.of(parentIds, id.value(), fold.version())
+            : HeldId.fresh();
+    storage.put(
+        newId,
+        new StoredValue<>(
+            produced.get(), fold.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
+    audit(
+        AuditRecord.Operation.DERIVE,
+        newId,
+        id.value(),
+        AuditRecord.Outcome.ALLOWED,
+        fold.privileged() ? "weakened from " + joined : "folded " + parentIds.size() + " values",
+        label,
+        context);
+    return new Derived.Made<>(new Held<>(newId, fold.outputType()));
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
   public <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> id, AccessContext context) {
+    context = asking(context);
     Derivation<A, I, O> derivation = (Derivation<A, I, O>) derivations.get(id.value());
     if (derivation == null) {
       return new Derived.Refused<>(
@@ -367,6 +479,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @Override
   public <T> Dereferenced<T> dereference(Held<T> held, DestinationId to, AccessContext context) {
+    context = asking(context);
     Destination<A> destination = destinations.get(to);
     if (destination == null) {
       return denied(

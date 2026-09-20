@@ -32,9 +32,11 @@ public class LochConfig<A> {
   private Lattice<A> lattice;
   private boolean explainRefusals;
   private Auditor auditor;
+  private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Check<A, ?, ?>> checks = new ArrayList<>();
+  private final List<Fold<A, ?, ?>> folds = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
   public LochConfig<A> lattice(Lattice<A> lattice) {
@@ -63,6 +65,16 @@ public class LochConfig<A> {
   public LochConfig<A> check(Check<A, ?, ?> check) {
     checks.add(Objects.requireNonNull(check, "a check must not be null"));
     return this;
+  }
+
+  /** A way of making one value out of several. */
+  public LochConfig<A> fold(Fold<A, ?, ?> fold) {
+    folds.add(Objects.requireNonNull(fold, "a fold must not be null"));
+    return this;
+  }
+
+  List<Fold<A, ?, ?>> folds() {
+    return List.copyOf(folds);
   }
 
   List<Check<A, ?, ?>> checks() {
@@ -104,6 +116,35 @@ public class LochConfig<A> {
   /** Keeps no record, on purpose and in writing. */
   public LochConfig<A> withoutAudit() {
     return auditor(Auditors.discarding());
+  }
+
+  /**
+   * Where a loch finds out who is asking, when a caller has not said.
+   *
+   * <p>Identity is known at the edge -- a request, a message, a session -- and needed at the gate,
+   * which may be many layers down. Threading an {@code AccessContext} parameter through all of them
+   * would make the safety feature the most annoying thing in the codebase, and annoying safety
+   * features get routed around.
+   *
+   * <p>So the application says once where the answer lives. A {@code ThreadLocal}, a {@code
+   * ScopedValue}, Spring's {@code SecurityContextHolder} -- Loch does not care, and has no opinion
+   * about how a request scope works.
+   *
+   * <pre>{@code
+   * .askingWhoIsAsking(() -> AccessContext.of(Map.of(
+   *     "tenant", CurrentTenant.get(),
+   *     "principal", SecurityContextHolder.getContext().getAuthentication().getName())))
+   * }</pre>
+   *
+   * <p>An application with no notion of identity says nothing and every context is empty.
+   */
+  public LochConfig<A> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
+    this.ambient = Objects.requireNonNull(ambient, "an ambient context source must not be null");
+    return this;
+  }
+
+  java.util.function.Supplier<AccessContext> ambient() {
+    return ambient;
   }
 
   Auditor auditor() {
