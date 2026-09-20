@@ -25,8 +25,13 @@ import org.jwcarman.codec.spi.TypeRef;
  * value except by asking the store, and asking the store is the gate. You cannot forget to check,
  * because there is nothing here to read.
  *
- * <p>Handles are safe to pass anywhere -- into an event stream, a log line, a prompt, a message to
- * another service. Possession is not authority.
+ * <p><b>What travels is the {@link HeldId}.</b> A handle is a local, typed view of a value that is
+ * already held: the {@link TypeRef} is a claim the gate checks against what the store actually
+ * wrote, so it is worth having where code is using a value and worth nothing on a wire. An event, a
+ * message or a row carries the id -- a string, which every serialiser can manage without being
+ * taught anything -- and the receiving side says what it expects with {@link #of}.
+ *
+ * <p>Ids are safe to pass anywhere, because possession is not authority.
  *
  * @param type what the stored value is, which the store confirms rather than trusts. A handle is a
  *     claim about identity; the claim about type is checked against what was actually stored.
@@ -42,9 +47,26 @@ public record Held<T>(HeldId id, TypeRef<T> type) {
     Objects.requireNonNull(type, "a handle needs a type");
   }
 
-  /** How a handle appears wherever a value would otherwise have been rendered. */
+  /** A local typed view of a value that is already held. */
+  public static <T> Held<T> of(HeldId id, Class<T> type) {
+    return new Held<>(id, TypeRef.of(type));
+  }
+
+  /** A local typed view, for a generic container. */
+  public static <T> Held<T> of(HeldId id, TypeRef<T> type) {
+    return new Held<>(id, type);
+  }
+
+  /**
+   * The id, and only the id.
+   *
+   * <p>Anything that prints a handle -- a log line, an error, a prompt -- gets a name and nothing
+   * else. The Java type is a local matter, and whether a model may be told anything about a value
+   * is a policy question for a renderer to ask the loch, not a decision a {@code toString} should
+   * make on everyone's behalf.
+   */
   @Override
   public String toString() {
-    return "<held " + id.value() + " type=" + type.rawClass().getSimpleName() + ">";
+    return id.value();
   }
 }

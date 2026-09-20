@@ -43,6 +43,21 @@ otherwise anything that could write an id could claim to be trusted.
 described a computation, presenting one would be a request to perform it, and ids arrive from
 untrusted places. So **lookup never computes**: an id is found, or refused.
 
+**What travels is the id.** A `Held<T>` is a *local typed view* — its `TypeRef` is a claim the gate
+checks against what the store actually wrote, which makes it worth having where code uses a value
+and worth nothing on a wire. Events, messages and rows carry a `HeldId`, which every serialiser can
+manage without being taught anything, and the receiving side says what it expects:
+
+```java
+record InboundMail(String from, HeldId body) {}          // goes anywhere
+
+Held<String> body = Held.of(event.body(), String.class); // typed again where it is used
+```
+
+A handle also prints as its id and nothing else. The Java type is a local matter, and whether a
+model may be told anything about a value is a policy question for a renderer to ask the loch — not
+a decision a `toString` should make on everybody's behalf.
+
 **There is no dereference without a destination.** No overload omits it. You cannot obtain plaintext
 "in general" — only plaintext for somewhere, and that somewhere is what policy decides on and what
 an audit records.
