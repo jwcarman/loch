@@ -16,6 +16,7 @@
 package org.jwcarman.loch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -130,10 +131,13 @@ class BillingScenarioTest {
     return Destinations.varying(id, ctx -> Billing.ceilingFor(ctx, integrity, tlp, dataClass));
   }
 
+  private final Auditors.Recording audit = Auditors.recording();
+
   private final Loch<Billing> loch =
       MemoryLoch.create(
           c ->
               c.lattice(Billing.LATTICE)
+                  .auditor(audit)
                   // A vendor's model: nothing personal, nothing unendorsed.
                   .destination(
                       tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
@@ -618,6 +622,7 @@ class BillingScenarioTest {
           MemoryLoch.create(
               c ->
                   c.lattice(Billing.LATTICE)
+                      .withoutAudit()
                       .check(
                           Check.<Billing, Account, String>of(
                                   OWNED_BY, Account.class, (account, sender) -> true)
@@ -666,6 +671,7 @@ class BillingScenarioTest {
           MemoryLoch.create(
               c ->
                   c.lattice(Billing.LATTICE)
+                      .withoutAudit()
                       .explainRefusals()
                       .destination(
                           tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
@@ -686,6 +692,7 @@ class BillingScenarioTest {
           MemoryLoch.create(
               c ->
                   c.lattice(Billing.LATTICE)
+                      .withoutAudit()
                       .destination(
                           Destinations.varying(
                               broken,
@@ -698,6 +705,122 @@ class BillingScenarioTest {
       Dereferenced<String> result = fragile.dereference(held, broken, acme());
 
       assertThat(result.allowed()).isFalse();
+    }
+  }
+
+  @Nested
+  @DisplayName("the record")
+  class TheRecord {
+
+    @Test
+    @DisplayName("says who reached what, and never what the value was")
+    void says_who_reached_what_and_never_the_value() {
+      loch.dereference(customerEmail(), QUARANTINED_LLM, acme());
+
+      AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
+      assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED);
+      assertThat(entry.target()).contains("quarantined-llm");
+      assertThat(entry.context()).containsEntry("tenant", "acme");
+      assertThat(entry.toString()).doesNotContain("123-45-6789");
+    }
+
+    /** A thousand refusals against one value is the interesting event. */
+    @Test
+    @DisplayName("records refusals as carefully as permissions")
+    void records_refusals_as_carefully_as_permissions() {
+      loch.dereference(customerEmail(), VENDOR_LLM, acme());
+
+      AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
+      assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+      assertThat(entry.reason()).contains("ABOVE_CEILING");
+    }
+
+    @Test
+    @DisplayName("records holding, because that is where labels are asserted rather than computed")
+    void records_holding() {
+      Held<String> email = customerEmail();
+
+      assertThat(audit.of(AuditRecord.Operation.HOLD))
+          .anySatisfy(entry -> assertThat(entry.value()).isEqualTo(email.id()));
+    }
+
+    @Test
+    @DisplayName("records a check, with the answer but never the question")
+    void records_a_check_with_the_answer_but_not_the_question() {
+      Held<Account> account =
+          loch.hold(
+              new Account("ACC-1", "someone@acme.example"),
+              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+
+      loch.check(account, OWNED_BY, "someone@acme.example", acme());
+
+      AuditRecord entry = audit.of(AuditRecord.Operation.CHECK).getLast();
+      assertThat(entry.reason()).contains("answered true");
+      assertThat(entry.toString()).doesNotContain("someone@acme.example");
+    }
+
+    /** The event an auditor most wants to find. */
+    @Test
+    @DisplayName("says so when a derivation weakened a label")
+    void says_so_when_a_derivation_weakened_a_label() {
+      Held<String> token =
+          loch.hold(
+              "tok_1P9xyz4821",
+              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+
+      loch.derive(
+          token,
+          CARD_LAST4,
+          AccessContext.of(java.util.Map.of("tenant", "acme", "tool", "prepare_approval")));
+
+      AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
+      assertThat(entry.reason()).hasValueSatisfying(r -> assertThat(r).startsWith("weakened from"));
+      assertThat(entry.target()).contains("Card.last4");
+    }
+
+    @Test
+    @DisplayName("an ordinary derivation is recorded without that note")
+    void an_ordinary_derivation_is_recorded_without_that_note() {
+      Held<DisputeClaim> claim =
+          loch.hold(
+              new DisputeClaim("INV-4471", "charged twice"),
+              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+
+      loch.derive(claim, CLAIMED_INVOICE, acme());
+
+      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
+    }
+
+    /** A control whose log is quietly failing still produces the report. */
+    @Test
+    @DisplayName("an access that cannot be audited does not happen")
+    void an_access_that_cannot_be_audited_does_not_happen() {
+      Loch<Billing> unloggable =
+          MemoryLoch.create(
+              c ->
+                  c.lattice(Billing.LATTICE)
+                      .auditor(
+                          record -> {
+                            throw new IllegalStateException("the audit sink is down");
+                          })
+                      .destination(
+                          tenantScoped(
+                              QUARANTINED_LLM, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII)));
+
+      assertThatThrownBy(
+              () ->
+                  unloggable.hold(
+                      "anything",
+                      Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)))
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("keeping no record is something you say, not something you omit")
+    void keeping_no_record_is_something_you_say() {
+      assertThatThrownBy(() -> MemoryLoch.<Billing>create(c -> c.lattice(Billing.LATTICE)))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("withoutAudit");
     }
   }
 }

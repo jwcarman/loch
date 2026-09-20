@@ -31,6 +31,7 @@ public final class LochConfig<A> {
 
   private Lattice<A> lattice;
   private boolean explainRefusals;
+  private Auditor auditor;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Check<A, ?, ?>> checks = new ArrayList<>();
@@ -86,6 +87,32 @@ public final class LochConfig<A> {
 
   boolean explainsRefusals() {
     return explainRefusals;
+  }
+
+  /**
+   * Where the record of every access goes. Required, or say {@link #withoutAudit()}.
+   *
+   * <p>There is no default. A governance control that quietly keeps no record still produces the
+   * report, which is worse than not having it, so which of the two you want is a decision rather
+   * than an omission.
+   */
+  public LochConfig<A> auditor(Auditor auditor) {
+    this.auditor = Objects.requireNonNull(auditor, "an auditor must not be null");
+    return this;
+  }
+
+  /** Keeps no record, on purpose and in writing. */
+  public LochConfig<A> withoutAudit() {
+    return auditor(Auditors.discarding());
+  }
+
+  Auditor auditor() {
+    if (auditor == null) {
+      throw new IllegalStateException(
+          "a loch needs an auditor: call auditor(...) with somewhere to record accesses, or"
+              + " withoutAudit() if you really mean to keep no record");
+    }
+    return auditor;
   }
 
   Lattice<A> lattice() {

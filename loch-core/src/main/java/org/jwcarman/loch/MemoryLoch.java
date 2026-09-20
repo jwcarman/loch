@@ -15,6 +15,7 @@
  */
 package org.jwcarman.loch;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -49,6 +50,7 @@ public final class MemoryLoch<A> implements Loch<A> {
   private final Map<String, Derivation<A, ?, ?>> derivations;
   private final Map<String, Check<A, ?, ?>> checks;
   private final boolean explainRefusals;
+  private final Auditor auditor;
   private final Map<HeldId, Entry<A>> entries = new ConcurrentHashMap<>();
 
   private MemoryLoch(LochConfig<A> config) {
@@ -77,6 +79,7 @@ public final class MemoryLoch<A> implements Loch<A> {
     }
     this.checks = Map.copyOf(new HashMap<>(byCheck));
     this.explainRefusals = config.explainsRefusals();
+    this.auditor = config.auditor();
   }
 
   /**
@@ -91,6 +94,50 @@ public final class MemoryLoch<A> implements Loch<A> {
     } catch (RuntimeException e) {
       return null;
     }
+  }
+
+  /**
+   * Writes the line, and refuses the access if it cannot be written.
+   *
+   * <p>A control whose log is silently dropping entries still produces the report, so an access
+   * that cannot be audited does not happen.
+   */
+  private void audit(
+      AuditRecord.Operation operation,
+      HeldId value,
+      String target,
+      AuditRecord.Outcome outcome,
+      String reason,
+      A label,
+      AccessContext context) {
+    auditor.record(
+        new AuditRecord(
+            Instant.now(),
+            operation,
+            value,
+            Optional.ofNullable(target),
+            outcome,
+            Optional.ofNullable(reason),
+            Optional.ofNullable(label).map(Object::toString),
+            context.attributes()));
+  }
+
+  private <T> Dereferenced<T> denied(
+      Dereferenced.Reason reason,
+      String detail,
+      HeldId value,
+      String target,
+      A label,
+      AccessContext context) {
+    audit(
+        AuditRecord.Operation.DEREFERENCE,
+        value,
+        target,
+        AuditRecord.Outcome.REFUSED,
+        reason.name(),
+        label,
+        context);
+    return new Dereferenced.Denied<>(reason, detail);
   }
 
   /** What a refusal is allowed to say about labels, which by default is nothing. */
@@ -119,6 +166,14 @@ public final class MemoryLoch<A> implements Loch<A> {
     Class<T> type = (Class<T>) value.getClass();
     HeldId id = HeldId.fresh();
     entries.put(id, new Entry<>(value, type, attribution, Lineage.held()));
+    audit(
+        AuditRecord.Operation.HOLD,
+        id,
+        null,
+        AuditRecord.Outcome.ALLOWED,
+        null,
+        attribution,
+        AccessContext.empty());
     return new Held<>(id, type);
   }
 
@@ -170,8 +225,17 @@ public final class MemoryLoch<A> implements Loch<A> {
               + "'"
               + explain(entry.attribution(), ceiling.get()));
     }
-    return new Answer.Answered(
-        check.test(check.inputType().cast(entry.value()), question, context));
+    boolean answer = check.test(check.inputType().cast(entry.value()), question, context);
+    // The answer, never the question: what was asked can itself be sensitive.
+    audit(
+        AuditRecord.Operation.CHECK,
+        held.id(),
+        id.value(),
+        AuditRecord.Outcome.ALLOWED,
+        "answered " + answer,
+        entry.attribution(),
+        context);
+    return new Answer.Answered(answer);
   }
 
   @Override
@@ -266,6 +330,14 @@ public final class MemoryLoch<A> implements Loch<A> {
             derivation.outputType(),
             label,
             Lineage.derivedFrom(parents, id.value())));
+    audit(
+        AuditRecord.Operation.DERIVE,
+        newId,
+        id.value(),
+        AuditRecord.Outcome.ALLOWED,
+        derivation.privileged() ? "weakened from " + joined : null,
+        label,
+        context);
     return new Derived.Made<>(new Held<>(newId, derivation.outputType()));
   }
 
@@ -273,34 +345,64 @@ public final class MemoryLoch<A> implements Loch<A> {
   public <T> Dereferenced<T> dereference(Held<T> held, DestinationId to, AccessContext context) {
     Destination<A> destination = destinations.get(to);
     if (destination == null) {
-      return new Dereferenced.Denied<>(
-          Dereferenced.Reason.NO_SUCH_DESTINATION, "no destination is registered as '" + to + "'");
+      return denied(
+          Dereferenced.Reason.NO_SUCH_DESTINATION,
+          "no destination is registered as '" + to + "'",
+          held.id(),
+          to.value(),
+          null,
+          context);
     }
     Entry<A> entry = entries.get(held.id());
     if (entry == null) {
-      return new Dereferenced.Denied<>(
-          Dereferenced.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
+      return denied(
+          Dereferenced.Reason.NO_SUCH_VALUE,
+          "this loch is not holding " + held.id(),
+          held.id(),
+          to.value(),
+          null,
+          context);
     }
     if (!held.type().isAssignableFrom(entry.type())) {
-      return new Dereferenced.Denied<>(
+      return denied(
           Dereferenced.Reason.WRONG_TYPE,
           held.id()
               + " is a "
               + entry.type().getSimpleName()
               + ", not a "
-              + held.type().getSimpleName());
+              + held.type().getSimpleName(),
+          held.id(),
+          to.value(),
+          entry.attribution(),
+          context);
     }
     A ceiling = ceilingOf(destination, context);
     if (ceiling == null) {
-      return new Dereferenced.Denied<>(
+      return denied(
           Dereferenced.Reason.ABOVE_CEILING,
-          "'" + to + "' could not say what it accepts, so it does not accept this");
+          "'" + to + "' could not say what it accepts, so it does not accept this",
+          held.id(),
+          to.value(),
+          entry.attribution(),
+          context);
     }
     if (!lattice.permits(entry.attribution(), ceiling)) {
-      return new Dereferenced.Denied<>(
+      return denied(
           Dereferenced.Reason.ABOVE_CEILING,
-          held.id() + " may not reach '" + to + "'" + explain(entry.attribution(), ceiling));
+          held.id() + " may not reach '" + to + "'" + explain(entry.attribution(), ceiling),
+          held.id(),
+          to.value(),
+          entry.attribution(),
+          context);
     }
+    audit(
+        AuditRecord.Operation.DEREFERENCE,
+        held.id(),
+        to.value(),
+        AuditRecord.Outcome.ALLOWED,
+        null,
+        entry.attribution(),
+        context);
     return new Dereferenced.Allowed<>(held.type().cast(entry.value()));
   }
 }

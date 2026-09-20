@@ -90,6 +90,33 @@ So you say the order where a reviewer will see it, and every constant must appea
 Lattices.ladder(PUBLIC, INTERNAL, CONFIDENTIAL, SECRET)   // or Lattices.ranked(..., Impact::level)
 ```
 
+## Every access leaves a record
+
+```java
+MemoryLoch.create(c -> c
+    .lattice(BILLING)
+    .auditor(myAuditSink)      // or .withoutAudit(), in writing
+    .destination(...));
+```
+
+There is **no default**. A governance control that quietly keeps no record still produces the
+report, which is worse than not having one — so which of the two you want is a decision, not an
+omission.
+
+An audit line says which value, who asked, where it was going, what was decided and why. It never
+says what the value was; otherwise the audit log becomes the largest collection of protected data in
+the system and the least protected. It does carry the label, because an audit that cannot say *why*
+is not much of an audit — so an audit sink deserves the protection the values do.
+
+Refusals are recorded as carefully as permissions. A thousand refused attempts against one value is
+the interesting event, and a log of successes cannot show it. Checks are recorded with the answer
+but never the question. Holding is recorded too, since that is the one place labels are asserted
+rather than computed.
+
+**And an access that cannot be audited does not happen.** If the auditor throws, the gate refuses.
+An application that would rather proceed says so by catching inside its own auditor, which makes
+that a decision somebody wrote down.
+
 ## Where this sits in the literature
 
 The algebra is **Denning's lattice model** (1976), used the way Denning stated it — parametric over
