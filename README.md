@@ -100,12 +100,22 @@ codec serialises the value.
 ```java
 Loch<Billing> loch = JdbcLoch.create(Billing.class, c -> c
     .dataSource(dataSource)
-    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-    .protectedBy(EnvelopeCodec.builder(new JceDataKeyProvider("k1", keys)).build())
+    .jackson(objectMapper)                                                  // serialise
+    .gzipped()                                                              // squeeze
+    .protectedBy(EnvelopeCodec.builder(new JceDataKeyProvider("k1", keys)).build())  // seal
     .lattice(BILLING)
     .auditor(auditSink)
     .destination(...));
 ```
+
+**Serialise, squeeze, seal — and that order is the only one that makes sense**, because ciphertext
+does not compress. Reversing the last two costs the same CPU and saves nothing. Neither choice is
+forced: `codecs(...)` takes any `CodecFactory` and `compressedWith(...)` any `Codec<byte[]>`.
+
+The **label is encrypted but not compressed**. Labels are small and highly structured, so there is
+little to win, and compressing before encrypting makes ciphertext length a function of plaintext —
+the shape of attack CRIME and BREACH exploit. For a large stored value that is remote; for a short,
+guessable label it is less so, and the saving did not justify it.
 
 **The label is encrypted too.** A tenant's name or a project codeword sitting in the clear beside
 the ciphertext describes what the ciphertext is to anyone who can read the table.

@@ -17,8 +17,10 @@ package org.jwcarman.loch.jdbc;
 
 import java.util.Objects;
 import javax.sql.DataSource;
+import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
+import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Check;
 import org.jwcarman.loch.Derivation;
@@ -26,6 +28,7 @@ import org.jwcarman.loch.Destination;
 import org.jwcarman.loch.DestinationId;
 import org.jwcarman.loch.LochConfig;
 import org.jwcarman.loch.lattice.Lattice;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * How a durable loch is built: everything a loch needs, plus where it keeps things and how it
@@ -38,6 +41,7 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
 
   private DataSource dataSource;
   private CodecFactory codecs;
+  private Codec<byte[]> compression;
   private Codec<byte[]> protection;
   private boolean migrate = true;
 
@@ -47,10 +51,37 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
     return this;
   }
 
-  /** How values become bytes. */
+  /** How values become bytes. Any {@link CodecFactory}; {@link #jackson} is the usual one. */
   public JdbcLochConfig<A> codecs(CodecFactory codecs) {
     this.codecs = Objects.requireNonNull(codecs, "a durable loch needs codecs");
     return this;
+  }
+
+  /** Serialises with Jackson, which is what most applications want. */
+  public JdbcLochConfig<A> jackson(ObjectMapper mapper) {
+    return codecs(new JacksonCodecFactory(mapper));
+  }
+
+  /**
+   * Squeezes the serialised value before it is encrypted.
+   *
+   * <p><b>Compression comes first, because ciphertext does not compress.</b> Reversing the two
+   * would cost the same CPU and save nothing.
+   *
+   * <p>The label is deliberately <i>not</i> compressed. Labels are small and highly structured, so
+   * there is little to win, and compressing before encrypting makes the ciphertext length a
+   * function of the plaintext -- the shape of attack CRIME and BREACH exploit. For a stored value
+   * that is a remote concern; for a short, structured, guessable label it is less remote, and the
+   * saving did not justify it.
+   */
+  public JdbcLochConfig<A> compressedWith(Codec<byte[]> compression) {
+    this.compression = Objects.requireNonNull(compression, "compression must not be null");
+    return this;
+  }
+
+  /** Gzip, the ordinary choice. */
+  public JdbcLochConfig<A> gzipped() {
+    return compressedWith(new GzipCodec());
   }
 
   /**
@@ -157,6 +188,10 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
               + " unprotected() if this database holds nothing that matters");
     }
     return protection;
+  }
+
+  Codec<byte[]> compression() {
+    return compression;
   }
 
   boolean migrates() {

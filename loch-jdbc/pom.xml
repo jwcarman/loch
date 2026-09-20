@@ -45,12 +45,17 @@
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-crypto</artifactId>
     </dependency>
-
+    <!-- Jackson is the blessed serialisation and gzip the blessed compression, but neither is
+         forced: codecs(...) takes any CodecFactory and compressedWith(...) any Codec<byte[]>. -->
     <dependency>
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-jackson</artifactId>
-      <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.jwcarman.codec</groupId>
+      <artifactId>codec-transforms</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>

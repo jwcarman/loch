@@ -31,7 +31,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.codec.crypto.EnvelopeCodec;
 import org.jwcarman.codec.crypto.JceDataKeyProvider;
-import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.DerivationId;
@@ -151,7 +150,8 @@ class JdbcLochTest {
             Billing.class,
             c ->
                 c.dataSource(dataSource)
-                    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+                    .jackson(JsonMapper.builder().build())
+                    .gzipped()
                     .protectedBy(
                         EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
                             .build())
@@ -293,7 +293,7 @@ class JdbcLochTest {
                         Billing.class,
                         c ->
                             c.dataSource(dataSource)
-                                .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+                                .jackson(JsonMapper.builder().build())
                                 .lattice(Billing.LATTICE)
                                 .withoutAudit())))
         .isInstanceOf(IllegalStateException.class)
@@ -321,5 +321,34 @@ class JdbcLochTest {
   void lineage_of_a_held_value_says_asserted() {
     assertThat(loch.lineage(card()).asserted()).isTrue();
     assertThat(List.of(loch.lineage(card()).parents())).isNotEmpty();
+  }
+
+  /** Serialise, squeeze, seal. Reversing the last two would cost the same and save nothing. */
+  @Test
+  @DisplayName("compresses a repetitive value before encrypting it")
+  void compresses_before_encrypting() throws SQLException {
+    Held<Card> small = card();
+    Held<Card> repetitive =
+        loch.hold(
+            new Card("4111111111114821", "J CARMAN ".repeat(200)),
+            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+
+    int smallBytes = payloadLength(small);
+    int repetitiveBytes = payloadLength(repetitive);
+
+    // 1800 characters of a repeated name, stored in nothing like 1800 bytes.
+    assertThat(repetitiveBytes).isLessThan(smallBytes + 300);
+  }
+
+  private int payloadLength(Held<?> held) throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT payload FROM loch_value WHERE value_id = ?")) {
+      statement.setString(1, held.id().value());
+      try (ResultSet rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+        return rows.getBytes("payload").length;
+      }
+    }
   }
 }
