@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.jwcarman.codec.crypto.EnvelopeCodec;
 import org.jwcarman.codec.crypto.JceDataKeyProvider;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
+import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
@@ -186,6 +187,7 @@ class JdbcLochTest {
   private Held<Card> card() {
     return loch.hold(
         new Card("4111111111114821", "J CARMAN"),
+        Card.class,
         Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
   }
 
@@ -337,6 +339,7 @@ class JdbcLochTest {
     Held<Card> repetitive =
         loch.hold(
             new Card("4111111111114821", "J CARMAN ".repeat(200)),
+            Card.class,
             Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
 
     // 1800 characters of a repeated name, stored in nothing like 1800 bytes.
@@ -374,5 +377,59 @@ class JdbcLochTest {
         return rows.getBytes("payload").length;
       }
     }
+  }
+
+  /**
+   * A value's class is not its type. {@code List.of(a, b).getClass()} is {@code
+   * ImmutableCollections$List12}, which nothing can deserialise into, so a loch that guessed from
+   * the object would write a handle it could never honour. The caller says what it is.
+   */
+  @Test
+  @DisplayName("holds a generic container and gives it back")
+  void holds_a_generic_container() {
+    List<Card> cards =
+        List.of(new Card("4111111111114821", "A"), new Card("4111111111119999", "B"));
+
+    Held<List<Card>> held =
+        loch.hold(
+            cards,
+            TypeRef.listOf(TypeRef.of(Card.class)),
+            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+
+    assertThat(loch.dereference(held, PAYMENT_PROCESSOR, acme()).granted())
+        .hasValueSatisfying(
+            back -> {
+              assertThat(back).hasSize(2);
+              assertThat(back.getFirst().number()).isEqualTo("4111111111114821");
+            });
+    assertThat(loch.dereference(held, VENDOR_LLM, acme()).allowed()).isFalse();
+  }
+
+  @Test
+  @DisplayName("a handle claiming the wrong element type is refused")
+  void a_handle_claiming_the_wrong_element_type_is_refused() {
+    Held<List<Card>> cards =
+        loch.hold(
+            List.of(new Card("4111111111114821", "A")),
+            TypeRef.listOf(TypeRef.of(Card.class)),
+            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+    Held<List<Last4>> lying = new Held<>(cards.id(), TypeRef.listOf(TypeRef.of(Last4.class)));
+
+    assertThat(loch.dereference(lying, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
+  }
+
+  /** Reading a label should not decrypt a payload. */
+  @Test
+  @DisplayName("asking what a value is labelled does not decode the value")
+  void asking_for_a_label_does_not_decode_the_value() {
+    Held<List<Card>> cards =
+        loch.hold(
+            List.of(new Card("4111111111114821", "A")),
+            TypeRef.listOf(TypeRef.of(Card.class)),
+            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+
+    // No type is supplied here, and none is needed: the label is read without touching the payload.
+    assertThat(loch.attribution(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(loch.lineage(cards).asserted()).isTrue();
   }
 }

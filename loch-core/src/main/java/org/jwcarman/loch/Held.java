@@ -16,6 +16,7 @@
 package org.jwcarman.loch;
 
 import java.util.Objects;
+import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * A handle to a value the loch is holding.
@@ -29,8 +30,12 @@ import java.util.Objects;
  *
  * @param type what the stored value is, which the store confirms rather than trusts. A handle is a
  *     claim about identity; the claim about type is checked against what was actually stored.
+ *     <p>A {@link TypeRef} rather than a {@code Class}, because {@code List.of(a, b).getClass()} is
+ *     {@code ImmutableCollections$List12} -- a JDK-internal type nothing can deserialise into. What
+ *     a value <i>is</i> and what class happened to carry it are different questions, and only the
+ *     first survives a round trip.
  */
-public record Held<T>(HeldId id, Class<T> type) {
+public record Held<T>(HeldId id, TypeRef<T> type) {
 
   public Held {
     Objects.requireNonNull(id, "a handle needs an id");
@@ -40,6 +45,6 @@ public record Held<T>(HeldId id, Class<T> type) {
   /** How a handle appears wherever a value would otherwise have been rendered. */
   @Override
   public String toString() {
-    return "<held " + id.value() + " type=" + type.getSimpleName() + ">";
+    return "<held " + id.value() + " type=" + type.rawClass().getSimpleName() + ">";
   }
 }

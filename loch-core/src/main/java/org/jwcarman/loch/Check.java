@@ -17,6 +17,7 @@ package org.jwcarman.loch;
 
 import java.util.Optional;
 import java.util.function.BiPredicate;
+import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * A question about a held value, answered without surrendering it.
@@ -49,7 +50,7 @@ public interface Check<A, I, Q> {
 
   CheckId<I, Q> id();
 
-  Class<I> inputType();
+  TypeRef<I> inputType();
 
   /** Answers, seeing the plaintext. Must not retain it. */
   boolean test(I value, Q question, AccessContext context);
@@ -67,12 +68,18 @@ public interface Check<A, I, Q> {
   /** Declares one. Always at wiring; never at a call site. */
   static <A, I, Q> Builder<A, I, Q> of(
       CheckId<I, Q> id, Class<I> inputType, BiPredicate<I, Q> test) {
+    return of(id, TypeRef.of(inputType), test);
+  }
+
+  /** For a question about a generic container. */
+  static <A, I, Q> Builder<A, I, Q> of(
+      CheckId<I, Q> id, TypeRef<I> inputType, BiPredicate<I, Q> test) {
     return new Builder<>(id, inputType, (value, question, context) -> test.test(value, question));
   }
 
   /** Declares one that also reads the access context. */
   static <A, I, Q> Builder<A, I, Q> of(CheckId<I, Q> id, Class<I> inputType, Asking<I, Q> test) {
-    return new Builder<>(id, inputType, test);
+    return new Builder<>(id, TypeRef.of(inputType), test);
   }
 
   /** A question that also reads the access context. */
@@ -85,12 +92,12 @@ public interface Check<A, I, Q> {
   final class Builder<A, I, Q> {
 
     private final CheckId<I, Q> id;
-    private final Class<I> inputType;
+    private final TypeRef<I> inputType;
     private final Asking<I, Q> test;
     private A ceiling;
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
-    private Builder(CheckId<I, Q> id, Class<I> inputType, Asking<I, Q> test) {
+    private Builder(CheckId<I, Q> id, TypeRef<I> inputType, Asking<I, Q> test) {
       this.id = id;
       this.inputType = inputType;
       this.test = test;
@@ -116,7 +123,7 @@ public interface Check<A, I, Q> {
         }
 
         @Override
-        public Class<I> inputType() {
+        public TypeRef<I> inputType() {
           return inputType;
         }
 

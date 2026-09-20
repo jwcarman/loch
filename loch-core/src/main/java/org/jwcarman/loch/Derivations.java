@@ -20,6 +20,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
+import org.jwcarman.codec.spi.TypeRef;
 
 /** Declares a {@link Derivation}. Always at wiring; never at a call site. */
 public final class Derivations {
@@ -37,6 +38,12 @@ public final class Derivations {
    */
   public static <A, I, O> Builder<A, I, O> of(
       DerivationId<I, O> id, Class<I> inputType, Class<O> outputType, Function<I, O> function) {
+    return of(id, TypeRef.of(inputType), TypeRef.of(outputType), function);
+  }
+
+  /** For a derivation over or into a generic container. */
+  public static <A, I, O> Builder<A, I, O> of(
+      DerivationId<I, O> id, TypeRef<I> inputType, TypeRef<O> outputType, Function<I, O> function) {
     return new Builder<>(
         id, inputType, outputType, (input, context) -> Optional.of(function.apply(input)));
   }
@@ -47,15 +54,15 @@ public final class Derivations {
       Class<I> inputType,
       Class<O> outputType,
       BiFunction<I, AccessContext, Optional<O>> function) {
-    return new Builder<>(id, inputType, outputType, function);
+    return new Builder<>(id, TypeRef.of(inputType), TypeRef.of(outputType), function);
   }
 
   /** Collects the optional parts. Call {@link Builder#build()} last. */
   public static final class Builder<A, I, O> {
 
     private final DerivationId<I, O> id;
-    private final Class<I> inputType;
-    private final Class<O> outputType;
+    private final TypeRef<I> inputType;
+    private final TypeRef<O> outputType;
     private final BiFunction<I, AccessContext, Optional<O>> function;
     private boolean deterministic = true;
     private int version = 1;
@@ -65,8 +72,8 @@ public final class Derivations {
 
     private Builder(
         DerivationId<I, O> id,
-        Class<I> inputType,
-        Class<O> outputType,
+        TypeRef<I> inputType,
+        TypeRef<O> outputType,
         BiFunction<I, AccessContext, Optional<O>> function) {
       this.id = id;
       this.inputType = inputType;
@@ -128,12 +135,12 @@ public final class Derivations {
         }
 
         @Override
-        public Class<I> inputType() {
+        public TypeRef<I> inputType() {
           return inputType;
         }
 
         @Override
-        public Class<O> outputType() {
+        public TypeRef<O> outputType() {
           return outputType;
         }
 

@@ -16,6 +16,7 @@
 package org.jwcarman.loch;
 
 import java.util.Optional;
+import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * Where a loch keeps things.
@@ -33,7 +34,16 @@ public interface Storage<A> {
   /** Keeps a value. Ids are unique, and a deterministic derivation may store the same one twice. */
   void put(HeldId id, StoredValue<A> value);
 
-  Optional<StoredValue<A>> get(HeldId id);
+  /** The label, the lineage and what it was stored as -- without decoding the value. */
+  Optional<StoredMetadata<A>> metadata(HeldId id);
+
+  /**
+   * The value, decoded as the caller says it is.
+   *
+   * <p>Only ever called once {@link #metadata} has confirmed the stored type name matches, so the
+   * type here is a verified fact rather than a claim being trusted.
+   */
+  <T> Optional<T> value(HeldId id, TypeRef<T> type);
 
   boolean contains(HeldId id);
 

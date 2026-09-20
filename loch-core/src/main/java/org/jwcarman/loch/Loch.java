@@ -16,6 +16,7 @@
 package org.jwcarman.loch;
 
 import java.util.List;
+import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * A store of values that are not simply text.
@@ -36,6 +37,11 @@ public interface Loch<A> {
   /**
    * Takes custody of a value, under the labels the caller asserts.
    *
+   * <p><b>Say what the value is.</b> {@code List.of(a, b).getClass()} is {@code
+   * ImmutableCollections$List12}, which nothing can deserialise into, so a loch cannot infer a type
+   * from an object and be right. The caller declares it, and {@link TypeRef#listOf} and friends are
+   * there for the generic cases.
+   *
    * <p><b>Hold immutable values.</b> A loch stores what it is given. If the caller keeps a
    * reference to a mutable object and changes it afterwards, the stored value changes underneath a
    * label that was chosen for what it used to be -- and every check and derivation since was
@@ -48,7 +54,12 @@ public interface Loch<A> {
    * only place labels are asserted rather than computed; everywhere else they are derived, and
    * derivation can only make them more constrained.
    */
-  <T> Held<T> hold(T value, A attribution);
+  <T> Held<T> hold(T value, TypeRef<T> type, A attribution);
+
+  /** For a value whose class is its type, which is most of them. */
+  default <T> Held<T> hold(T value, Class<T> type, A attribution) {
+    return hold(value, TypeRef.of(type), attribution);
+  }
 
   /**
    * What a value is labelled, for rendering and for reporting.

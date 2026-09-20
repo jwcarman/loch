@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
@@ -135,7 +136,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public <T> Held<T> hold(T value, A attribution) {
+  public <T> Held<T> hold(T value, TypeRef<T> type, A attribution) {
     if (value == null) {
       throw new IllegalArgumentException("a loch holds values, not nulls");
     }
@@ -144,8 +145,6 @@ public final class DefaultLoch<A> implements Loch<A> {
           "a held value needs an attribution; use the lattice's bottom to say 'nothing in"
               + " particular'");
     }
-    @SuppressWarnings("unchecked")
-    Class<T> type = (Class<T>) value.getClass();
     HeldId id = HeldId.fresh();
     storage.put(id, new StoredValue<>(value, type, attribution, Lineage.held()));
     audit(
@@ -161,11 +160,18 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @Override
   public A attribution(Held<?> held) {
-    StoredValue<A> entry = storage.get(held.id()).orElse(null);
-    if (entry == null) {
-      throw new IllegalArgumentException("this loch is not holding " + held.id());
-    }
-    return entry.attribution();
+    return metadataOf(held).attribution();
+  }
+
+  private StoredMetadata<A> metadataOf(Held<?> held) {
+    return storage
+        .metadata(held.id())
+        .orElseThrow(() -> new IllegalArgumentException("this loch is not holding " + held.id()));
+  }
+
+  /** What a handle says it is, in the form the store wrote it. */
+  private static String nameOf(TypeRef<?> type) {
+    return type.getType().getTypeName();
   }
 
   @Override
@@ -199,17 +205,16 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Answer.Refused(
           Answer.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
-    StoredValue<A> entry = storage.get(held.id()).orElse(null);
+    StoredMetadata<A> entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
-    if (!check.inputType().isAssignableFrom(entry.type())) {
+    if (!entry.typeName().equals(nameOf(check.inputType()))) {
       return new Answer.Refused(
           Answer.Reason.WRONG_TYPE,
           "'%s' asks about a %s, but %s is a %s"
-              .formatted(
-                  id, check.inputType().getSimpleName(), held.id(), entry.type().getSimpleName()));
+              .formatted(id, nameOf(check.inputType()), held.id(), entry.typeName()));
     }
     Optional<A> ceiling = check.ceiling();
     if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
@@ -221,7 +226,12 @@ public final class DefaultLoch<A> implements Loch<A> {
               + "'"
               + explain(entry.attribution(), ceiling.get()));
     }
-    boolean answer = check.test(check.inputType().cast(entry.value()), question, context);
+    I subject = storage.value(held.id(), check.inputType()).orElse(null);
+    if (subject == null) {
+      return new Answer.Refused(
+          Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
+    }
+    boolean answer = check.test(subject, question, context);
     // The answer, never the question: what was asked can itself be sensitive.
     audit(
         AuditRecord.Operation.CHECK,
@@ -236,11 +246,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @Override
   public Lineage lineage(Held<?> held) {
-    StoredValue<A> entry = storage.get(held.id()).orElse(null);
-    if (entry == null) {
-      throw new IllegalArgumentException("this loch is not holding " + held.id());
-    }
-    return entry.lineage();
+    return metadataOf(held).lineage();
   }
 
   @Override
@@ -254,8 +260,8 @@ public final class DefaultLoch<A> implements Loch<A> {
                     "%s: %s -> %s, may weaken labels"
                         .formatted(
                             derivation.id(),
-                            derivation.inputType().getSimpleName(),
-                            derivation.outputType().getSimpleName())));
+                            derivation.inputType().rawClass().getSimpleName(),
+                            derivation.outputType().rawClass().getSimpleName())));
     return List.copyOf(lines);
   }
 
@@ -271,20 +277,16 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Derived.Refused<>(
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
-    StoredValue<A> entry = storage.get(parent.id()).orElse(null);
+    StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
     if (entry == null) {
       return new Derived.Refused<>(
           Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
     }
-    if (!derivation.inputType().isAssignableFrom(entry.type())) {
+    if (!entry.typeName().equals(nameOf(derivation.inputType()))) {
       return new Derived.Refused<>(
           Derived.Reason.WRONG_TYPE,
           "'%s' reads a %s, but %s is a %s"
-              .formatted(
-                  id,
-                  derivation.inputType().getSimpleName(),
-                  parent.id(),
-                  entry.type().getSimpleName()));
+              .formatted(id, nameOf(derivation.inputType()), parent.id(), entry.typeName()));
     }
     // A derivation is handed plaintext, so it is a destination and passes the same gate.
     Optional<A> ceiling = derivation.ceiling();
@@ -295,7 +297,12 @@ public final class DefaultLoch<A> implements Loch<A> {
               .formatted(parent.id(), entry.attribution(), id, ceiling.get()));
     }
 
-    Optional<O> produced = derivation.apply(derivation.inputType().cast(entry.value()), context);
+    I input = storage.value(parent.id(), derivation.inputType()).orElse(null);
+    if (input == null) {
+      return new Derived.Refused<>(
+          Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
+    }
+    Optional<O> produced = derivation.apply(input, context);
     if (produced.isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
@@ -349,7 +356,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           null,
           context);
     }
-    StoredValue<A> entry = storage.get(held.id()).orElse(null);
+    StoredMetadata<A> entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
       return denied(
           Dereferenced.Reason.NO_SUCH_VALUE,
@@ -359,14 +366,10 @@ public final class DefaultLoch<A> implements Loch<A> {
           null,
           context);
     }
-    if (!held.type().isAssignableFrom(entry.type())) {
+    if (!entry.typeName().equals(nameOf(held.type()))) {
       return denied(
           Dereferenced.Reason.WRONG_TYPE,
-          held.id()
-              + " is a "
-              + entry.type().getSimpleName()
-              + ", not a "
-              + held.type().getSimpleName(),
+          held.id() + " is a " + entry.typeName() + ", not a " + nameOf(held.type()),
           held.id(),
           to.value(),
           entry.attribution(),
@@ -399,6 +402,13 @@ public final class DefaultLoch<A> implements Loch<A> {
         null,
         entry.attribution(),
         context);
-    return new Dereferenced.Allowed<>(held.type().cast(entry.value()));
+    // The type was confirmed against what the store wrote, so this decodes a verified fact.
+    return storage
+        .value(held.id(), held.type())
+        .<Dereferenced<T>>map(Dereferenced.Allowed::new)
+        .orElseGet(
+            () ->
+                new Dereferenced.Denied<>(
+                    Dereferenced.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id()));
   }
 }

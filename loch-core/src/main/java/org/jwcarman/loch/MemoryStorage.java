@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * Storage in a map.
@@ -46,8 +47,17 @@ public final class MemoryStorage<A> implements Storage<A> {
   }
 
   @Override
-  public Optional<StoredValue<A>> get(HeldId id) {
-    return Optional.ofNullable(values.get(id));
+  public Optional<StoredMetadata<A>> metadata(HeldId id) {
+    return Optional.ofNullable(values.get(id))
+        .map(
+            stored ->
+                new StoredMetadata<>(
+                    stored.type().getType().getTypeName(), stored.attribution(), stored.lineage()));
+  }
+
+  @Override
+  public <T> Optional<T> value(HeldId id, TypeRef<T> type) {
+    return Optional.ofNullable(values.get(id)).map(stored -> type.rawClass().cast(stored.value()));
   }
 
   @Override

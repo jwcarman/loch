@@ -17,6 +17,7 @@ package org.jwcarman.loch;
 
 import java.util.Optional;
 import java.util.function.UnaryOperator;
+import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * A registered way to make one value from another.
@@ -33,9 +34,9 @@ public interface Derivation<A, I, O> {
 
   DerivationId<I, O> id();
 
-  Class<I> inputType();
+  TypeRef<I> inputType();
 
-  Class<O> outputType();
+  TypeRef<O> outputType();
 
   /** Produces the new value, or declines. Receives plaintext. */
   Optional<O> apply(I input, AccessContext context);

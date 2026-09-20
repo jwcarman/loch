@@ -33,9 +33,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
+import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.HeldId;
 import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Storage;
+import org.jwcarman.loch.StoredMetadata;
 import org.jwcarman.loch.StoredValue;
 
 /**
@@ -62,8 +64,9 @@ public final class JdbcStorage<A> implements Storage<A> {
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (value_id) DO NOTHING
       """;
-  private static final String SELECT_VALUE =
-      "SELECT value_type, payload, attribution, derivation FROM loch_value WHERE value_id = ?";
+  private static final String SELECT_METADATA =
+      "SELECT value_type, attribution, derivation FROM loch_value WHERE value_id = ?";
+  private static final String SELECT_PAYLOAD = "SELECT payload FROM loch_value WHERE value_id = ?";
   private static final String SELECT_PARENTS =
       "SELECT parent_id FROM loch_lineage WHERE child_id = ? ORDER BY position";
   private static final String INSERT_PARENT =
@@ -98,7 +101,6 @@ public final class JdbcStorage<A> implements Storage<A> {
   private final CodecFactory codecs;
   private final StorageCodec storageCodec;
   private final Codec<A> attributions;
-  private final ClassLoader classLoader;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
 
   JdbcStorage(
@@ -110,7 +112,6 @@ public final class JdbcStorage<A> implements Storage<A> {
     this.codecs = codecs;
     this.storageCodec = storageCodec;
     this.attributions = codecs.create(attributionType).andThen(storageCodec);
-    this.classLoader = attributionType.getClassLoader();
   }
 
   /** Creates the tables if they are not there. */
@@ -152,7 +153,7 @@ public final class JdbcStorage<A> implements Storage<A> {
       throws SQLException {
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id.value());
-      statement.setString(2, value.type().getName());
+      statement.setString(2, value.type().getType().getTypeName());
       statement.setBytes(3, encode(value.type(), value.value()));
       statement.setBytes(4, attributions.encode(value.attribution()));
       statement.setString(5, value.lineage().derivation().orElse(null));
@@ -185,23 +186,38 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public Optional<StoredValue<A>> get(HeldId id) {
+  public Optional<StoredMetadata<A>> metadata(HeldId id) {
     try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement = connection.prepareStatement(SELECT_VALUE)) {
+        PreparedStatement statement = connection.prepareStatement(SELECT_METADATA)) {
       statement.setString(1, id.value());
       try (ResultSet rows = statement.executeQuery()) {
         if (!rows.next()) {
           return Optional.empty();
         }
-        Class<?> type = typeNamed(rows.getString("value_type"));
-        Object value = decode(type, rows.getBytes("payload"));
         A attribution = attributions.decode(rows.getBytes("attribution"));
         String derivation = rows.getString("derivation");
         Lineage lineage =
             derivation == null
                 ? Lineage.held()
                 : Lineage.derivedFrom(parentsOf(connection, id), derivation);
-        return Optional.of(new StoredValue<>(value, type, attribution, lineage));
+        return Optional.of(
+            new StoredMetadata<>(rows.getString("value_type"), attribution, lineage));
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not read " + id, e);
+    }
+  }
+
+  @Override
+  public <T> Optional<T> value(HeldId id, TypeRef<T> type) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(SELECT_PAYLOAD)) {
+      statement.setString(1, id.value());
+      try (ResultSet rows = statement.executeQuery()) {
+        if (!rows.next()) {
+          return Optional.empty();
+        }
+        return Optional.of(codecFor(type).decode(rows.getBytes("payload")));
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not read " + id, e);
@@ -263,34 +279,16 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @SuppressWarnings("unchecked")
-  private byte[] encode(Class<?> type, Object value) {
+  private byte[] encode(TypeRef<?> type, Object value) {
     return ((Codec<Object>) codecFor(type)).encode(value);
   }
 
-  private Object decode(Class<?> type, byte[] bytes) {
-    return codecFor(type).decode(bytes);
-  }
-
   /** Serialise, then whatever the application said happens to bytes on the way to the table. */
-  private Codec<?> codecFor(Class<?> type) {
-    return byType.computeIfAbsent(
-        type.getName(), name -> codecs.create(type).andThen(storageCodec));
-  }
-
-  /**
-   * Resolves a stored type name.
-   *
-   * <p>These tables are trusted storage: only a loch writes them, and anyone who can write a row
-   * here can already read every value in the database, so this is not the weakest link. It is still
-   * why a loch's tables should not be writable by the application's ordinary database role.
-   */
-  private Class<?> typeNamed(String name) {
-    try {
-      return Class.forName(name, false, classLoader);
-    } catch (ClassNotFoundException e) {
-      throw new IllegalStateException(
-          "a value was stored as " + name + ", which is not on this classpath", e);
-    }
+  @SuppressWarnings("unchecked")
+  private <T> Codec<T> codecFor(TypeRef<T> type) {
+    return (Codec<T>)
+        byType.computeIfAbsent(
+            type.getType().getTypeName(), name -> codecs.create(type).andThen(storageCodec));
   }
 
   private String read(String resource) {

@@ -18,13 +18,21 @@ to read it. Turning it back into a value is the one checked operation, and it al
 the value is going.
 
 ```java
-Held<String> body = loch.hold(message.body(), new Billing(ACME, UNENDORSED, AMBER, PII));
+Held<String> body = loch.hold(message.body(), String.class, new Billing(ACME, UNENDORSED, AMBER, PII));
 
 loch.dereference(body, VENDOR_LLM, onBehalfOf(ACME));       // Denied: above ceiling
 loch.dereference(body, QUARANTINED_LLM, onBehalfOf(ACME));  // Allowed
 ```
 
 ## What it rests on
+
+**A value's class is not its type.** `List.of(a, b).getClass()` is `ImmutableCollections$List12`,
+which nothing can deserialise into, so a loch that guessed from the object would hand back a handle
+it could never honour. The caller says what a value is, and `TypeRef` says it precisely:
+
+```java
+loch.hold(cards, TypeRef.listOf(TypeRef.of(Card.class)), attribution);
+```
 
 **Possession is not authority.** Holding a handle does not permit reading it.
 

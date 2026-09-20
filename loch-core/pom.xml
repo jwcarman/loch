@@ -32,6 +32,14 @@
   <description>Handles, lattices, derivations, destinations and the gate. Depends on nothing.
     </description>
 
-  <!-- Deliberately empty. This module is the reason the library can be used outside an agent, a
-       web framework or a database, so a dependency added here is a decision, not a convenience. -->
+  <!-- One dependency, and a deliberate one. codec-core is interfaces and a type token with no
+       runtime dependencies of its own; TypeRef is what lets a handle say List<Card> rather than
+       whatever concrete class happened to arrive. A dependency added here is a decision, not a
+       convenience. -->
+  <dependencies>
+    <dependency>
+      <groupId>org.jwcarman.codec</groupId>
+      <artifactId>codec-core</artifactId>
+    </dependency>
+  </dependencies>
 </project>

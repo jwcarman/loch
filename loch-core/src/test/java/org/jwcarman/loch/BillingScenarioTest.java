@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -243,6 +244,7 @@ class BillingScenarioTest {
   private Held<String> customerEmail() {
     return loch.hold(
         "I was charged twice for invoice INV-4471. My SSN is 123-45-6789 if that helps.",
+        String.class,
         Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
   }
 
@@ -288,7 +290,9 @@ class BillingScenarioTest {
 
     private Held<String> token() {
       return loch.hold(
-          "tok_1P9xyz", Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+          "tok_1P9xyz",
+          String.class,
+          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
     }
 
     @Test
@@ -316,7 +320,8 @@ class BillingScenarioTest {
   class TheApprovalCard {
 
     private Held<String> last4() {
-      return loch.hold("4821", Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+      return loch.hold(
+          "4821", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
     }
 
     @Test
@@ -354,7 +359,7 @@ class BillingScenarioTest {
       Billing mixed = Billing.LATTICE.join(acme, globex);
 
       assertThat(mixed.tenant().conflicted()).isTrue();
-      Held<String> held = loch.hold("a report covering both customers", mixed);
+      Held<String> held = loch.hold("a report covering both customers", String.class, mixed);
       assertThat(loch.dereference(held, VENDOR_LLM, acme()).allowed()).isFalse();
       assertThat(loch.dereference(held, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
       assertThat(loch.dereference(held, QUARANTINED_LLM, acme()).allowed()).isFalse();
@@ -366,6 +371,7 @@ class BillingScenarioTest {
       Held<String> globex =
           loch.hold(
               "globex's entirely unremarkable note",
+              String.class,
               Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
       assertThat(loch.dereference(globex, VENDOR_LLM, acme()).allowed()).isFalse();
@@ -376,7 +382,9 @@ class BillingScenarioTest {
     void one_tenants_ordinary_data_is_fine() {
       Held<String> held =
           loch.hold(
-              "nothing secret", Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+              "nothing secret",
+              String.class,
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
       assertThat(loch.dereference(held, VENDOR_LLM, acme()).allowed()).isTrue();
     }
@@ -389,7 +397,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses an id nobody minted, rather than computing anything")
     void refuses_an_id_nobody_minted() {
-      Held<String> invented = new Held<>(new HeldId("loch_whatever-i-like"), String.class);
+      Held<String> invented =
+          new Held<>(new HeldId("loch_whatever-i-like"), TypeRef.of(String.class));
 
       assertThat(loch.dereference(invented, QUARANTINED_LLM, acme()))
           .isInstanceOfSatisfying(
@@ -411,7 +420,7 @@ class BillingScenarioTest {
     @DisplayName("refuses a handle whose claimed type is not what was stored")
     void refuses_a_handle_whose_type_is_wrong() {
       Held<String> email = customerEmail();
-      Held<Integer> lying = new Held<>(email.id(), Integer.class);
+      Held<Integer> lying = new Held<>(email.id(), TypeRef.of(Integer.class));
 
       assertThat(loch.dereference(lying, QUARANTINED_LLM, acme()))
           .isInstanceOfSatisfying(
@@ -436,6 +445,7 @@ class BillingScenarioTest {
     private Held<DisputeClaim> claim() {
       return loch.hold(
           new DisputeClaim("INV-4471", "charged twice"),
+          DisputeClaim.class,
           Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
     }
 
@@ -509,7 +519,9 @@ class BillingScenarioTest {
 
     private Held<String> token() {
       return loch.hold(
-          "tok_1P9xyz4821", Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+          "tok_1P9xyz4821",
+          String.class,
+          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
     }
 
     private AccessContext preparingApproval() {
@@ -566,6 +578,7 @@ class BillingScenarioTest {
       Held<DisputeClaim> endorsed =
           loch.hold(
               new DisputeClaim("INV-1", "x"),
+              DisputeClaim.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
       assertThat(loch.derive(endorsed, WISHFUL))
@@ -590,6 +603,7 @@ class BillingScenarioTest {
     private Held<Account> account() {
       return loch.hold(
           new Account("ACC-1", "someone@acme.example"),
+          Account.class,
           Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
     }
 
@@ -633,6 +647,7 @@ class BillingScenarioTest {
       Held<Account> secret =
           choosy.hold(
               new Account("ACC-2", "x@y.example"),
+              Account.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
       assertThat(choosy.check(secret, OWNED_BY, "x@y.example", acme()))
@@ -676,7 +691,10 @@ class BillingScenarioTest {
                       .destination(
                           tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
       Held<String> held =
-          chatty.hold("x", Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+          chatty.hold(
+              "x",
+              String.class,
+              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
       Dereferenced<String> denied = chatty.dereference(held, VENDOR_LLM, acme());
 
@@ -700,7 +718,8 @@ class BillingScenarioTest {
                                 throw new IllegalStateException("policy service is down");
                               })));
       Held<String> held =
-          fragile.hold("x", Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          fragile.hold(
+              "x", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
       Dereferenced<String> result = fragile.dereference(held, broken, acme());
 
@@ -750,6 +769,7 @@ class BillingScenarioTest {
       Held<Account> account =
           loch.hold(
               new Account("ACC-1", "someone@acme.example"),
+              Account.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
 
       loch.check(account, OWNED_BY, "someone@acme.example", acme());
@@ -766,6 +786,7 @@ class BillingScenarioTest {
       Held<String> token =
           loch.hold(
               "tok_1P9xyz4821",
+              String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
       loch.derive(
@@ -784,6 +805,7 @@ class BillingScenarioTest {
       Held<DisputeClaim> claim =
           loch.hold(
               new DisputeClaim("INV-4471", "charged twice"),
+              DisputeClaim.class,
               Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
       loch.derive(claim, CLAIMED_INVOICE, acme());
@@ -811,6 +833,7 @@ class BillingScenarioTest {
               () ->
                   unloggable.hold(
                       "anything",
+                      String.class,
                       Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)))
           .isInstanceOf(IllegalStateException.class);
     }

@@ -15,12 +15,14 @@
  */
 package org.jwcarman.loch;
 
+import org.jwcarman.codec.spi.TypeRef;
+
 /**
- * What a loch keeps about one value.
+ * A value on its way into storage.
  *
  * @param value the value itself, which never leaves storage except through the gate
- * @param type what it is, checked against what a handle claims
+ * @param type what it is, as the caller declared rather than as its class happens to be
  * @param attribution how it is labelled -- the store is the only authority on this
  * @param lineage where it came from
  */
-public record StoredValue<A>(Object value, Class<?> type, A attribution, Lineage lineage) {}
+public record StoredValue<A>(Object value, TypeRef<?> type, A attribution, Lineage lineage) {}
