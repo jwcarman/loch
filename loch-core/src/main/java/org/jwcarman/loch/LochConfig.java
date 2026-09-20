@@ -31,6 +31,7 @@ public final class LochConfig<A> {
 
   private Lattice<A> lattice;
   private final List<Destination<A>> destinations = new ArrayList<>();
+  private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
   public LochConfig<A> lattice(Lattice<A> lattice) {
@@ -47,6 +48,16 @@ public final class LochConfig<A> {
   /** A destination accepting the same thing regardless of who asks. */
   public LochConfig<A> destination(DestinationId id, A ceiling) {
     return destination(Destinations.fixed(id, ceiling));
+  }
+
+  /** A way of making one value from another. Registered once; referenced by name forever after. */
+  public LochConfig<A> derivation(Derivation<A, ?, ?> derivation) {
+    derivations.add(Objects.requireNonNull(derivation, "a derivation must not be null"));
+    return this;
+  }
+
+  List<Derivation<A, ?, ?>> derivations() {
+    return List.copyOf(derivations);
   }
 
   Lattice<A> lattice() {

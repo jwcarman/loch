@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch;
 
+import java.util.List;
+
 /**
  * A store of values that are not simply text.
  *
@@ -51,6 +53,36 @@ public interface Loch<A> {
 
   /** Whether the loch is holding this at all. */
   boolean holds(Held<?> held);
+
+  /**
+   * Makes a new value from one already held, through a derivation registered at wiring.
+   *
+   * <p>The new value's label is the join of its parents', so it can only be more constrained --
+   * unless the derivation is a privileged one, which may label it lower and is recorded as having
+   * done so. Either way the parentage is kept, which is what makes "erase everything derived from
+   * this" a question with an answer.
+   *
+   * <p>A derivation reads plaintext in order to compute, so it is a destination like any other and
+   * passes the same gate.
+   */
+  <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation, AccessContext context);
+
+  /** For derivations that do not care who is asking, which is most of them. */
+  default <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation) {
+    return derive(parent, derivation, AccessContext.empty());
+  }
+
+  /** Where a value came from: its parents, and what made it. Empty for anything held directly. */
+  Lineage lineage(Held<?> held);
+
+  /**
+   * Every registered operation that can weaken a label, and what it claims to check.
+   *
+   * <p>Worth printing at startup. No algebra can tell you whether a check is strong enough -- an
+   * endorsement that merely confirms a record exists looks exactly like one that ties it to the
+   * person who asked -- so the list being short and readable is the control.
+   */
+  List<String> manifest();
 
   /**
    * The gate: the value, if this destination may receive it.
