@@ -34,7 +34,7 @@ import org.jwcarman.loch.lattice.Label;
  *
  * <p>So the labelling function sees both. That is not a way for a caller to choose a label -- the
  * caller passes a value and nothing else, and the function deciding is the one declared when the
- * source was minted. What changes is that the door can read what it was handed before saying what
+ * source was declared. What changes is that the door can read what it was handed before saying what
  * it is.
  */
 @DisplayName("Labelling what arrives")

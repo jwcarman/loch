@@ -35,7 +35,7 @@ import org.jwcarman.loch.lattice.Label;
  * to police.
  *
  * <p>What replaced it is stronger and is what these tests now assert. A source carries its own
- * label, decided when it was minted, and reads the tenant from the access rather than the caller.
+ * label, decided when it was declared, and reads the tenant from the access rather than the caller.
  * Two tenants using the same source get two different labels and neither of them chose.
  */
 @DisplayName("Writing at somebody else's label")

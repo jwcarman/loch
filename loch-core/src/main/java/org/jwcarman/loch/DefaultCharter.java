@@ -260,7 +260,7 @@ public final class DefaultCharter implements Charter {
     return next;
   }
 
-  // ------------------------------------------------------------------ minting capabilities
+  // ------------------------------------------------------------------ declaring capabilities
 
   /** A source whose label depends on neither what arrives nor who is acting. */
   public <T> Conceal<T> source(String name, SurrogateType<T> type, Label label) {

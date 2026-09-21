@@ -126,8 +126,8 @@ class DeclaredAtTheDoorTest {
 
   /** Readers are views, so taking the same one twice is not taking anything twice. */
   @Test
-  @DisplayName("mints readers on demand, because they grant nothing the door did not have")
-  void mints_readers_on_demand() {
+  @DisplayName("constitutes readers on demand, because they grant nothing the door did not have")
+  void constitutes_readers_on_demand() {
     Surrogate<Card> card = cards.conceal(new Card("4111111111114821"));
 
     assertThat(processor.reading(cardType).reveal(card).allowed()).isTrue();

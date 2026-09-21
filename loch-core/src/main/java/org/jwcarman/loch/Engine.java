@@ -464,7 +464,7 @@ final class Engine {
           Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
     }
     // A fixed-arity capability cannot be called with the wrong number of handles, so reaching this
-    // means the spec and the capability that minted it disagree. That is a bug here, not there.
+    // means the spec and the capability that declared it disagree. That is a bug here, not there.
     if (!spec.fold() && parents.size() != spec.inputTypes().size()) {
       throw new IllegalStateException(
           "'%s' reads %d values and was given %d"

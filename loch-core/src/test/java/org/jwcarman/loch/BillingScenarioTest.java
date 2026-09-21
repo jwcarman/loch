@@ -138,7 +138,7 @@ class BillingScenarioTest {
   }
 
   /**
-   * The generic labelling function every source below is minted with: it reads the whole label,
+   * The generic labelling function every source below is declared with: it reads the whole label,
    * axis by axis, out of whatever context {@link #holdAs} put there. An source is still the only
    * door a value can enter through, and its name is still a fixed property of the door -- but the
    * four label axes themselves come from the access, the same way a tenant always did.
@@ -664,7 +664,7 @@ class BillingScenarioTest {
   class TheGate {
 
     @Test
-    @DisplayName("refuses an id nobody minted, rather than computing anything")
+    @DisplayName("refuses an id nobody declared, rather than computing anything")
     void refuses_an_id_nobody_minted() {
       Surrogate<String> invented = Surrogate.of("sur_whatever-i-like");
 
@@ -677,7 +677,7 @@ class BillingScenarioTest {
 
     /**
      * This used to invent a destination name and assert the config refused it. There is no longer a
-     * method that takes one: a door is reached by holding the sink, and outlets are minted during
+     * method that takes one: a door is reached by holding the sink, and outlets are declared during
      * configuration. What is worth asserting is that the door really is gone, because it is exactly
      * the sort of thing that gets added back for a test fixture and left there.
      */

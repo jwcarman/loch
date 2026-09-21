@@ -16,7 +16,7 @@
 package org.jwcarman.loch;
 
 /**
- * Somewhere values may go, and the only thing that mints a reader for it.
+ * Somewhere values may go, and the only thing that constitutes a reader for it.
  *
  * <p>A destination is a subsystem -- a payment processor, a shipping service, a vendor model --
  * together with both restrictions on reaching it. The ceiling says which labels may arrive; the
@@ -25,9 +25,9 @@ package org.jwcarman.loch;
  *
  * <p>Which is what makes a reader a view rather than a grant. {@link #reading} adds no authority:
  * it enforces the ceiling that was already there, and refuses a type that was not declared. So a
- * reader can be minted where it is needed and thrown away, and <b>a destination is safe to hand to
- * the service that talks to that subsystem</b>. It holds no configuration and cannot declare a new
- * door -- only look through this one.
+ * reader can be constituted where it is needed and thrown away, and <b>a destination is safe to
+ * hand to the service that talks to that subsystem</b>. It holds no configuration and cannot
+ * declare a new door -- only look through this one.
  *
  * <p>It is still more authority than any one reader, because it can constitute a reader for every
  * type it was declared to read. Hand out the destination when a service talks to the whole

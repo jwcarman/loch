@@ -26,7 +26,7 @@ package org.jwcarman.loch;
  * two-parent case. When a real one turns up it can be added for the arity it actually needs.
  *
  * <p>Plaintext is read in order to compute and does not leave. The result carries its parent's
- * label unless the derivation was minted with a lowering rule, and a lowering is checked against
+ * label unless the derivation was declared with a lowering rule, and a lowering is checked against
  * the lattice: relabelling to something not below the parent is refused, because raising is what
  * ordinary derivation already does and declaring it here is a mistake worth naming.
  *

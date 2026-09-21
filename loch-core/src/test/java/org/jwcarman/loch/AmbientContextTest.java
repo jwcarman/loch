@@ -49,8 +49,8 @@ class AmbientContextTest {
   /**
    * One store, its source and its sink, built together.
    *
-   * <p>Capabilities are attached when the store is built, so they have to be minted first. A record
-   * keeps the three together without every test repeating the order.
+   * <p>Capabilities are attached when the store is built, so they have to be declared first. A
+   * record keeps the three together without every test repeating the order.
    */
   record Wired(Charter store, Conceal<String> cards, Reveal<String> card) {}
 
