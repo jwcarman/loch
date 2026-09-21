@@ -111,6 +111,7 @@ public final class Derivations {
     private final TypeRef<O> outputType;
     private final Reading<I, O> function;
     private java.util.function.Function<AccessContext, A> ceiling;
+    private boolean anything;
     private UnaryOperator<A> relabel;
     private Predicate<AccessContext> availableTo = context -> true;
 
@@ -129,6 +130,21 @@ public final class Derivations {
     /** Accepts the same thing regardless of who is asking. */
     public Builder<A, I, O> accepting(A ceiling) {
       return accepting(context -> ceiling);
+    }
+
+    /**
+     * Accepts anything the loch will give it, in writing.
+     *
+     * <p>Required if no ceiling is set, for the same reason the auditor is: this reads plaintext,
+     * so it is a destination, and a destination that accepts everything from everyone should be a
+     * sentence somebody wrote rather than the consequence of not typing one. An exact-match
+     * dimension such as a tenant is the case that bites -- without a ceiling this reads any
+     * tenant's data on any caller's behalf, and the filtering has to be written by hand inside the
+     * function, which is the thing this library exists to stop.
+     */
+    public Builder<A, I, O> acceptingAnything() {
+      this.anything = true;
+      return this;
     }
 
     /** Accepts something that depends on who is asking -- a tenant, usually. */
@@ -156,6 +172,13 @@ public final class Derivations {
     }
 
     public Derivation<A, I, O> build() {
+      if (ceiling == null && !anything) {
+        throw new IllegalStateException(
+            "'"
+                + id
+                + "' reads plaintext, so it needs a ceiling: call accepting(...) with what it may"
+                + " look at, or acceptingAnything() if it really may look at everything");
+      }
       java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       UnaryOperator<A> theRelabel = relabel;
       Predicate<AccessContext> theAvailability = availableTo;

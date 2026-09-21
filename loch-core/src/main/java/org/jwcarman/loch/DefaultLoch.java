@@ -43,6 +43,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final Auditor auditor;
   private final java.util.function.Supplier<AccessContext> ambient;
   private final java.util.Set<String> callerMayContribute;
+  private final java.util.function.Predicate<AccessContext> mayErase;
   private final Storage<A> storage;
 
   public DefaultLoch(LochConfig<A> config, Storage<A> storage) {
@@ -75,6 +76,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     this.auditor = config.auditor();
     this.ambient = config.ambient();
     this.callerMayContribute = config.callerMayContribute();
+    this.mayErase = config.mayErase();
   }
 
   /**
@@ -211,7 +213,21 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public int erase(Handle<?> root) {
+  public int erase(Handle<?> root, AccessContext context) {
+    AccessContext asking = asking(context);
+    if (!mayErase.test(asking)) {
+      audit(
+          AuditRecord.Operation.ERASE,
+          root.id(),
+          null,
+          AuditRecord.Outcome.REFUSED,
+          "not permitted to erase",
+          null,
+          asking);
+      throw new AccessDeniedException(
+          Dereferenced.Reason.ABOVE_CEILING,
+          "erasing is refused: this loch was not told who may erase");
+    }
     int removed = storage.erase(root.id());
     audit(
         AuditRecord.Operation.ERASE,
@@ -220,7 +236,7 @@ public final class DefaultLoch<A> implements Loch<A> {
         AuditRecord.Outcome.ALLOWED,
         removed + " values removed",
         null,
-        AccessContext.empty());
+        asking);
     return removed;
   }
 
@@ -424,7 +440,8 @@ public final class DefaultLoch<A> implements Loch<A> {
       if (!lattice.permits(label, joined)) {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING,
-            "'%s' relabelled %s as %s, which is not below it".formatted(id, joined, label));
+            "'%s' relabelled a value as something not below it".formatted(id)
+                + explain(label, joined));
       }
     }
 

@@ -109,6 +109,8 @@ public class LochConfiguration {
                             Domain.Mail.class,
                             Domain.Invoice.class,
                             (mail, ctx) -> confirm(invoices, mail, ctx))
+                        // Reads untrusted personal mail, and only this tenant's.
+                        .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
                         .lowering(joined -> joined.withIntegrity(ENDORSED))
                         .build())
 
@@ -119,6 +121,7 @@ public class LochConfiguration {
                             Domain.Invoice.class,
                             Domain.Last4.class,
                             invoice -> new Domain.Last4(last4(invoice.cardToken())))
+                        .accepting(ctx -> ceiling(ctx, ENDORSED, CARDHOLDER))
                         .lowering(joined -> joined.withSensitivity(PERSONAL))
                         .availableTo(ctx -> ctx.has("role", "approver"))
                         .build())
@@ -155,7 +158,14 @@ public class LochConfiguration {
         sensitivity);
   }
 
-  /** An endorsement is only as strong as what it bound: here, the sender's own mailbox. */
+  /**
+   * An endorsement is only as strong as what it bound: here, the sender's own mailbox.
+   *
+   * <p>There used to be a {@code ctx.has("tenant", ...)} filter here too. It is gone because the
+   * derivation now declares a ceiling, so it cannot be handed another tenant's mail in the first
+   * place. Hand-written filtering inside a function that reads plaintext is exactly what a ceiling
+   * is for, and writing both meant the safety depended on the weaker one.
+   */
   private static Optional<Domain.Invoice> confirm(
       Invoices invoices, Domain.Mail mail, AccessContext ctx) {
     Matcher matcher = INVOICE.matcher(mail.body());

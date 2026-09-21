@@ -34,6 +34,7 @@ public class LochConfig<A> {
   private Auditor auditor;
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
+  private java.util.function.Predicate<AccessContext> mayErase = context -> false;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Question<A, ?, ?>> questions = new ArrayList<>();
@@ -154,6 +155,26 @@ public class LochConfig<A> {
 
   java.util.function.Supplier<AccessContext> ambient() {
     return ambient;
+  }
+
+  /**
+   * Who may erase a value and everything derived from it.
+   *
+   * <p>Refuses everyone until this says otherwise, because erasure is the one operation a label
+   * does not govern. Every other gate asks whether a value may be <i>disclosed</i> to somewhere; a
+   * label has nothing to say about whether it may be <i>destroyed</i>, and "possession is not
+   * authority" is a rule about reading. So the authority to erase is named separately or not
+   * granted.
+   *
+   * <p>An application that never erases says nothing and keeps a loch that cannot.
+   */
+  public LochConfig<A> mayErase(java.util.function.Predicate<AccessContext> mayErase) {
+    this.mayErase = Objects.requireNonNull(mayErase, "an erasure policy must not be null");
+    return this;
+  }
+
+  java.util.function.Predicate<AccessContext> mayErase() {
+    return mayErase;
   }
 
   Auditor auditor() {

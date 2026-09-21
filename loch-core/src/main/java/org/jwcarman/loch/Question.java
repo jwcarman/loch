@@ -123,6 +123,7 @@ public interface Question<A, I, Q> {
     private final TypeRef<I> inputType;
     private final Asking<I, Q> test;
     private java.util.function.Function<AccessContext, A> ceiling;
+    private boolean anything;
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Builder(QuestionId<I, Q> id, TypeRef<I> inputType, Asking<I, Q> test) {
@@ -134,6 +135,21 @@ public interface Question<A, I, Q> {
     /** Accepts the same thing regardless of who is asking. */
     public Builder<A, I, Q> accepting(A ceiling) {
       return accepting(context -> ceiling);
+    }
+
+    /**
+     * Accepts anything the loch will give it, in writing.
+     *
+     * <p>Required if no ceiling is set, for the same reason the auditor is: this reads plaintext,
+     * so it is a destination, and a destination that accepts everything from everyone should be a
+     * sentence somebody wrote rather than the consequence of not typing one. An exact-match
+     * dimension such as a tenant is the case that bites -- without a ceiling this reads any
+     * tenant's data on any caller's behalf, and the filtering has to be written by hand inside the
+     * function, which is the thing this library exists to stop.
+     */
+    public Builder<A, I, Q> acceptingAnything() {
+      this.anything = true;
+      return this;
     }
 
     /** Accepts something that depends on who is asking -- a tenant, usually. */
@@ -148,6 +164,13 @@ public interface Question<A, I, Q> {
     }
 
     public Question<A, I, Q> build() {
+      if (ceiling == null && !anything) {
+        throw new IllegalStateException(
+            "'"
+                + id
+                + "' reads plaintext, so it needs a ceiling: call accepting(...) with what it may"
+                + " look at, or acceptingAnything() if it really may look at everything");
+      }
       java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       java.util.function.Predicate<AccessContext> theAvailability = availableTo;
       return new Question<>() {

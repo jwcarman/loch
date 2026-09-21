@@ -169,6 +169,8 @@ class JdbcLochTest {
                                         .build())))
                     .lattice(Billing.LATTICE)
                     .askingWhoIsAsking(edge::get)
+                    // Erasure is the one operation a label cannot decide, so it is named here.
+                    .mayErase(ctx -> ctx.has("role", "compliance"))
                     .auditor(Auditors.discarding())
                     .destination(
                         Destinations.varying(
@@ -184,6 +186,8 @@ class JdbcLochTest {
                                 Last4.class,
                                 card ->
                                     new Last4(card.number().substring(card.number().length() - 4)))
+                            .accepting(
+                                ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
                             .lowering(
                                 joined ->
                                     new Billing(joined.tenant(), joined.integrity(), DataClass.PII))
@@ -268,6 +272,7 @@ class JdbcLochTest {
     Handle<Card> card = card();
     Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     int removed = loch.erase(card);
 
     assertThat(removed).isEqualTo(2);
@@ -282,6 +287,7 @@ class JdbcLochTest {
     Handle<Card> card = card();
     Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     assertThat(loch.erase(last4)).isEqualTo(1);
     assertThat(loch.holds(card)).isTrue();
   }
@@ -440,5 +446,17 @@ class JdbcLochTest {
     // No type is supplied here, and none is needed: the label is read without touching the payload.
     assertThat(loch.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
     assertThat(loch.lineage(cards).asserted()).isTrue();
+  }
+
+  /** A label governs disclosure, not destruction, so erasure is named separately or not granted. */
+  @Test
+  @DisplayName("refuses to erase for anyone the application did not name")
+  void refuses_to_erase_for_anyone_not_named() {
+    Handle<Card> card = card();
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "agent")));
+
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> loch.erase(card)))
+        .isInstanceOf(org.jwcarman.loch.AccessDeniedException.class);
+    assertThat(loch.holds(card)).isTrue();
   }
 }

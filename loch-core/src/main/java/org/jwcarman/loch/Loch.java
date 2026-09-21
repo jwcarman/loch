@@ -81,9 +81,19 @@ public interface Loch<A> {
    * is what lineage buys. A derived value is made of its parents, so leaving descendants behind
    * would leave the data that was asked to be gone.
    *
+   * <p><b>Refused unless the application said who may.</b> A label governs disclosure, not
+   * destruction, so this is the one operation no ceiling can decide. See {@code
+   * LochConfig#mayErase}.
+   *
    * @return how many values were removed, the root included
+   * @throws AccessDeniedException when the erasure policy refuses
    */
-  int erase(Handle<?> root);
+  int erase(Handle<?> root, AccessContext context);
+
+  /** Using whatever the loch was told about who is asking. */
+  default int erase(Handle<?> root) {
+    return erase(root, AccessContext.empty());
+  }
 
   /** Whether the loch is holding this at all. */
   boolean holds(Handle<?> held);

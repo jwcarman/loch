@@ -180,6 +180,7 @@ class BillingScenarioTest {
                               DisputeClaim.class,
                               InvoiceNumber.class,
                               claim -> new InvoiceNumber(claim.invoiceNumber()))
+                          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
                           .build())
                   // Truncating a card IS a declassification, and PCI auditors ask about it.
                   .derivation(
@@ -205,6 +206,7 @@ class BillingScenarioTest {
                               String.class,
                               Last4.class,
                               token -> new Last4(token.substring(token.length() - 4)))
+                          .accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
                           .lowering(joined -> joined.withDataClass(DataClass.PII))
                           .build())
                   // Declares itself an endorsement without checking anything. Loch refuses it.
@@ -214,6 +216,7 @@ class BillingScenarioTest {
                               DisputeClaim.class,
                               InvoiceNumber.class,
                               claim -> new InvoiceNumber(claim.invoiceNumber()))
+                          .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
                           .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
                           .build())
                   // Several values in, one out. Every parent's label lands on the result.
@@ -223,6 +226,11 @@ class BillingScenarioTest {
                               String.class,
                               Report.class,
                               notes -> new Report(String.join(" / ", notes)))
+                          // An internal reporting job, entitled to read across tenants. The point
+                          // of the test below is what happens to what it produces, not whether it
+                          // may read: a ceiling would refuse the combination earlier, and then
+                          // there would be nothing to demonstrate.
+                          .acceptingAnything()
                           .build())
                   // Reads the value, then says no. The refusal has to be recorded because the
                   // function already saw the plaintext.
@@ -232,6 +240,7 @@ class BillingScenarioTest {
                               DisputeClaim.class,
                               InvoiceNumber.class,
                               (claim, ctx) -> java.util.Optional.empty())
+                          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
                           .build())
                   // A fold that lowers is as privileged as a derivation that lowers.
                   .derivation(
@@ -240,6 +249,7 @@ class BillingScenarioTest {
                               String.class,
                               Report.class,
                               notes -> new Report("redacted summary of " + notes.size()))
+                          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
                           .lowering(joined -> joined.withDataClass(DataClass.NONE))
                           .build())
                   // The whole account never leaves the loch to answer one question about it.
@@ -248,6 +258,7 @@ class BillingScenarioTest {
                               OWNED_BY,
                               Account.class,
                               (account, sender) -> account.email().equalsIgnoreCase(sender))
+                          .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
                           .build()));
 
   record DisputeClaim(String invoiceNumber, String reason) {}
@@ -277,6 +288,12 @@ class BillingScenarioTest {
 
   static final DerivationId<DisputeClaim, InvoiceNumber> WISHFUL =
       DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
+
+  /** What an operation reading plaintext may look at: always the acting tenant's own data. */
+  private static java.util.function.Function<AccessContext, Billing> reading(
+      Integrity integrity, Tlp tlp, DataClass dataClass) {
+    return ctx -> Billing.ceilingFor(ctx, integrity, tlp, dataClass);
+  }
 
   /** Every access in this system is made on behalf of a tenant, established at the edge. */
   private AccessContext acme() {
@@ -402,10 +419,14 @@ class BillingScenarioTest {
     /**
      * The claim the whole design rests on, produced the way an application would produce it.
      *
-     * <p>Nobody labels anything as conflicted. Two tenants' notes are folded into one report,
-     * because somebody wrote a perfectly reasonable summariser and passed it perfectly reasonable
-     * inputs. The result is unusable everywhere, and no rule had to be remembered for that to
-     * happen.
+     * <p>Nobody labels anything as conflicted. An internal reporting job that is entitled to read
+     * across tenants combines two customers' notes, because somebody wrote a perfectly reasonable
+     * summariser and passed it perfectly reasonable inputs. The result is unusable everywhere, and
+     * no rule had to be remembered for that to happen.
+     *
+     * <p>A tenant-scoped ceiling would have refused the combination earlier, which is the better
+     * answer when it applies. This is the case where it does not: reading both was legitimate, and
+     * the guarantee has to hold for what comes out.
      */
     @Test
     @DisplayName("folding two tenants' data makes a report that can go nowhere at all")
@@ -574,7 +595,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a projection inherits its parent's labels exactly")
     void a_projection_inherits_its_parents_labels() {
-      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow();
 
       assertThat(loch.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
@@ -587,7 +608,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("extracting a field does not make it trustworthy")
     void extracting_a_field_does_not_make_it_trustworthy() {
-      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow();
 
       assertThat(loch.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
     }
@@ -597,7 +618,7 @@ class BillingScenarioTest {
     void records_what_it_came_from() {
       Handle<DisputeClaim> parent = claim();
 
-      Handle<InvoiceNumber> number = loch.derive(parent, CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> number = loch.derive(parent, CLAIMED_INVOICE, acme()).orThrow();
 
       assertThat(loch.lineage(number).parents()).containsExactly(parent.id());
       assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE.value());
@@ -617,8 +638,8 @@ class BillingScenarioTest {
     void deriving_twice_makes_two_values() {
       Handle<DisputeClaim> parent = claim();
 
-      Handle<InvoiceNumber> once = loch.derive(parent, CLAIMED_INVOICE).orThrow();
-      Handle<InvoiceNumber> twice = loch.derive(parent, CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> once = loch.derive(parent, CLAIMED_INVOICE, acme()).orThrow();
+      Handle<InvoiceNumber> twice = loch.derive(parent, CLAIMED_INVOICE, acme()).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
       assertThat(loch.lineage(once).parents()).containsExactly(parent.id());
@@ -628,8 +649,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("two different parents give two different handles")
     void two_different_parents_give_two_different_handles() {
-      assertThat(loch.derive(claim(), CLAIMED_INVOICE).orThrow().id())
-          .isNotEqualTo(loch.derive(claim(), CLAIMED_INVOICE).orThrow().id());
+      assertThat(loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow().id())
+          .isNotEqualTo(loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow().id());
     }
 
     @Test
@@ -637,7 +658,7 @@ class BillingScenarioTest {
     void an_unregistered_name_is_refused() {
       DerivationId<DisputeClaim, InvoiceNumber> invented = DerivationId.of("whatever-i-like");
 
-      assertThat(loch.derive(claim(), invented))
+      assertThat(loch.derive(claim(), invented, acme()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NO_SUCH_DERIVATION));
@@ -712,7 +733,7 @@ class BillingScenarioTest {
               DisputeClaim.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      assertThat(loch.derive(endorsed, WISHFUL))
+      assertThat(loch.derive(endorsed, WISHFUL, acme()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NOT_A_LOWERING));
@@ -782,8 +803,9 @@ class BillingScenarioTest {
     void answers_without_the_account_leaving() {
       Handle<Account> account = account();
 
-      assertThat(loch.ask(account, OWNED_BY, "someone@acme.example").isTrue()).isTrue();
-      assertThat(loch.ask(account, OWNED_BY, "attacker@elsewhere.example").isFalse()).isTrue();
+      assertThat(loch.ask(account, OWNED_BY, "someone@acme.example", acme()).isTrue()).isTrue();
+      assertThat(loch.ask(account, OWNED_BY, "attacker@elsewhere.example", acme()).isFalse())
+          .isTrue();
     }
 
     /** A refusal is not a "no". Collapsing them is how a denied check reads as a failed one. */
@@ -792,7 +814,7 @@ class BillingScenarioTest {
     void a_refusal_is_neither_true_nor_false() {
       QuestionId<Account, String> invented = QuestionId.of("whatever");
 
-      Answer answer = loch.ask(account(), invented, "x");
+      Answer answer = loch.ask(account(), invented, "x", acme());
 
       assertThat(answer.isTrue()).isFalse();
       assertThat(answer.isFalse()).isFalse();

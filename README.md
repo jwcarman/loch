@@ -181,6 +181,12 @@ derivation function sees the access context while the key did not, a second call
 first caller's answer without the function running at all, across tenants. Saving a row was not
 worth a rule with an exception in it.
 
+**Erasure is refused until you say who may.** Every other gate decides whether a value may be
+*disclosed* somewhere, and a label has nothing to say about whether it may be *destroyed* —
+"possession is not authority" is a rule about reading. So the authority to erase is named
+separately, with `mayErase(...)`, or it is not granted. An application that never erases says
+nothing and gets a loch that cannot.
+
 **Erasure is a reachability query.** Lineage is kept as values are derived, so erasing a value takes
 everything ever made from it in one indexed statement. Lineage is a DAG rather than a tree, so this
 is a closure table rather than a materialised path, whose rows would multiply at every merge.
