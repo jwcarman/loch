@@ -182,16 +182,13 @@ class JdbcLochTest {
             "cards", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     vendorLlm =
         c.sink("vendor-llm", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
-    paymentProcessor =
-        c.sink(
-            "payment-processor",
-            Card.class,
-            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
-    last4Processor =
-        c.sink(
-            "payment-processor-last4",
-            Last4.class,
-            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    // One destination, three readers. The ceiling is written once, every reader enforces it,
+    // and all three audit under "payment-processor" because that is the subsystem they reach.
+    var processor =
+        c.destination(
+            "payment-processor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    paymentProcessor = processor.reading(Card.class);
+    last4Processor = processor.reading(Last4.class);
 
     // A generic container is its own type, so it needs its own source and its own sinks.
     cardLists =
@@ -199,11 +196,7 @@ class JdbcLochTest {
             "card-lists",
             TypeRef.listOf(TypeRef.of(Card.class)),
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
-    cardListProcessor =
-        c.sink(
-            "card-lists-to-processor",
-            TypeRef.listOf(TypeRef.of(Card.class)),
-            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    cardListProcessor = processor.reading(TypeRef.listOf(TypeRef.of(Card.class)));
     cardListVendor =
         c.sink(
             "card-lists-to-vendor",

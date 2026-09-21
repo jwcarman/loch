@@ -36,7 +36,7 @@ import org.jwcarman.loch.lattice.Lattice;
 public final class DefaultLoch<A> implements Loch<A> {
 
   private final Lattice<A> lattice;
-  private final Map<String, Destination<A>> destinations;
+  private final Map<String, DestinationSpec<A>> destinations;
   private final List<DerivationSpec<A, ?>> derivations;
   private final List<QuerySpec<A, ?, ?>> queries;
   private final boolean explainRefusals;
@@ -49,8 +49,8 @@ public final class DefaultLoch<A> implements Loch<A> {
   public DefaultLoch(LochConfig<A, ?> config, Storage<A> storage) {
     this.storage = storage;
     this.lattice = config.lattice();
-    Map<String, Destination<A>> byId = new LinkedHashMap<>();
-    for (Destination<A> destination : config.destinations()) {
+    Map<String, DestinationSpec<A>> byId = new LinkedHashMap<>();
+    for (DestinationSpec<A> destination : config.destinations()) {
       if (byId.put(destination.name(), destination) != null) {
         throw new IllegalStateException(
             "two destinations are registered as '" + destination.name() + "'");
@@ -125,7 +125,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    * <p>Treated as a refusal rather than allowed to propagate: a policy that cannot be evaluated has
    * not said yes, and a caller assembling a prompt should get a handle rather than a stack trace.
    */
-  private A ceilingOf(Destination<A> destination, AccessContext context) {
+  private A ceilingOf(DestinationSpec<A> destination, AccessContext context) {
     try {
       return destination.ceiling(context);
     } catch (RuntimeException e) {
@@ -556,7 +556,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   <T> Dereferenced<T> dereference(
       Surrogate<T> held, TypeRef<T> expected, String to, AccessContext context) {
     context = asking(context);
-    Destination<A> destination = destinations.get(to);
+    DestinationSpec<A> destination = destinations.get(to);
     if (destination == null) {
       return denied(
           Dereferenced.Reason.NO_SUCH_DESTINATION,

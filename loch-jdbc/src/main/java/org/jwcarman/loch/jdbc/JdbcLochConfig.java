@@ -21,7 +21,6 @@ import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
-import org.jwcarman.loch.Destination;
 import org.jwcarman.loch.LochConfig;
 import org.jwcarman.loch.lattice.Lattice;
 
@@ -113,12 +112,6 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
   @Override
   public JdbcLochConfig<A, D> explainRefusals() {
     super.explainRefusals();
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A, D> destination(Destination<A> destination) {
-    super.destination(destination);
     return this;
   }
 

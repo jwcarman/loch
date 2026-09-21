@@ -27,7 +27,7 @@ package org.jwcarman.loch;
  *
  * @param <A> the application's label type
  */
-public interface Destination<A> {
+public interface DestinationSpec<A> {
 
   /** The name this is registered and audited under. */
   String name();

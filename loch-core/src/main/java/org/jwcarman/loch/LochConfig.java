@@ -38,7 +38,7 @@ public class LochConfig<A, D> {
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
-  private final List<Destination<A>> destinations = new ArrayList<>();
+  private final List<DestinationSpec<A>> destinations = new ArrayList<>();
   private final List<DerivationSpec<A, ?>> derivations = new ArrayList<>();
   final List<QuerySpec<A, ?, ?>> queries = new ArrayList<>();
   private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
@@ -52,7 +52,7 @@ public class LochConfig<A, D> {
   }
 
   /** Somewhere values may go. Registered once; referenced by name forever after. */
-  public LochConfig<A, D> destination(Destination<A> destination) {
+  public LochConfig<A, D> destination(DestinationSpec<A> destination) {
     destinations.add(Objects.requireNonNull(destination, "a destination must not be null"));
     return this;
   }
@@ -123,38 +123,92 @@ public class LochConfig<A, D> {
   }
 
   /**
-   * Mints the authority to read plaintext out of this loch at one ceiling. Configuration time only.
+   * Declares somewhere values may go, and what it will accept. Configuration time only.
    *
-   * <p>Also registers the destination, so the manifest still enumerates it and audit lines still
-   * name it. The id remains what this door is called; it stops being a way to reach it.
+   * <p>The restriction lives here and is said once. Typed readers are minted from it with {@link
+   * Destination#reading}, and a reader carries this ceiling rather than one of its own -- so a
+   * reader is always strictly narrower than the destination that made it, never broader.
+   *
+   * <p><b>A destination is more authority than any reader it mints</b>, because it can mint a
+   * reader for any type. It belongs beside the configuration that created it and is never handed to
+   * a service; hand out the readers instead. It looks like an inert descriptor and is not one.
+   */
+  public Destination<A, D> destination(
+      String name, java.util.function.Function<AccessContext, A> ceiling) {
+    Objects.requireNonNull(name, "a destination needs a name");
+    Objects.requireNonNull(ceiling, "a destination needs a ceiling");
+    destination(Destinations.varying(name, ceiling));
+    return new Destination<>(this, name);
+  }
+
+  /** A destination whose ceiling does not depend on who is asking. */
+  public Destination<A, D> destination(String name, A ceiling) {
+    Objects.requireNonNull(ceiling, "a destination needs a ceiling");
+    return destination(name, context -> ceiling);
+  }
+
+  /**
+   * Somewhere values may go, and the only thing that can mint a reader for it.
+   *
+   * <p>Minting a reader adds no authority: every reader enforces the ceiling declared when this was
+   * created, evaluated against whoever is asking at the time of the read. What a reader adds is a
+   * narrowing by type, so a service handed a {@code SurrogateSink<Card>} cannot read a {@code
+   * Last4} even though this destination would accept one.
+   */
+  public static final class Destination<A, D> {
+
+    private final LochConfig<A, D> config;
+    private final String name;
+
+    private Destination(LochConfig<A, D> config, String name) {
+      this.config = config;
+      this.name = name;
+    }
+
+    /** A reader for one type at this destination's ceiling. */
+    public <T extends D> SurrogateSink<T> reading(Class<T> type) {
+      return reading(TypeRef.of(type));
+    }
+
+    /** The same, for a generic container. */
+    public <T extends D> SurrogateSink<T> reading(TypeRef<T> type) {
+      Objects.requireNonNull(type, "a reader needs to say what comes out of it");
+      String door = name;
+      Binding<A> binding = config.binding("reader for '" + door + "'");
+      return new SurrogateSink<>() {
+        @Override
+        public TypeRef<T> type() {
+          return type;
+        }
+
+        @Override
+        public Dereferenced<T> exchange(Surrogate<T> surrogate) {
+          return exchange(surrogate, AccessContext.empty());
+        }
+
+        @Override
+        public Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context) {
+          return binding.engine().dereference(surrogate, type, door, context);
+        }
+
+        @Override
+        public String toString() {
+          return "'" + door + "' reading " + type.getType().getTypeName();
+        }
+      };
+    }
+  }
+
+  /**
+   * A destination with exactly one reader, which is the common case.
+   *
+   * <p>Shorthand for declaring a destination and immediately reading one type at it. Reach for
+   * {@link #destination} when the same door reads several types, so its ceiling is written once
+   * rather than copied per type.
    */
   public <T extends D> SurrogateSink<T> sink(
       String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    Objects.requireNonNull(name, "a sink needs a name");
-    Binding<A> binding = binding("sink '" + name + "'");
-    Objects.requireNonNull(type, "a sink needs to say what comes out of it");
-    destination(Destinations.varying(name, ceiling));
-    return new SurrogateSink<>() {
-      @Override
-      public TypeRef<T> type() {
-        return type;
-      }
-
-      @Override
-      public Dereferenced<T> exchange(Surrogate<T> surrogate) {
-        return exchange(surrogate, AccessContext.empty());
-      }
-
-      @Override
-      public Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context) {
-        return binding.engine().dereference(surrogate, type, name, context);
-      }
-
-      @Override
-      public String toString() {
-        return "sink '" + name + "' reading " + type.getType().getTypeName();
-      }
-    };
+    return destination(name, ceiling).reading(type);
   }
 
   /** The same, for a type with no generic parameters of its own. */
@@ -643,7 +697,7 @@ public class LochConfig<A, D> {
     return lattice;
   }
 
-  List<Destination<A>> destinations() {
+  List<DestinationSpec<A>> destinations() {
     return List.copyOf(destinations);
   }
 
