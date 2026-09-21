@@ -79,9 +79,7 @@ public final class MemoryStorage<A> implements Storage<A> {
   public Optional<StoredMetadata<A>> metadata(String id) {
     return Optional.ofNullable(values.get(id))
         .map(
-            stored ->
-                new StoredMetadata<>(
-                    stored.type().getType().getTypeName(), stored.label(), stored.lineage()));
+            stored -> new StoredMetadata<>(stored.type().name(), stored.label(), stored.lineage()));
   }
 
   @Override

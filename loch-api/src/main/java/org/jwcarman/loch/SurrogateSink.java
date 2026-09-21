@@ -15,8 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import org.jwcarman.codec.spi.TypeRef;
-
 /**
  * The authority to take plaintext out of a store at one particular ceiling.
  *
@@ -52,7 +50,7 @@ import org.jwcarman.codec.spi.TypeRef;
 public interface SurrogateSink<T> {
 
   /** What comes out of it. */
-  TypeRef<T> type();
+  SurrogateType<T> type();
 
   /**
    * Exchanges a surrogate back for the value it stands in for, if its label is at or below what

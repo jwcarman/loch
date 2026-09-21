@@ -188,8 +188,8 @@ public final class JdbcStorage<A> implements Storage<A> {
       throws SQLException {
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id);
-      statement.setString(2, value.type().getType().getTypeName());
-      statement.setBytes(3, encode(value.type(), value.value()));
+      statement.setString(2, value.type().name());
+      statement.setBytes(3, encode(value.type().type(), value.value()));
       statement.setBytes(4, labels.encode(value.label()));
       statement.setString(5, value.lineage().derivation().orElse(null));
       statement.setTimestamp(6, Timestamp.from(Instant.now()));

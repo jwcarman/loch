@@ -21,7 +21,6 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
-import org.jwcarman.codec.spi.TypeRef;
 
 /**
  * Everything the engine needs to run a derivation, flattened to one arity-blind shape.
@@ -36,8 +35,8 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 record DerivationSpec<A, O>(
     String name,
-    List<TypeRef<?>> inputTypes,
-    TypeRef<O> outputType,
+    List<SurrogateType<?>> inputTypes,
+    SurrogateType<O> outputType,
     BiFunction<List<Object>, AccessContext, Optional<O>> function,
     Function<AccessContext, A> ceiling,
     UnaryOperator<A> relabel,
@@ -50,7 +49,7 @@ record DerivationSpec<A, O>(
   }
 
   /** What the parent in this position must be. A fold applies its one type to every parent. */
-  TypeRef<?> typeAt(int position) {
+  SurrogateType<?> typeAt(int position) {
     return fold ? inputTypes.getFirst() : inputTypes.get(position);
   }
 }

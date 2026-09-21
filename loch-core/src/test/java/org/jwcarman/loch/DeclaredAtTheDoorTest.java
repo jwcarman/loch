@@ -48,6 +48,11 @@ class DeclaredAtTheDoorTest {
   private final SurrogateStoreConfig<Exact<String>, Value> config =
       new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
+  // Declared once, named by the strategy: card, last4, session-token.
+  private final SurrogateType<Card> cardType = config.type(Card.class);
+  private final SurrogateType<Last4> last4Type = config.type(Last4.class);
+  private final SurrogateType<SessionToken> tokenType = config.type(SessionToken.class);
+
   private final SurrogateSource<Card> cards =
       config.source("cards", Card.class, ctx -> Exact.of("acme"));
 
@@ -57,8 +62,8 @@ class DeclaredAtTheDoorTest {
   private final SurrogateStoreConfig.Destination<Exact<String>, Value> processor =
       config
           .destination("payment-processor", ctx -> Exact.of("acme"))
-          .type(Card.class)
-          .type(Last4.class)
+          .type(cardType)
+          .type(last4Type)
           .mint();
 
   private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
@@ -68,7 +73,7 @@ class DeclaredAtTheDoorTest {
   void reads_the_types_it_was_declared_to_read() {
     Surrogate<Card> card = cards.exchange(new Card("4111111111114821"));
 
-    assertThat(processor.reading(Card.class).exchange(card).granted())
+    assertThat(processor.reading(cardType).exchange(card).granted())
         .contains(new Card("4111111111114821"));
   }
 
@@ -82,10 +87,12 @@ class DeclaredAtTheDoorTest {
   @Test
   @DisplayName("refuses to make a reader for a type it was not declared to read")
   void refuses_a_reader_for_an_undeclared_type() {
-    assertThatThrownBy(() -> processor.reading(SessionToken.class))
+    assertThatThrownBy(() -> processor.reading(tokenType))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("does not read")
-        .hasMessageContaining("SessionToken");
+        // The stored vocabulary, not the Java one: session-token is what it is written down as.
+        .hasMessageContaining("session-token")
+        .hasMessageContaining("[card, last4]");
   }
 
   /** Same label, same ceiling, and still out of reach, because the door never read that type. */
@@ -95,7 +102,7 @@ class DeclaredAtTheDoorTest {
     Surrogate<SessionToken> token = tokens.exchange(new SessionToken("sess_abc"));
 
     assertThat(store.label(token.id())).isEqualTo(Exact.of("acme"));
-    assertThatThrownBy(() -> processor.reading(SessionToken.class))
+    assertThatThrownBy(() -> processor.reading(tokenType))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -113,7 +120,7 @@ class DeclaredAtTheDoorTest {
   void mints_readers_on_demand() {
     Surrogate<Card> card = cards.exchange(new Card("4111111111114821"));
 
-    assertThat(processor.reading(Card.class).exchange(card).allowed()).isTrue();
-    assertThat(processor.reading(Card.class).exchange(card).allowed()).isTrue();
+    assertThat(processor.reading(cardType).exchange(card).allowed()).isTrue();
+    assertThat(processor.reading(cardType).exchange(card).allowed()).isTrue();
   }
 }

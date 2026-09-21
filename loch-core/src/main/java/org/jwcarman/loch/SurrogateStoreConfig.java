@@ -16,6 +16,7 @@
 package org.jwcarman.loch;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -43,6 +44,8 @@ public class SurrogateStoreConfig<A, D> {
   private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
   private DefaultSurrogateStore<A> bound;
   private final List<Binding<A>> bindings = new ArrayList<>();
+  private SurrogateNamingStrategy naming = SurrogateNamingStrategy.standard();
+  private final java.util.Map<String, SurrogateType<?>> types = new LinkedHashMap<>();
 
   /** The order over this application's labels. Required. */
   public SurrogateStoreConfig<A, D> lattice(Lattice<A> lattice) {
@@ -54,6 +57,63 @@ public class SurrogateStoreConfig<A, D> {
   public SurrogateStoreConfig<A, D> destination(DestinationSpec<A> destination) {
     destinations.add(Objects.requireNonNull(destination, "a destination must not be null"));
     return this;
+  }
+
+  // ------------------------------------------------------------------ the types it will keep
+
+  /**
+   * How a type gets its stored name when nobody gives it one.
+   *
+   * <p>Defaults to {@link SurrogateNamingStrategy#standard()}. Changing it renames every type that
+   * relied on it, which orphans everything already stored, so it is a decision for the first day
+   * rather than the four hundredth.
+   */
+  public SurrogateStoreConfig<A, D> naming(SurrogateNamingStrategy naming) {
+    this.naming = Objects.requireNonNull(naming, "a naming strategy must not be null");
+    return this;
+  }
+
+  /** A type this store will keep, named by the strategy. */
+  public <T extends D> SurrogateType<T> type(Class<T> type) {
+    Objects.requireNonNull(type, "a type must not be null");
+    return type(naming.nameFor(type), TypeRef.of(type));
+  }
+
+  /** A type this store will keep, named explicitly. */
+  public <T extends D> SurrogateType<T> type(String name, Class<T> type) {
+    return type(name, TypeRef.of(type));
+  }
+
+  /**
+   * A type this store will keep, named explicitly, for a generic container.
+   *
+   * <p>Containers have to be named here. Their raw type is not yours to annotate and would collide
+   * with every other container over it.
+   */
+  @SuppressWarnings("unchecked")
+  public <T extends D> SurrogateType<T> type(String name, TypeRef<T> type) {
+    Objects.requireNonNull(name, "a type needs a name");
+    Objects.requireNonNull(type, "a type must not be null");
+    SurrogateType<?> existing = types.get(name);
+    if (existing != null) {
+      if (!existing.type().getType().equals(type.getType())) {
+        throw new IllegalStateException(
+            ("two types both want the name '%s': %s and %s. A stored name has to identify one"
+                    + " type, or a reader gets handed the wrong one. Name one of them"
+                    + " explicitly.")
+                .formatted(
+                    name, existing.type().getType().getTypeName(), type.getType().getTypeName()));
+      }
+      return (SurrogateType<T>) existing;
+    }
+    SurrogateType<T> declared = new SurrogateType<>(name, type);
+    types.put(name, declared);
+    return declared;
+  }
+
+  /** Everything this store was told it may keep, for the manifest. */
+  java.util.Collection<SurrogateType<?>> types() {
+    return java.util.List.copyOf(types.values());
   }
 
   // ------------------------------------------------------------------ minting capabilities
@@ -70,7 +130,9 @@ public class SurrogateStoreConfig<A, D> {
    * tenant, from ambient context.
    */
   public <T extends D> SurrogateSource<T> source(
-      String name, TypeRef<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
+      String name,
+      SurrogateType<T> type,
+      java.util.function.BiFunction<T, AccessContext, A> labelling) {
     Objects.requireNonNull(name, "a source needs a name");
     Binding<A> binding = binding("source '" + name + "'");
     Objects.requireNonNull(type, "a source needs to know what it accepts");
@@ -94,12 +156,12 @@ public class SurrogateStoreConfig<A, D> {
   /** The same, for a type with no generic parameters of its own. */
   public <T extends D> SurrogateSource<T> source(
       String name, Class<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
-    return source(name, TypeRef.of(type), labelling);
+    return source(name, type(type), labelling);
   }
 
   /** The same, for a generic container whose label does not depend on what is arriving. */
   public <T extends D> SurrogateSource<T> source(
-      String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
+      String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> labelling) {
     return source(name, type, (value, context) -> labelling.apply(context));
   }
 
@@ -112,13 +174,13 @@ public class SurrogateStoreConfig<A, D> {
    */
   public <T extends D> SurrogateSource<T> source(
       String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    return source(name, TypeRef.of(type), (value, context) -> labelling.apply(context));
+    return source(name, type(type), (value, context) -> labelling.apply(context));
   }
 
   /** A source whose label depends on neither who is acting nor what is arriving. */
   public <T extends D> SurrogateSource<T> source(String name, Class<T> type, A label) {
     Objects.requireNonNull(label, "a source needs a label");
-    return source(name, TypeRef.of(type), (value, context) -> label);
+    return source(name, type(type), (value, context) -> label);
   }
 
   /**
@@ -138,13 +200,13 @@ public class SurrogateStoreConfig<A, D> {
   /** A destination being declared: its ceiling is set, its types are being listed. */
   public static final class Declaring<A, D> {
 
-    private final SurrogateStoreConfig<A, ?> config;
+    private final SurrogateStoreConfig<A, D> config;
     private final String name;
     private final java.util.function.Function<AccessContext, A> ceiling;
     private final java.util.Set<String> reads = new java.util.LinkedHashSet<>();
 
     private Declaring(
-        SurrogateStoreConfig<A, ?> config,
+        SurrogateStoreConfig<A, D> config,
         String name,
         java.util.function.Function<AccessContext, A> ceiling) {
       this.config = config;
@@ -153,14 +215,14 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** One more type this destination is allowed to hand over. */
-    public Declaring<A, D> type(Class<?> type) {
-      return type(TypeRef.of(type));
+    public <T extends D> Declaring<A, D> type(Class<T> type) {
+      return type(config.type(type));
     }
 
-    /** The same, for a generic container. */
-    public Declaring<A, D> type(TypeRef<?> type) {
+    /** The same, for a type already declared, including a generic container. */
+    public Declaring<A, D> type(SurrogateType<?> type) {
       Objects.requireNonNull(type, "a destination's type must not be null");
-      reads.add(type.getType().getTypeName());
+      reads.add(type.name());
       return this;
     }
 
@@ -175,8 +237,12 @@ public class SurrogateStoreConfig<A, D> {
                 + " next year.");
       }
       config.destination(Destinations.varying(name, ceiling));
+      // Declaration order, not hash order: this list ends up in an error message somebody has to
+      // read, and "[last4, card]" changing to "[card, last4]" between runs helps nobody.
       return new Destination<>(
-          name, java.util.Set.copyOf(reads), config.binding("destination '" + name + "'"));
+          name,
+          java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(reads)),
+          config.binding("destination '" + name + "'"));
     }
   }
 
@@ -200,14 +266,9 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** A reader for one of the types this destination was declared to read. */
-    public <T extends D> SurrogateSink<T> reading(Class<T> type) {
-      return reading(TypeRef.of(type));
-    }
-
-    /** The same, for a generic container. */
-    public <T extends D> SurrogateSink<T> reading(TypeRef<T> type) {
+    public <T extends D> SurrogateSink<T> reading(SurrogateType<T> type) {
       Objects.requireNonNull(type, "a reader needs to say what comes out of it");
-      String wanted = type.getType().getTypeName();
+      String wanted = type.name();
       if (!reads.contains(wanted)) {
         throw new IllegalStateException(
             ("'%s' does not read %s. It was declared to read %s, and a reader cannot add to"
@@ -218,7 +279,7 @@ public class SurrogateStoreConfig<A, D> {
       Binding<A> bound = binding;
       return new SurrogateSink<>() {
         @Override
-        public TypeRef<T> type() {
+        public SurrogateType<T> type() {
           return type;
         }
 
@@ -234,7 +295,7 @@ public class SurrogateStoreConfig<A, D> {
 
         @Override
         public String toString() {
-          return "'" + door + "' reading " + type.getType().getTypeName();
+          return "'" + door + "' reading " + type.name();
         }
       };
     }
@@ -248,20 +309,20 @@ public class SurrogateStoreConfig<A, D> {
    * rather than copied per type.
    */
   public <T extends D> SurrogateSink<T> sink(
-      String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
+      String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> ceiling) {
     return destination(name, ceiling).type(type).mint().reading(type);
   }
 
   /** The same, for a type with no generic parameters of its own. */
   public <T extends D> SurrogateSink<T> sink(
       String name, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return sink(name, TypeRef.of(type), ceiling);
+    return sink(name, type(type), ceiling);
   }
 
   /** An sink whose ceiling does not depend on who is asking. */
   public <T extends D> SurrogateSink<T> sink(String name, Class<T> type, A ceiling) {
     Objects.requireNonNull(ceiling, "a sink needs a ceiling");
-    return sink(name, TypeRef.of(type), context -> ceiling);
+    return sink(name, type(type), context -> ceiling);
   }
 
   // ------------------------------------------------------------------ derivations and folds
@@ -276,12 +337,19 @@ public class SurrogateStoreConfig<A, D> {
    */
   public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
       String name, Class<I> input, Class<O> output, Function<I, O> function) {
+    return derivation(name, type(input), type(output), function);
+  }
+
+  /** The same, for types already declared. */
+  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
+      String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function) {
     return new Minting<>(
         this,
         name,
-        List.of(TypeRef.of(input)),
-        TypeRef.of(output),
-        (values, context) -> Optional.ofNullable(function.apply(input.cast(values.getFirst()))),
+        List.<SurrogateType<?>>of(input),
+        output,
+        (values, context) ->
+            Optional.ofNullable(function.apply(input.type().rawClass().cast(values.getFirst()))),
         false,
         (spec, binding) ->
             new Derivation<>() {
@@ -305,12 +373,22 @@ public class SurrogateStoreConfig<A, D> {
       Class<I> input,
       Class<O> output,
       java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
+    return checking(name, type(input), type(output), function);
+  }
+
+  /** The same, for types already declared. */
+  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> checking(
+      String name,
+      SurrogateType<I> input,
+      SurrogateType<O> output,
+      java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
     return new Minting<>(
         this,
         name,
-        List.of(TypeRef.of(input)),
-        TypeRef.of(output),
-        (values, context) -> function.apply(input.cast(values.getFirst()), context),
+        List.<SurrogateType<?>>of(input),
+        output,
+        (values, context) ->
+            function.apply(input.type().rawClass().cast(values.getFirst()), context),
         false,
         (spec, binding) ->
             new Derivation<>() {
@@ -334,13 +412,20 @@ public class SurrogateStoreConfig<A, D> {
    */
   public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
       String name, Class<I> input, Class<O> output, Function<List<I>, O> function) {
+    return fold(name, type(input), type(output), function);
+  }
+
+  /** The same, for types already declared. */
+  public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
+      String name, SurrogateType<I> input, SurrogateType<O> output, Function<List<I>, O> function) {
     return new Minting<>(
         this,
         name,
-        List.of(TypeRef.of(input)),
-        TypeRef.of(output),
+        List.<SurrogateType<?>>of(input),
+        output,
         (values, context) ->
-            Optional.ofNullable(function.apply(values.stream().map(input::cast).toList())),
+            Optional.ofNullable(
+                function.apply(values.stream().map(v -> input.type().rawClass().cast(v)).toList())),
         true,
         (spec, binding) ->
             new Fold<>() {
@@ -367,8 +452,8 @@ public class SurrogateStoreConfig<A, D> {
 
     private final SurrogateStoreConfig<A, ?> config;
     private final String name;
-    private final List<TypeRef<?>> inputTypes;
-    private final TypeRef<O> outputType;
+    private final List<SurrogateType<?>> inputTypes;
+    private final SurrogateType<O> outputType;
     private final java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function;
     private final boolean fold;
     private final java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability;
@@ -380,8 +465,8 @@ public class SurrogateStoreConfig<A, D> {
     private Minting(
         SurrogateStoreConfig<A, ?> config,
         String name,
-        List<TypeRef<?>> inputTypes,
-        TypeRef<O> outputType,
+        List<SurrogateType<?>> inputTypes,
+        SurrogateType<O> outputType,
         java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function,
         boolean fold,
         java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability) {
@@ -482,7 +567,7 @@ public class SurrogateStoreConfig<A, D> {
     Objects.requireNonNull(name, "a query needs a name");
     Objects.requireNonNull(against, "a query needs to say what it is asked against");
     Objects.requireNonNull(asking, "a query needs something to ask");
-    return new Querying<>(this, name, TypeRef.of(input), asking);
+    return new Querying<>(this, name, type(input), asking);
   }
 
   /** What a query still needs said about it before it becomes a capability. */
@@ -490,7 +575,7 @@ public class SurrogateStoreConfig<A, D> {
 
     private final SurrogateStoreConfig<A, ?> config;
     private final String name;
-    private final TypeRef<I> inputType;
+    private final SurrogateType<I> inputType;
     private final Query.Asking<I, Q> asking;
     private java.util.function.Function<AccessContext, A> ceiling;
     private boolean anything;
@@ -499,7 +584,7 @@ public class SurrogateStoreConfig<A, D> {
     private Querying(
         SurrogateStoreConfig<A, ?> config,
         String name,
-        TypeRef<I> inputType,
+        SurrogateType<I> inputType,
         Query.Asking<I, Q> asking) {
       this.config = config;
       this.name = name;

@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
@@ -83,7 +82,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
    */
   <T> Surrogate<T> exchangeVia(
       String source,
-      TypeRef<T> type,
+      SurrogateType<T> type,
       java.util.function.BiFunction<T, AccessContext, A> labelling,
       T value) {
     if (value == null) {
@@ -263,7 +262,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   private static String reads(DerivationSpec<?, ?> spec) {
     String types =
         spec.inputTypes().stream()
-            .map(type -> type.rawClass().getSimpleName())
+            .map(SurrogateType::name)
             .collect(java.util.stream.Collectors.joining(", "));
     return spec.fold() ? "many " + types : types;
   }
@@ -294,11 +293,6 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
    */
   private static String freshId() {
     return "sur_" + java.util.UUID.randomUUID();
-  }
-
-  /** What a surrogate says it is, in the form the store wrote it. */
-  private static String nameOf(TypeRef<?> type) {
-    return type.getType().getTypeName();
   }
 
   @Override
@@ -373,11 +367,11 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
     }
     refused.set(entry.label());
-    if (!entry.typeName().equals(nameOf(spec.inputType()))) {
+    if (!entry.typeName().equals(spec.inputType().name())) {
       return new Answer.Refused(
           Answer.Reason.WRONG_TYPE,
           "'%s' asks about a %s, but %s is a %s"
-              .formatted(name, nameOf(spec.inputType()), held.id(), entry.typeName()));
+              .formatted(name, spec.inputType().name(), held.id(), entry.typeName()));
     }
     Optional<A> ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
@@ -394,7 +388,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
               + "'"
               + explain(entry.label(), ceiling.get()));
     }
-    I subject = storage.value(held.id(), spec.inputType()).orElse(null);
+    I subject = storage.value(held.id(), spec.inputType().type()).orElse(null);
     if (subject == null) {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
@@ -443,9 +437,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
             theDerivations.add(
                 new Manifest.Entry(
                     derivation.name(),
-                    "%s -> %s"
-                        .formatted(
-                            reads(derivation), derivation.outputType().rawClass().getSimpleName()),
+                    "%s -> %s".formatted(reads(derivation), derivation.outputType().name()),
                     derivation.privileged())));
     List<Manifest.Entry> theQuestions = new ArrayList<>();
     return new Manifest(
@@ -514,24 +506,24 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
     A joined = null;
     for (int position = 0; position < parents.size(); position++) {
       Surrogate<?> parent = parents.get(position);
-      TypeRef<?> expected = spec.typeAt(position);
+      SurrogateType<?> expected = spec.typeAt(position);
       StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
       if (entry == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
       }
-      if (!entry.typeName().equals(nameOf(expected))) {
+      if (!entry.typeName().equals(expected.name())) {
         return new Derived.Refused<>(
             Derived.Reason.WRONG_TYPE,
             "'%s' reads a %s in position %d, but %s is a %s"
-                .formatted(id, nameOf(expected), position + 1, parent.id(), entry.typeName()));
+                .formatted(id, expected.name(), position + 1, parent.id(), entry.typeName()));
       }
       if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
             parent.id() + " may not reach '" + id + "'" + explain(entry.label(), ceiling.get()));
       }
-      Object input = storage.value(parent.id(), expected).orElse(null);
+      Object input = storage.value(parent.id(), expected.type()).orElse(null);
       if (input == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
@@ -590,7 +582,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   }
 
   <T> Dereferenced<T> dereference(
-      Surrogate<T> held, TypeRef<T> expected, String to, AccessContext context) {
+      Surrogate<T> held, SurrogateType<T> expected, String to, AccessContext context) {
     context = asking(context);
     DestinationSpec<A> destination = destinations.get(to);
     if (destination == null) {
@@ -612,10 +604,10 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           null,
           context);
     }
-    if (!entry.typeName().equals(nameOf(expected))) {
+    if (!entry.typeName().equals(expected.name())) {
       return denied(
           Dereferenced.Reason.WRONG_TYPE,
-          held.id() + " is a " + entry.typeName() + ", not a " + nameOf(expected),
+          held.id() + " is a " + entry.typeName() + ", not a " + expected.name(),
           held.id(),
           to,
           entry.label(),
@@ -650,7 +642,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
         context);
     // The type was confirmed against what the store wrote, so this decodes a verified fact.
     return storage
-        .value(held.id(), expected)
+        .value(held.id(), expected.type())
         .<Dereferenced<T>>map(Dereferenced.Allowed::new)
         .orElseGet(
             () ->

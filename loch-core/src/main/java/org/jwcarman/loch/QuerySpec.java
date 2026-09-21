@@ -18,12 +18,11 @@ package org.jwcarman.loch;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import org.jwcarman.codec.spi.TypeRef;
 
 /** Everything the engine needs to answer one question. Package-private, like every other spec. */
 record QuerySpec<A, I, Q>(
     String name,
-    TypeRef<I> inputType,
+    SurrogateType<I> inputType,
     Query.Asking<I, Q> asking,
     Function<AccessContext, A> ceiling,
     Predicate<AccessContext> availableTo) {

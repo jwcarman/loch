@@ -40,6 +40,7 @@ import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateSink;
 import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.SurrogateStore;
+import org.jwcarman.loch.SurrogateType;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -158,6 +159,14 @@ class JdbcSurrogateStoreTest {
     SecretKey kek = generator.generateKey();
 
     JdbcSurrogateStoreConfig<Billing, Object> c = new JdbcSurrogateStoreConfig<>();
+    // Containers have to be named: their raw type is java.util.List, which is not ours to
+    // annotate and would collide with every other list.
+    SurrogateType<List<Card>> cardList =
+        c.type("card-list", TypeRef.listOf(TypeRef.of(Card.class)));
+    SurrogateType<List<Last4>> last4List =
+        c.type("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
+    SurrogateType<Card> cardType = c.type(Card.class);
+    SurrogateType<Last4> last4Type = c.type(Last4.class);
     c.dataSource(dataSource)
         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
         // The application composes its own pipeline: squeeze, then seal.
@@ -188,29 +197,27 @@ class JdbcSurrogateStoreTest {
     var processor =
         c.destination(
                 "payment-processor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-            .type(Card.class)
-            .type(Last4.class)
-            .type(TypeRef.listOf(TypeRef.of(Card.class)))
+            .type(cardType)
+            .type(last4Type)
+            .type(cardList)
             .mint();
-    paymentProcessor = processor.reading(Card.class);
-    last4Processor = processor.reading(Last4.class);
+    paymentProcessor = processor.reading(cardType);
+    last4Processor = processor.reading(last4Type);
 
     // A generic container is its own type, so it needs its own source and its own sinks.
     cardLists =
         c.source(
-            "card-lists",
-            TypeRef.listOf(TypeRef.of(Card.class)),
-            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
-    cardListProcessor = processor.reading(TypeRef.listOf(TypeRef.of(Card.class)));
+            "card-lists", cardList, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    cardListProcessor = processor.reading(cardList);
     cardListVendor =
         c.sink(
             "card-lists-to-vendor",
-            TypeRef.listOf(TypeRef.of(Card.class)),
+            cardList,
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
     last4ListProcessor =
         c.sink(
             "last4-lists-to-processor",
-            TypeRef.listOf(TypeRef.of(Last4.class)),
+            last4List,
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
 
     cardLast4 =

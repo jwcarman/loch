@@ -15,8 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import org.jwcarman.codec.spi.TypeRef;
-
 /**
  * A value on its way into storage.
  *
@@ -25,4 +23,4 @@ import org.jwcarman.codec.spi.TypeRef;
  * @param label how it is labelled -- the store is the only authority on this
  * @param lineage where it came from
  */
-public record StoredValue<A>(Object value, TypeRef<?> type, A label, Lineage lineage) {}
+public record StoredValue<A>(Object value, SurrogateType<?> type, A label, Lineage lineage) {}
