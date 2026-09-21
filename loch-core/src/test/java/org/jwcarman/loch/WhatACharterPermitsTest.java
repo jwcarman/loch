@@ -147,6 +147,24 @@ class WhatACharterPermitsTest {
             });
   }
 
+  /**
+   * A snapshot cannot be changed once anyone can see it.
+   *
+   * <p>Declaring is one atomic transition over an immutable configuration, which is what stops it
+   * racing a seal. That rests on the snapshot really being immutable rather than on every future
+   * edit to those methods remembering to copy.
+   */
+  @Test
+  @DisplayName("hands out a view of itself that nothing can change underneath it")
+  void hands_out_a_view_nothing_can_change() {
+    Manifest before = charter.manifest();
+
+    assertThat(before.destinations()).isNotEmpty();
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> before.destinations().clear())
+        .isInstanceOf(UnsupportedOperationException.class);
+    assertThat(charter.manifest().destinations()).hasSameSizeAs(before.destinations());
+  }
+
   /** Portals exist and are inert: the charter can be read, but nothing it made can act. */
   @Test
   @DisplayName("does not let anything it constituted act until it is sealed")

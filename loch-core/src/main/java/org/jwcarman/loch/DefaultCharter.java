@@ -55,6 +55,26 @@ public final class DefaultCharter implements Charter {
       AccessContextProvider currentAccess,
       java.util.function.BiPredicate<Label, AccessContext> mayErase) {
 
+    /**
+     * Copied on the way in, so a snapshot cannot be changed once anyone can see it.
+     *
+     * <p>Declaring already builds a fresh collection every time and never touches a published one,
+     * which is what closes the race with sealing. This makes that a property of the type rather
+     * than of everyone who edits those methods afterwards.
+     *
+     * <p><b>Order-preserving copies, deliberately.</b> {@code Map.copyOf} and {@code Set.copyOf}
+     * give an unspecified iteration order, and these are read back out into a manifest and into the
+     * refusal message naming which types a door was declared to read. An error that lists them
+     * differently between runs is an error nobody trusts.
+     */
+    Configuration {
+      types = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(types));
+      sources = java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(sources));
+      destinations = List.copyOf(destinations);
+      derivations = List.copyOf(derivations);
+      queries = List.copyOf(queries);
+    }
+
     static Configuration empty() {
       return new Configuration(
           java.util.Map.of(),
