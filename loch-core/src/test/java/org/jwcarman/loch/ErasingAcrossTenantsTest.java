@@ -61,7 +61,7 @@ class ErasingAcrossTenantsTest {
     SurrogateStoreConfig<Labels, Object> config =
         new SurrogateStoreConfig<Labels, Object>()
             .lattice(Labels.LATTICE)
-            .askingWhoIsAsking(edge::get)
+            .currentAccess(edge::get)
             .mayErase(
                 (label, ctx) ->
                     ctx.has("role", "compliance")

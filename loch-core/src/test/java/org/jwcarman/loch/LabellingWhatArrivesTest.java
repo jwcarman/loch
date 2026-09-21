@@ -60,9 +60,7 @@ class LabellingWhatArrivesTest {
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
   private final SurrogateStoreConfig<Labels, Object> config =
-      new SurrogateStoreConfig<Labels, Object>()
-          .lattice(Labels.LATTICE)
-          .askingWhoIsAsking(edge::get);
+      new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE).currentAccess(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final SurrogateSource<Mail> mail =

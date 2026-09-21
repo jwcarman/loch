@@ -39,7 +39,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   private final List<DerivationSpec<A, ?>> derivations;
   private final List<QuerySpec<A, ?, ?>> queries;
   private final boolean explainRefusals;
-  private final java.util.function.Supplier<AccessContext> ambient;
+  private final AccessContextProvider ambient;
   private final java.util.Set<String> callerMayContribute;
   private final java.util.function.BiPredicate<A, AccessContext> mayErase;
   private final Storage<A> storage;

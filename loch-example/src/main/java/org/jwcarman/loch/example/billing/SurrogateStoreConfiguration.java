@@ -63,8 +63,7 @@ public class SurrogateStoreConfiguration {
     // The domain bound is the second parameter. A source over String would not compile.
     return new SurrogateStoreConfig<BillingLabels, Domain.BillingValue>()
         .labelType(BillingLabels.class)
-        .lattice(BillingLabels.LATTICE)
-        .askingWhoIsAsking(CurrentAccess::get);
+        .lattice(BillingLabels.LATTICE);
   }
 
   /**

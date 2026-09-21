@@ -59,9 +59,7 @@ class RequiredAxisTest {
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
   private final SurrogateStoreConfig<Labels, Object> config =
-      new SurrogateStoreConfig<Labels, Object>()
-          .lattice(Labels.LATTICE)
-          .askingWhoIsAsking(edge::get);
+      new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE).currentAccess(edge::get);
 
   /** Exactly what an application would naturally write, including the part that was the leak. */
   private final SurrogateSource<Note> notes =
@@ -110,9 +108,7 @@ class RequiredAxisTest {
   @DisplayName("and says so in the record")
   void and_says_so_in_the_record() {
     SurrogateStoreConfig<Labels, Object> own =
-        new SurrogateStoreConfig<Labels, Object>()
-            .lattice(Labels.LATTICE)
-            .askingWhoIsAsking(edge::get);
+        new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE).currentAccess(edge::get);
     SurrogateSource<Note> watched =
         own.source(
             "notes",

@@ -63,7 +63,7 @@ class AmbientContextTest {
   // where the answer lives.
   private final Wired wired =
       wire(
-          c -> c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get())),
+          c -> c.currentAccess(() -> AccessContext.of("clearance", currentUser.get())),
           ctx -> ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE);
 
   private Surrogate<String> last4() {
@@ -90,7 +90,7 @@ class AmbientContextTest {
     Wired watching =
         wire(
             c ->
-                c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
+                c.currentAccess(() -> AccessContext.of("clearance", currentUser.get()))
                     .callerMayContribute("purpose"),
             ctx -> {
               seen.set(ctx);
@@ -114,7 +114,7 @@ class AmbientContextTest {
     Wired watching =
         wire(
             c ->
-                c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
+                c.currentAccess(() -> AccessContext.of("clearance", currentUser.get()))
                     .callerMayContribute("purpose", "clearance"),
             ctx -> {
               seen.set(ctx);
@@ -135,7 +135,7 @@ class AmbientContextTest {
     AtomicReference<AccessContext> seen = new AtomicReference<>();
     Wired watching =
         wire(
-            c -> c.askingWhoIsAsking(AccessContext::empty),
+            c -> c.currentAccess(AccessContext::empty),
             ctx -> {
               seen.set(ctx);
               return Clearance.FINANCE;

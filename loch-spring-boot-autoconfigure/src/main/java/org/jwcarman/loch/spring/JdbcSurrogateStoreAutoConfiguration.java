@@ -18,6 +18,7 @@ package org.jwcarman.loch.spring;
 import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.CodecFactory;
+import org.jwcarman.loch.AccessContextProvider;
 import org.jwcarman.loch.SurrogateStore;
 import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.jdbc.JdbcSurrogateStore;
@@ -80,12 +81,16 @@ public class JdbcSurrogateStoreAutoConfiguration {
   @ConditionalOnBean({SurrogateStoreConfig.class, StorageCodec.class})
   public SmartInitializingSingleton surrogateStoreBuilder(
       SurrogateStoreConfig<?, ?> config,
+      java.util.Optional<AccessContextProvider> access,
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
       SurrogateStoreProperties properties) {
     // A wildcard rather than type variables: a generic @Bean method gives Spring an injection
     // point it cannot resolve, and the bean silently never matches.
+    // Declared as a bean rather than set on the configuration: identity is where it comes from,
+    // not what this application allows, so it belongs with the wiring.
+    access.ifPresent(config::currentAccess);
     return () -> build(config, dataSource, codecs, storageCodec, properties);
   }
 

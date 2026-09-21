@@ -61,9 +61,7 @@ class WritingAtAnothersLabelTest {
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
   private final SurrogateStoreConfig<Labels, Value> config =
-      new SurrogateStoreConfig<Labels, Value>()
-          .lattice(Labels.LATTICE)
-          .askingWhoIsAsking(edge::get);
+      new SurrogateStoreConfig<Labels, Value>().lattice(Labels.LATTICE).currentAccess(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final SurrogateSource<Note> notes =

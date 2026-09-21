@@ -182,7 +182,7 @@ class JdbcSurrogateStoreTest {
                                 .build())));
 
     c.lattice(Billing.LATTICE)
-        .askingWhoIsAsking(edge::get)
+        .currentAccess(edge::get)
         // Erasure is the one operation a label cannot decide, so it is named here.
         .mayErase(
             (label, ctx) ->

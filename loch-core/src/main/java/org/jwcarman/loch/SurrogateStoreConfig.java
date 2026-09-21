@@ -36,7 +36,7 @@ public class SurrogateStoreConfig<A, D> {
   private Lattice<A> lattice;
   private Class<A> labelType;
   private boolean explainRefusals;
-  private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
+  private AccessContextProvider ambient = AccessContextProvider.none();
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
   private final List<DestinationSpec<A>> destinations = new ArrayList<>();
@@ -744,7 +744,7 @@ public class SurrogateStoreConfig<A, D> {
   }
 
   /**
-   * Where a store finds out who is asking, when a caller has not said.
+   * Where the access happening right now comes from.
    *
    * <p>Identity is known at the edge -- a request, a message, a session -- and needed at the gate,
    * which may be many layers down. Threading an {@code AccessContext} parameter through all of them
@@ -752,20 +752,22 @@ public class SurrogateStoreConfig<A, D> {
    * features get routed around.
    *
    * <p>So the application says once where the answer lives. A {@code ThreadLocal}, a {@code
-   * ScopedValue}, Spring's {@code SecurityContextHolder} -- SurrogateStore does not care, and has
-   * no opinion about how a request scope works.
+   * ScopedValue}, Spring's {@code SecurityContextHolder} -- a store does not care, and has no
+   * opinion about how a request scope works.
+   *
+   * <p>Whatever this returns is taken as fact. It is the one input a caller cannot argue with,
+   * which is why it must come from somewhere a caller does not control.
    *
    * <pre>{@code
-   * .askingWhoIsAsking(() -> AccessContext.of(Map.of(
+   * .currentAccess(() -> AccessContext.of(Map.of(
    *     "tenant", CurrentTenant.get(),
    *     "principal", SecurityContextHolder.getContext().getAuthentication().getName())))
    * }</pre>
    *
    * <p>An application with no notion of identity says nothing and every context is empty.
    */
-  public SurrogateStoreConfig<A, D> askingWhoIsAsking(
-      java.util.function.Supplier<AccessContext> ambient) {
-    this.ambient = Objects.requireNonNull(ambient, "an ambient context source must not be null");
+  public SurrogateStoreConfig<A, D> currentAccess(AccessContextProvider ambient) {
+    this.ambient = Objects.requireNonNull(ambient, "an access source must not be null");
     return this;
   }
 
@@ -774,8 +776,8 @@ public class SurrogateStoreConfig<A, D> {
    *
    * <p>Empty by default, deliberately. Anything a caller says about who it is would otherwise be
    * taken at its word, and code holding a store could name itself whichever tenant or role it
-   * pleased. Identity comes from {@link #askingWhoIsAsking}; a caller contributes only what the
-   * edge could not know, such as the purpose of an operation.
+   * pleased. Identity comes from {@link #currentAccess}; a caller contributes only what the edge
+   * could not know, such as the purpose of an operation.
    *
    * <p>Never list an identity key here.
    */
@@ -788,7 +790,7 @@ public class SurrogateStoreConfig<A, D> {
     return callerMayContribute;
   }
 
-  java.util.function.Supplier<AccessContext> ambient() {
+  AccessContextProvider ambient() {
     return ambient;
   }
 

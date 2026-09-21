@@ -19,6 +19,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.jwcarman.loch.AccessContext;
+import org.jwcarman.loch.AccessContextProvider;
+import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -34,11 +36,11 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * SecurityContextHolder}; SurrogateStore never learns the difference, because it is handed a
  * supplier and asks it.
  */
-public final class CurrentAccess {
+@Component
+public final class CurrentAccess implements AccessContextProvider {
 
-  private CurrentAccess() {}
-
-  public static AccessContext get() {
+  @Override
+  public AccessContext get() {
     if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs)) {
       return AccessContext.empty();
     }

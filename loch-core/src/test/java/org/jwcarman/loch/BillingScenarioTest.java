@@ -187,9 +187,7 @@ class BillingScenarioTest {
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
   private final SurrogateStoreConfig<Billing, Object> config =
-      new SurrogateStoreConfig<Billing, Object>()
-          .lattice(Billing.LATTICE)
-          .askingWhoIsAsking(edge::get);
+      new SurrogateStoreConfig<Billing, Object>().lattice(Billing.LATTICE).currentAccess(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -961,7 +959,7 @@ class BillingScenarioTest {
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
       SurrogateStoreConfig<Billing, Object> choosyConfig = new SurrogateStoreConfig<>();
-      choosyConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
+      choosyConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
       SurrogateSource<Account> secretAccounts =
           choosyConfig.source(
               "secret-accounts",
@@ -1008,7 +1006,7 @@ class BillingScenarioTest {
     @DisplayName("unless the application asks for the explanation")
     void unless_the_application_asks_for_the_explanation() {
       SurrogateStoreConfig<Billing, Object> chattyConfig = new SurrogateStoreConfig<>();
-      chattyConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get).explainRefusals();
+      chattyConfig.lattice(Billing.LATTICE).currentAccess(edge::get).explainRefusals();
       SurrogateSource<String> chattyMail =
           chattyConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
       SurrogateSink<String> chattyVendorLlm =
@@ -1031,7 +1029,7 @@ class BillingScenarioTest {
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
       SurrogateStoreConfig<Billing, Object> fragileConfig = new SurrogateStoreConfig<>();
-      fragileConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
+      fragileConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
       SurrogateSource<String> fragileMail =
           fragileConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
       SurrogateSink<String> broken =
@@ -1161,7 +1159,7 @@ class BillingScenarioTest {
     @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
     void an_access_that_cannot_be_recorded_does_not_happen() {
       SurrogateStoreConfig<Billing, Object> watchedConfig = new SurrogateStoreConfig<>();
-      watchedConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
+      watchedConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
       SurrogateSource<String> watchedMail =
           watchedConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
       MemoryStorage<Billing> kept = new MemoryStorage<>();
