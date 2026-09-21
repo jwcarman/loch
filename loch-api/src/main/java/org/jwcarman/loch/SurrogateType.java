@@ -64,6 +64,35 @@ public record SurrogateType<T>(String name, TypeRef<T> type) {
     return new SurrogateType<>(name, type);
   }
 
+  /**
+   * A type naming itself: {@link SurrogateName} if it carries one, otherwise its kebab-cased simple
+   * name.
+   *
+   * <p>{@code DisputeClaim} becomes {@code dispute-claim}, {@code Last4} becomes {@code last4}, and
+   * a nested {@code Domain.Invoice} becomes {@code invoice} -- the enclosing type is dropped, which
+   * is why two nested types with the same simple name collide, and are refused when they reach a
+   * portal.
+   *
+   * <p>Convenient, and a little fragile: a name derived from a class name changes when the class is
+   * renamed, and a stored name is permanent. Say the name yourself for anything you expect to
+   * outlive a refactor.
+   */
+  public static <T> SurrogateType<T> of(Class<T> type) {
+    Objects.requireNonNull(type, "a type must not be null");
+    SurrogateName declared = type.getAnnotation(SurrogateName.class);
+    return new SurrogateType<>(
+        declared != null ? declared.value() : kebab(type.getSimpleName()), TypeRef.of(type));
+  }
+
+  /** Splits where a reader would, including at the end of an acronym. */
+  private static String kebab(String simpleName) {
+    // Zero-width boundaries rather than captured groups: nothing to backtrack over.
+    return simpleName
+        .replaceAll("(?<=[A-Z])(?=[A-Z][a-z])", "-")
+        .replaceAll("(?<=[a-z0-9])(?=[A-Z])", "-")
+        .toLowerCase(java.util.Locale.ROOT);
+  }
+
   @Override
   public String toString() {
     return name;

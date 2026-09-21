@@ -44,7 +44,6 @@ public class SurrogateStoreConfig<A, D> {
   private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
   private DefaultSurrogateStore<A> bound;
   private final List<Binding<A>> bindings = new ArrayList<>();
-  private SurrogateNamingStrategy naming = SurrogateNamingStrategy.standard();
   private final java.util.Map<String, SurrogateType<?>> types = new LinkedHashMap<>();
 
   /** The order over this application's labels. Required. */
@@ -62,21 +61,13 @@ public class SurrogateStoreConfig<A, D> {
   // ------------------------------------------------------------------ the types it will keep
 
   /**
-   * How a type gets its stored name when nobody gives it one.
+   * A type this store will keep, naming itself.
    *
-   * <p>Defaults to {@link SurrogateNamingStrategy#standard()}. Changing it renames every type that
-   * relied on it, which orphans everything already stored, so it is a decision for the first day
-   * rather than the four hundredth.
+   * <p>Shorthand for {@link SurrogateType#of(Class)}: its {@link SurrogateName} if it has one,
+   * otherwise its kebab-cased simple name.
    */
-  public SurrogateStoreConfig<A, D> naming(SurrogateNamingStrategy naming) {
-    this.naming = Objects.requireNonNull(naming, "a naming strategy must not be null");
-    return this;
-  }
-
-  /** A type this store will keep, named by the strategy. */
   public <T extends D> SurrogateType<T> type(Class<T> type) {
-    Objects.requireNonNull(type, "a type must not be null");
-    return type(naming.nameFor(type), TypeRef.of(type));
+    return registered(SurrogateType.of(type));
   }
 
   /** A type this store will keep, named explicitly. */
@@ -134,6 +125,29 @@ public class SurrogateStoreConfig<A, D> {
    * tenant, from ambient context.
    */
   public <T extends D> SurrogateSource<T> source(
+      String name, Class<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
+    return source(name, type(type), labelling);
+  }
+
+  /** The same, for a label that depends on neither what arrives nor who is acting. */
+  public <T extends D> SurrogateSource<T> source(String name, Class<T> type, A label) {
+    Objects.requireNonNull(label, "a source needs a label");
+    return source(name, type(type), (value, context) -> label);
+  }
+
+  /** The same, for a label that does not depend on what is arriving. */
+  public <T extends D> SurrogateSource<T> source(
+      String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    return source(name, type(type), (value, context) -> labelling.apply(context));
+  }
+
+  /** The same, for a label that does not depend on what is arriving. */
+  public <T extends D> SurrogateSource<T> source(
+      String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    return source(name, type, (value, context) -> labelling.apply(context));
+  }
+
+  public <T extends D> SurrogateSource<T> source(
       String name,
       SurrogateType<T> type,
       java.util.function.BiFunction<T, AccessContext, A> labelling) {
@@ -158,18 +172,6 @@ public class SurrogateStoreConfig<A, D> {
     };
   }
 
-  /** The same, for a type with no generic parameters of its own. */
-  public <T extends D> SurrogateSource<T> source(
-      String name, Class<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
-    return source(name, type(type), labelling);
-  }
-
-  /** The same, for a generic container whose label does not depend on what is arriving. */
-  public <T extends D> SurrogateSource<T> source(
-      String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    return source(name, type, (value, context) -> labelling.apply(context));
-  }
-
   /**
    * The same, for a label that does not depend on what is arriving.
    *
@@ -177,17 +179,7 @@ public class SurrogateStoreConfig<A, D> {
    * says. Reach for the other form when the label is a property of the value -- a classification
    * marking inside a document, a sender the ingest verified, a scan that found card numbers.
    */
-  public <T extends D> SurrogateSource<T> source(
-      String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    return source(name, type(type), (value, context) -> labelling.apply(context));
-  }
-
   /** A source whose label depends on neither who is acting nor what is arriving. */
-  public <T extends D> SurrogateSource<T> source(String name, Class<T> type, A label) {
-    Objects.requireNonNull(label, "a source needs a label");
-    return source(name, type(type), (value, context) -> label);
-  }
-
   /**
    * Begins declaring somewhere values may go.
    *
@@ -220,6 +212,7 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** One more type this destination is allowed to hand over. */
+    /** The same, for a type already declared, including a generic container. */
     public <T extends D> Declaring<A, D> type(Class<T> type) {
       return type(config.type(type));
     }
@@ -315,22 +308,18 @@ public class SurrogateStoreConfig<A, D> {
    * rather than copied per type.
    */
   public <T extends D> SurrogateSink<T> sink(
+      String name, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
+    return sink(name, type(type), ceiling);
+  }
+
+  /** The same, for a type already declared. */
+  public <T extends D> SurrogateSink<T> sink(
       String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> ceiling) {
     return destination(name, ceiling).type(type).mint().reading(type);
   }
 
   /** The same, for a type with no generic parameters of its own. */
-  public <T extends D> SurrogateSink<T> sink(
-      String name, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return sink(name, type(type), ceiling);
-  }
-
   /** An sink whose ceiling does not depend on who is asking. */
-  public <T extends D> SurrogateSink<T> sink(String name, Class<T> type, A ceiling) {
-    Objects.requireNonNull(ceiling, "a sink needs a ceiling");
-    return sink(name, type(type), context -> ceiling);
-  }
-
   // ------------------------------------------------------------------ derivations and folds
 
   /**
@@ -341,6 +330,7 @@ public class SurrogateStoreConfig<A, D> {
    * overloads for two through five flows, as do RxJava and Reactor for {@code zip}. Beyond five, or
    * where the parents share a type, use {@link #fold}.
    */
+  /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
       String name, Class<I> input, Class<O> output, Function<I, O> function) {
     return derivation(name, type(input), type(output), function);
@@ -376,6 +366,7 @@ public class SurrogateStoreConfig<A, D> {
   /**
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
+  /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> checking(
       String name,
       Class<I> input,
@@ -420,6 +411,7 @@ public class SurrogateStoreConfig<A, D> {
    * <p>The result carries the join of every parent's label, so folding two tenants' data yields
    * something labelled for both, which no destination admits.
    */
+  /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
       String name, Class<I> input, Class<O> output, Function<List<I>, O> function) {
     return fold(name, type(input), type(output), function);
@@ -574,10 +566,16 @@ public class SurrogateStoreConfig<A, D> {
    */
   public <I extends D, Q> Querying<A, I, Q> query(
       String name, Class<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
+    return query(name, type(input), against, asking);
+  }
+
+  /** The same, for a type already declared. */
+  public <I extends D, Q> Querying<A, I, Q> query(
+      String name, SurrogateType<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
     Objects.requireNonNull(name, "a query needs a name");
     Objects.requireNonNull(against, "a query needs to say what it is asked against");
     Objects.requireNonNull(asking, "a query needs something to ask");
-    return new Querying<>(this, name, type(input), asking);
+    return new Querying<>(this, name, registered(input), asking);
   }
 
   /** What a query still needs said about it before it becomes a capability. */
