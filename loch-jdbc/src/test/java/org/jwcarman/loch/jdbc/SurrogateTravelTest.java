@@ -34,7 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("A reference in an event")
 class SurrogateTravelTest {
 
-  /** An ordinary application event. Nothing here knows about SurrogateStore except the id. */
+  /** An ordinary application event. Nothing here knows about the charter except the id. */
   record InboundMail(String from, String body) {}
 
   record Card(String number) {}

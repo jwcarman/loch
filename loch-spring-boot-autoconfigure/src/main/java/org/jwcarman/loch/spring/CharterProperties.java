@@ -19,7 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** What the store needs told that is not policy. */
 @ConfigurationProperties(prefix = "loch")
-public class SurrogateStoreProperties {
+public class CharterProperties {
 
   /** Whether to create the tables at startup if they are not there. */
   private boolean migrate = true;

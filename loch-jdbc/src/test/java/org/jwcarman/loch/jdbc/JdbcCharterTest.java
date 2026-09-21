@@ -60,7 +60,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @Testcontainers
 @DisplayName("A store in a database")
-class JdbcSurrogateStoreTest {
+class JdbcCharterTest {
 
   @Container
   @SuppressWarnings("resource")

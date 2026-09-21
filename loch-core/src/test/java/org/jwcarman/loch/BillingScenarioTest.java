@@ -38,7 +38,7 @@ import org.jwcarman.loch.lattice.Label;
  * interface would exist only to satisfy the compiler; and being able to hold a bare {@code String}
  * keeps most of this scenario's assertions exactly as an application would write them.
  */
-@DisplayName("A billing system using SurrogateStore")
+@DisplayName("A billing system under a charter")
 class BillingScenarioTest {
 
   private static final SurrogateType<String> STRING_TYPE = SurrogateType.of(String.class);
@@ -316,7 +316,7 @@ class BillingScenarioTest {
           .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII))
           .mint();
 
-  // Declares itself an endorsement without checking anything. SurrogateStore refuses it.
+  // Declares itself an endorsement without checking anything. The charter refuses it.
   private final Derivation<DisputeClaim, InvoiceNumber> wishful =
       config
           .derivation(

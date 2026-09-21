@@ -26,7 +26,7 @@ import org.jwcarman.codec.spi.CodecFactory;
  * allows -- the labels, the doors, who may reach them -- without knowing or caring where the values
  * end up, and the code declaring portals should compile against the generic thing. This is the
  * other half: where the tables are, how bytes are serialised, and how they are sealed. Both are
- * handed to {@link JdbcSurrogateStore#create} and it builds itself.
+ * asked for the {@link JdbcStorage} a charter is sealed to.
  *
  * @param <A> the application's label type, which is stored encrypted like any other value
  */

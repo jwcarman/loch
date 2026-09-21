@@ -114,7 +114,7 @@ public final class Charter {
     record Configuring(Configuration configuration) implements State {}
 
     /** Authority may be exercised, and none of it may be constituted. */
-    record Active(Configuration configuration, DefaultSurrogateStore engine) implements State {}
+    record Active(Configuration configuration, Engine engine) implements State {}
   }
 
   /** What a declaration produced: the charter it leaves behind, and the portal it hands back. */
@@ -170,7 +170,7 @@ public final class Charter {
     if (!(current instanceof State.Configuring(Configuration configuration))) {
       throw new IllegalStateException("this charter is already sealed");
     }
-    DefaultSurrogateStore engine = new DefaultSurrogateStore(axes, configuration, storage);
+    Engine engine = new Engine(axes, configuration, storage);
     if (!lifecycle.compareAndSet(current, new State.Active(configuration, engine))) {
       throw new IllegalStateException("this charter was changed while it was being sealed");
     }
@@ -203,7 +203,7 @@ public final class Charter {
   }
 
   /** The engine a portal reaches through, or a refusal saying why it cannot. */
-  static DefaultSurrogateStore engineOf(
+  static Engine engineOf(
       java.util.concurrent.atomic.AtomicReference<State> lifecycle, String what) {
     return switch (lifecycle.get()) {
       case State.Active active -> active.engine();

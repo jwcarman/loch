@@ -49,7 +49,7 @@ import org.springframework.context.annotation.Configuration;
  * class worth a second look in review. Services take portals, not this.
  */
 @Configuration
-public class SurrogateStoreConfiguration {
+public class CharterConfiguration {
 
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
 
@@ -61,7 +61,7 @@ public class SurrogateStoreConfiguration {
    * application onto a different backing store changes no line in this file.
    */
   @Bean
-  public Charter surrogateStoreConfig() {
+  public Charter billingCharter() {
     return new Charter(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
   }
 
@@ -72,28 +72,28 @@ public class SurrogateStoreConfiguration {
    * when it is, and none of these is used before the context is ready.
    */
   @Bean
-  public DisputeService disputeService(Charter config, Invoices invoices) {
+  public DisputeService disputeService(Charter charter, Invoices invoices) {
 
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another
     // tenant's label is not refused so much as unsayable: nothing takes a label.
     Conceal<Domain.Mail> customerMail =
-        config.source("customer-mail", Domain.MAIL, ctx -> label(ctx, UNENDORSED, PERSONAL));
+        charter.source("customer-mail", Domain.MAIL, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ----------------------------------------------------
     Reveal<Domain.Invoice> supportUi =
-        config
+        charter
             .destination("support-ui", ctx -> ceiling(ctx, ENDORSED, ORDINARY), Domain.INVOICE)
             .reading(Domain.INVOICE);
     Reveal<Domain.Last4> approvalDesk =
-        config
+        charter
             .destination(
                 "approval-desk",
                 ctx -> ceiling(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY),
                 Domain.LAST4)
             .reading(Domain.LAST4);
     Reveal<Domain.Invoice> paymentProcessor =
-        config
+        charter
             .destination(
                 "payment-processor", ctx -> ceiling(ctx, ENDORSED, CARDHOLDER), Domain.INVOICE)
             .reading(Domain.INVOICE);
@@ -102,7 +102,7 @@ public class SurrogateStoreConfiguration {
     // The only operation that can raise trust, and it earns it by tying what the customer
     // claimed to the mailbox their message came from.
     Derivation<Domain.Mail, Domain.Invoice> confirmInvoice =
-        config
+        charter
             .checking(
                 "mail.confirmedInvoice",
                 Domain.MAIL,
@@ -114,7 +114,7 @@ public class SurrogateStoreConfiguration {
 
     // Truncating a card is a declassification, which is what a PCI reviewer asks about.
     Derivation<Domain.Invoice, Domain.Last4> cardLast4 =
-        config
+        charter
             .derivation(
                 "invoice.card.last4",
                 Domain.INVOICE,
@@ -127,7 +127,7 @@ public class SurrogateStoreConfiguration {
 
     // ---- one bit, without the value leaving ------------------------------------
     Query<Domain.Mail, String> mailMentions =
-        config
+        charter
             .query(
                 "mail.mentions",
                 Domain.MAIL,

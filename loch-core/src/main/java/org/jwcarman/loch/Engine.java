@@ -34,7 +34,7 @@ import org.jwcarman.loch.lattice.Label;
  * store and a durable one cannot disagree about who may see what. Storage implementations keep
  * bytes; this decides.
  */
-final class DefaultSurrogateStore {
+final class Engine {
 
   private final List<Axis<?>> axes;
   private final Map<String, DestinationSpec> destinations;
@@ -44,7 +44,7 @@ final class DefaultSurrogateStore {
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
 
-  DefaultSurrogateStore(List<Axis<?>> axes, Charter.Configuration config, Storage storage) {
+  Engine(List<Axis<?>> axes, Charter.Configuration config, Storage storage) {
     this.storage = storage;
     this.axes = axes;
     Map<String, DestinationSpec> byId = new LinkedHashMap<>();

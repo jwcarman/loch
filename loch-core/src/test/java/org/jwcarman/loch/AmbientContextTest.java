@@ -72,7 +72,7 @@ class AmbientContextTest {
     return new Wired(config, cards, card);
   }
 
-  // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- SurrogateStore does not
+  // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- a charter does not
   // care
   // where the answer lives.
   private final Wired wired =

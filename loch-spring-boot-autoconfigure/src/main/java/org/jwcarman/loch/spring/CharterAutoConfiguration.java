@@ -28,5 +28,5 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * away three that nobody asked for.
  */
 @AutoConfiguration
-@EnableConfigurationProperties(SurrogateStoreProperties.class)
-public class SurrogateStoreAutoConfiguration {}
+@EnableConfigurationProperties(CharterProperties.class)
+public class CharterAutoConfiguration {}

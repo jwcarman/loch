@@ -48,10 +48,10 @@ class CallerClaimsIdentityTest {
    * The gate is only worth anything if identity comes from somewhere a caller does not control.
    *
    * <p>This test used to fabricate a value at acme's label and assert the store refused it. It
-   * cannot be written any more: nothing on {@link SurrogateStore} takes a label, so there is no way
-   * to say what a value should be labelled except by holding the source that decides. What is left
-   * worth asserting is that the door really is gone, because it is the sort of thing that gets
-   * added back for a test fixture and never removed.
+   * cannot be written any more: nothing on a charter takes a label, so there is no way to say what
+   * a value should be labelled except by holding the source that decides. What is left worth
+   * asserting is that the door really is gone, because it is the sort of thing that gets added back
+   * for a test fixture and never removed.
    */
   @Test
   @DisplayName("cannot create a value through the charter, because nothing there creates values")
@@ -85,7 +85,7 @@ class CallerClaimsIdentityTest {
   @DisplayName("can obtain the configuration, because declaring a portal is what it is for")
   void can_obtain_the_configuration() {
     assertThat(context.getBeanNamesForType(org.jwcarman.loch.Charter.class))
-        .containsExactly("surrogateStoreConfig");
+        .containsExactly("billingCharter");
   }
 
   @Test

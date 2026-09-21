@@ -21,10 +21,10 @@ import java.util.Optional;
 /**
  * What the application knows about whoever is asking, at the moment they ask.
  *
- * <p><b>SurrogateStore never interprets this.</b> There is no principal, no role and no identity
- * concept in this library -- only a bag of strings an application fills in and its own ceiling
- * functions read. An application with no notion of identity contributes nothing and every
- * destination ignores it.
+ * <p><b>A charter never interprets this.</b> There is no principal, no role and no identity concept
+ * in this library -- only a bag of strings an application fills in and its own ceiling functions
+ * read. An application with no notion of identity contributes nothing and every destination ignores
+ * it.
  *
  * <p>It exists because of one case: a destination that is a <em>person</em>. Two approvers looking
  * at the same record are not necessarily entitled to see the same thing. Machine destinations

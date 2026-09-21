@@ -49,15 +49,14 @@ import tools.jackson.databind.json.JsonMapper;
  * declaring your own: the serialisation, the encryption, or the data source itself.
  */
 @AutoConfiguration(
-    after = SurrogateStoreAutoConfiguration.class,
+    after = CharterAutoConfiguration.class,
     // Named rather than referenced: Boot 4 moved this into its own module, and naming it keeps
     // that module off our compile path.
     afterName = "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration")
 @ConditionalOnClass({JdbcStorage.class, DataSource.class})
-public class JdbcSurrogateStoreAutoConfiguration {
+public class JdbcCharterAutoConfiguration {
 
-  private static final Logger log =
-      LoggerFactory.getLogger(JdbcSurrogateStoreAutoConfiguration.class);
+  private static final Logger log = LoggerFactory.getLogger(JdbcCharterAutoConfiguration.class);
 
   /** How values are serialised, before they are compressed and sealed. */
   @Bean
@@ -84,7 +83,7 @@ public class JdbcSurrogateStoreAutoConfiguration {
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
-      SurrogateStoreProperties properties) {
+      CharterProperties properties) {
     // A wildcard rather than type variables: a generic @Bean method gives Spring an injection
     // point it cannot resolve, and the bean silently never matches.
     // Declared as a bean rather than set on the configuration: identity is where it comes from,
@@ -99,7 +98,7 @@ public class JdbcSurrogateStoreAutoConfiguration {
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
-      SurrogateStoreProperties properties) {
+      CharterProperties properties) {
     // The application said what it allows; this says where it goes. Neither knows the other.
     JdbcStorageConfig jdbc =
         new JdbcStorageConfig().dataSource(dataSource).codecs(codecs).storedThrough(storageCodec);

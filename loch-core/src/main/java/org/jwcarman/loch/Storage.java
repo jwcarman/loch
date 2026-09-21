@@ -22,8 +22,8 @@ import org.jwcarman.codec.spi.TypeRef;
  * Where a store keeps things.
  *
  * <p><b>Storage only.</b> No policy lives here: the gate, the axes, the registries and the audit
- * are decided once in {@code DefaultSurrogateStore} and shared by every implementation. A second
- * copy of a security decision is a second chance to get it wrong, and the two would drift.
+ * are decided once in {@code Engine} and shared by every implementation. A second copy of a
+ * security decision is a second chance to get it wrong, and the two would drift.
  *
  * <p>An implementation must be safe to use from several threads.
  */
