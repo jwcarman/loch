@@ -96,6 +96,31 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   /**
+   * The same treatment for a question's or a derivation's ceiling, which is equally application
+   * code.
+   *
+   * <p>Returns {@code null} for "could not be evaluated", which is not the same as an empty {@link
+   * Optional}: empty is a ceiling that deliberately accepts anything, and conflating the two would
+   * turn a crashing policy into a permissive one.
+   */
+  private Optional<A> ceilingOf(java.util.function.Supplier<Optional<A>> ceiling) {
+    try {
+      return ceiling.get();
+    } catch (RuntimeException e) {
+      return null;
+    }
+  }
+
+  /** A gate that cannot say whether it is open has not said it is open. */
+  private boolean offeredHere(java.util.function.BooleanSupplier availableTo) {
+    try {
+      return availableTo.getAsBoolean();
+    } catch (RuntimeException e) {
+      return false;
+    }
+  }
+
+  /**
    * Who is asking: what the loch was told, with anything the caller added laid over it.
    *
    * <p>Resolved once per operation, because an ambient source may be doing real work to answer.
@@ -282,7 +307,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_QUESTION, "no question is registered as '" + id + "'");
     }
-    if (!asked.availableTo(context)) {
+    if (!offeredHere(() -> asked.availableTo(context))) {
       return new Answer.Refused(
           Answer.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
@@ -298,7 +323,12 @@ public final class DefaultLoch<A> implements Loch<A> {
           "'%s' asks about a %s, but %s is a %s"
               .formatted(id, nameOf(asked.inputType()), held.id(), entry.typeName()));
     }
-    Optional<A> ceiling = asked.ceiling(context);
+    Optional<A> ceiling = ceilingOf(() -> asked.ceiling(context));
+    if (ceiling == null) {
+      return new Answer.Refused(
+          Answer.Reason.ABOVE_CEILING,
+          "'" + id + "' could not say what it accepts, so it does not accept this");
+    }
     if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
@@ -401,7 +431,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Derived.Refused<>(
           Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
     }
-    if (!derivation.availableTo(context)) {
+    if (!offeredHere(() -> derivation.availableTo(context))) {
       return new Derived.Refused<>(
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
@@ -422,7 +452,12 @@ public final class DefaultLoch<A> implements Loch<A> {
             "'%s' reads a %s, but %s is a %s"
                 .formatted(id, expected, parent.id(), entry.typeName()));
       }
-      Optional<A> ceiling = derivation.ceiling(context);
+      Optional<A> ceiling = ceilingOf(() -> derivation.ceiling(context));
+      if (ceiling == null) {
+        return new Derived.Refused<>(
+            Derived.Reason.ABOVE_CEILING,
+            "'" + id + "' could not say what it accepts, so it does not accept this");
+      }
       if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
@@ -440,7 +475,14 @@ public final class DefaultLoch<A> implements Loch<A> {
       refused.set(joined);
     }
 
-    Optional<O> produced = derivation.apply(List.copyOf(inputs), context);
+    Optional<O> produced;
+    try {
+      produced = derivation.apply(List.copyOf(inputs), context);
+    } catch (RuntimeException e) {
+      // It has already seen the plaintext, so this refusal has to be recorded like any other.
+      return new Derived.Refused<>(
+          Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
+    }
     if (produced.isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
@@ -448,7 +490,12 @@ public final class DefaultLoch<A> implements Loch<A> {
     A label = joined;
     Optional<java.util.function.UnaryOperator<A>> relabel = derivation.relabel();
     if (relabel.isPresent()) {
-      label = relabel.get().apply(joined);
+      try {
+        label = relabel.get().apply(joined);
+      } catch (RuntimeException e) {
+        return new Derived.Refused<>(
+            Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
+      }
       if (!lattice.permits(label, joined)) {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING,
