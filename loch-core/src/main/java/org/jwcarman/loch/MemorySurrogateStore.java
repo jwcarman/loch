@@ -33,8 +33,8 @@ public final class MemorySurrogateStore {
   private MemorySurrogateStore() {}
 
   /** Builds one. The customizer is where the axes, destinations and portals are declared. */
-  public static <D> SurrogateStore create(Consumer<SurrogateStoreConfig<D>> customizer) {
-    SurrogateStoreConfig<D> config = new SurrogateStoreConfig<>();
+  public static SurrogateStore create(Consumer<SurrogateStoreConfig> customizer) {
+    SurrogateStoreConfig config = new SurrogateStoreConfig();
     customizer.accept(config);
     return create(config);
   }
@@ -46,13 +46,13 @@ public final class MemorySurrogateStore {
    * local: configure, mint into plain final variables, then build.
    *
    * <pre>{@code
-   * SurrogateStoreConfig<Billing, BillingValue> c = new SurrogateStoreConfig<>();
+   * SurrogateStoreConfig c = new SurrogateStoreConfig();
    * c.axes(TENANT, INTEGRITY, SENSITIVITY);
    * Conceal<Mail> mail = c.source(CUSTOMER_MAIL, Mail.class, ctx -> ...);
    * SurrogateStore<Billing> store = MemorySurrogateStore.create(c);
    * }</pre>
    */
-  public static <D> SurrogateStore create(SurrogateStoreConfig<D> config) {
+  public static SurrogateStore create(SurrogateStoreConfig config) {
     return new DefaultSurrogateStore(config, new MemoryStorage());
   }
 }

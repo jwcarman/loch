@@ -61,9 +61,8 @@ public class SurrogateStoreConfiguration {
    * application onto a different backing store changes no line in this file.
    */
   @Bean
-  public SurrogateStoreConfig<Domain.BillingValue> surrogateStoreConfig() {
-    // The domain bound is the second parameter. A source over String would not compile.
-    return new SurrogateStoreConfig<Domain.BillingValue>()
+  public SurrogateStoreConfig surrogateStoreConfig() {
+    return new SurrogateStoreConfig()
         .axes(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
   }
 
@@ -74,8 +73,7 @@ public class SurrogateStoreConfiguration {
    * when it is, and none of these is used before the context is ready.
    */
   @Bean
-  public DisputeService disputeService(
-      SurrogateStoreConfig<Domain.BillingValue> config, Invoices invoices) {
+  public DisputeService disputeService(SurrogateStoreConfig config, Invoices invoices) {
 
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another

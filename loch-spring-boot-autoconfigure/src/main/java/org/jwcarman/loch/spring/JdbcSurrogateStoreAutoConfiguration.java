@@ -80,7 +80,7 @@ public class JdbcSurrogateStoreAutoConfiguration {
   @Bean
   @ConditionalOnBean({SurrogateStoreConfig.class, StorageCodec.class})
   public SmartInitializingSingleton surrogateStoreBuilder(
-      SurrogateStoreConfig<?> config,
+      SurrogateStoreConfig config,
       java.util.Optional<AccessContextProvider> access,
       DataSource dataSource,
       CodecFactory codecs,
@@ -95,8 +95,8 @@ public class JdbcSurrogateStoreAutoConfiguration {
   }
 
   /** Captures the wildcard so the label type and the storage settings line up. */
-  private static <D> void build(
-      SurrogateStoreConfig<D> config,
+  private static void build(
+      SurrogateStoreConfig config,
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,

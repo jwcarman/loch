@@ -52,8 +52,7 @@ public final class JdbcSurrogateStore {
    * <p>This call is also the moment the access space is fixed. Every capability declared on the
    * configuration before now is attached; anything declared afterwards reaches nothing.
    */
-  public static <D> SurrogateStore create(
-      SurrogateStoreConfig<D> config, JdbcSurrogateStoreConfig jdbc) {
+  public static SurrogateStore create(SurrogateStoreConfig config, JdbcSurrogateStoreConfig jdbc) {
     JdbcStorage storage =
         new JdbcStorage(
             jdbc.dataSourceOrFail(),

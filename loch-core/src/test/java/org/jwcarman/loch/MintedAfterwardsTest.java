@@ -53,7 +53,7 @@ class MintedAfterwardsTest {
 
   record Token(String value) implements Value {}
 
-  private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
+  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
 
   private final Conceal<Token> acmeTokens =
       config.source("acme-tokens", TOKEN_TYPE, ctx -> Label.of(TENANT, "acme"));

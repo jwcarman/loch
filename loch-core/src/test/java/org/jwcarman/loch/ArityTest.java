@@ -44,7 +44,7 @@ class ArityTest {
 
   private static final Axis<String> TENANT = Axis.matching("tenant");
 
-  private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
+  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
 
   private final Conceal<Note> notes = config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
 

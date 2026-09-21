@@ -56,8 +56,8 @@ class ErasingAcrossTenantsTest {
   void is_refused_even_for_a_compliance_officer() {
     AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-    SurrogateStoreConfig<Object> config =
-        new SurrogateStoreConfig<Object>()
+    SurrogateStoreConfig config =
+        new SurrogateStoreConfig()
             .axes(TENANT, LEVEL)
             .currentAccess(edge::get)
             .mayErase(

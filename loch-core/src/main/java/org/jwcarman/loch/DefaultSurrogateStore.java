@@ -44,7 +44,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
 
-  public DefaultSurrogateStore(SurrogateStoreConfig<?> config, Storage storage) {
+  public DefaultSurrogateStore(SurrogateStoreConfig config, Storage storage) {
     this.storage = storage;
     this.axes = config.declaredAxes();
     Map<String, DestinationSpec> byId = new LinkedHashMap<>();

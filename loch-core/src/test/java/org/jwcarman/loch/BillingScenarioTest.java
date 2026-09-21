@@ -171,10 +171,8 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Object> config =
-      new SurrogateStoreConfig<Object>()
-          .axes(TENANT, INTEGRITY, TLP, DATA_CLASS)
-          .currentAccess(edge::get);
+  private final SurrogateStoreConfig config =
+      new SurrogateStoreConfig().axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -1020,7 +1018,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
-      SurrogateStoreConfig<Object> choosyConfig = new SurrogateStoreConfig<>();
+      SurrogateStoreConfig choosyConfig = new SurrogateStoreConfig();
       choosyConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
       Conceal<Account> secretAccounts =
           choosyConfig.source(
@@ -1099,7 +1097,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
-      SurrogateStoreConfig<Object> fragileConfig = new SurrogateStoreConfig<>();
+      SurrogateStoreConfig fragileConfig = new SurrogateStoreConfig();
       fragileConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
       Conceal<String> fragileMail =
           fragileConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
@@ -1247,7 +1245,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
     void an_access_that_cannot_be_recorded_does_not_happen() {
-      SurrogateStoreConfig<Object> watchedConfig = new SurrogateStoreConfig<>();
+      SurrogateStoreConfig watchedConfig = new SurrogateStoreConfig();
       watchedConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
       Conceal<String> watchedMail =
           watchedConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);

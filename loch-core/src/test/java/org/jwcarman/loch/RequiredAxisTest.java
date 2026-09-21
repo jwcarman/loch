@@ -57,8 +57,8 @@ class RequiredAxisTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Object> config =
-      new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL).currentAccess(edge::get);
+  private final SurrogateStoreConfig config =
+      new SurrogateStoreConfig().axes(TENANT, LEVEL).currentAccess(edge::get);
 
   /** Exactly what an application would naturally write, including the part that was the leak. */
   private final Conceal<Note> notes =
@@ -114,8 +114,8 @@ class RequiredAxisTest {
   @Test
   @DisplayName("and says so in the record")
   void and_says_so_in_the_record() {
-    SurrogateStoreConfig<Object> own =
-        new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL).currentAccess(edge::get);
+    SurrogateStoreConfig own =
+        new SurrogateStoreConfig().axes(TENANT, LEVEL).currentAccess(edge::get);
     Conceal<Note> watched =
         own.source(
             "notes",
@@ -144,7 +144,7 @@ class RequiredAxisTest {
   @DisplayName("does not constrain an axis whose bottom means something")
   void does_not_constrain_an_axis_whose_bottom_means_something() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
-    SurrogateStoreConfig<Object> own = new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL);
+    SurrogateStoreConfig own = new SurrogateStoreConfig().axes(TENANT, LEVEL);
     Conceal<Note> low =
         own.source("low", NOTE_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
     SurrogateStore other = MemorySurrogateStore.create(own);

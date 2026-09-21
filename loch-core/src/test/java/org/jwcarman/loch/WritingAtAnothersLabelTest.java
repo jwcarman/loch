@@ -58,8 +58,8 @@ class WritingAtAnothersLabelTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Value> config =
-      new SurrogateStoreConfig<Value>().axes(TENANT, INTEGRITY).currentAccess(edge::get);
+  private final SurrogateStoreConfig config =
+      new SurrogateStoreConfig().axes(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final Conceal<Note> notes =

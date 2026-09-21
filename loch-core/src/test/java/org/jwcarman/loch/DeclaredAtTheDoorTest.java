@@ -53,7 +53,7 @@ class DeclaredAtTheDoorTest {
 
   record SessionToken(String token) implements Value {}
 
-  private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
+  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
 
   // Declared once, named by the strategy: card, last4, session-token.
   private final SurrogateType<Card> cardType = SurrogateType.of(Card.class);
@@ -66,7 +66,7 @@ class DeclaredAtTheDoorTest {
   private final Conceal<SessionToken> tokens =
       config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Label.of(TENANT, "acme"));
 
-  private final SurrogateDestination<Value> processor =
+  private final SurrogateDestination processor =
       config.destination(
           "payment-processor",
           ctx -> Ceiling.of(TENANT, Constraint.atMost("acme")),

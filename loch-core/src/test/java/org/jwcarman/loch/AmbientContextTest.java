@@ -55,9 +55,9 @@ class AmbientContextTest {
   record Wired(SurrogateStore store, Conceal<String> cards, Reveal<String> card) {}
 
   private static Wired wire(
-      java.util.function.Consumer<SurrogateStoreConfig<Object>> settings,
+      java.util.function.Consumer<SurrogateStoreConfig> settings,
       java.util.function.Function<AccessContext, Clearance> ceiling) {
-    SurrogateStoreConfig<Object> config = new SurrogateStoreConfig<>();
+    SurrogateStoreConfig config = new SurrogateStoreConfig();
     config.axes(CLEARANCE);
     settings.accept(config);
     Conceal<String> cards =

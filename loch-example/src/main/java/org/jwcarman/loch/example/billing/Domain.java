@@ -30,25 +30,23 @@ public final class Domain {
    * ever sees it as the bound on a type parameter. What it buys is that {@code Source<String>} does
    * not compile. A sink over {@code String} would read every surrogate for a {@code String} whose
    * label permitted it, and a card token and a customer's display name are the same type to Java.
+   *
+   * <p>/** What a customer sent. Untrusted, and full of their own personal details.
    */
-  public interface BillingValue {}
-
-  /** What a customer sent. Untrusted, and full of their own personal details. */
-  public record Mail(String from, String body) implements BillingValue {}
+  public record Mail(String from, String body) {}
 
   /** Stored as "mail". Say the name here if you ever want it to outlive renaming the record. */
   public static final SurrogateType<Mail> MAIL = SurrogateType.of(Mail.class);
 
   /** A row from the billing system: authoritative, and holding a live card token. */
   public record Invoice(
-      String number, String tenant, String customerEmail, BigDecimal amount, String cardToken)
-      implements BillingValue {}
+      String number, String tenant, String customerEmail, BigDecimal amount, String cardToken) {}
 
   /** Stored as "invoice". */
   public static final SurrogateType<Invoice> INVOICE = SurrogateType.of(Invoice.class);
 
   /** Four digits, which is all an approver needs to recognise a card. */
-  public record Last4(String digits) implements BillingValue {}
+  public record Last4(String digits) {}
 
   /** Stored as "last4". */
   public static final SurrogateType<Last4> LAST4 = SurrogateType.of(Last4.class);

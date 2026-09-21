@@ -32,15 +32,13 @@ package org.jwcarman.loch;
  * <p>It is still more authority than any one reader, because it can mint a reader for every type it
  * was declared to read. Hand out the destination when a service talks to the whole subsystem; hand
  * out a reader when it needs one kind of value.
- *
- * @param <D> the application's domain supertype, so a reader cannot be asked for anything else
  */
-public interface SurrogateDestination<D> {
+public interface SurrogateDestination {
 
   /**
    * A reader for one of the types this destination was declared to read.
    *
    * @throws IllegalStateException if that type was not declared here
    */
-  <T extends D> Reveal<T> reading(SurrogateType<T> type);
+  <T> Reveal<T> reading(SurrogateType<T> type);
 }

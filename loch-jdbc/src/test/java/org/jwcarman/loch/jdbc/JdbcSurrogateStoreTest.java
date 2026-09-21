@@ -157,7 +157,7 @@ class JdbcSurrogateStoreTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    SurrogateStoreConfig<Object> c = new SurrogateStoreConfig<Object>();
+    SurrogateStoreConfig c = new SurrogateStoreConfig();
     // Containers have to be named: their raw type is java.util.List, which is not ours to
     // annotate and would collide with every other list.
     SurrogateType<List<Card>> cardList =
@@ -353,7 +353,7 @@ class JdbcSurrogateStoreTest {
             org.assertj.core.api.Assertions.catchThrowable(
                 () ->
                     JdbcSurrogateStore.create(
-                        new SurrogateStoreConfig<Object>().axes(TENANT, INTEGRITY, DATA),
+                        new SurrogateStoreConfig().axes(TENANT, INTEGRITY, DATA),
                         new JdbcSurrogateStoreConfig()
                             .dataSource(dataSource)
                             .codecs(new JacksonCodecFactory(JsonMapper.builder().build())))))

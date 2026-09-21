@@ -32,7 +32,7 @@ import org.jwcarman.loch.lattice.Label;
  * permitted underneath values already stored, and a destination supplied at a call site would let
  * any code invent its own permission.
  */
-public class SurrogateStoreConfig<D> {
+public class SurrogateStoreConfig {
 
   private List<Axis<?>> axes = List.of();
   private AccessContextProvider ambient = AccessContextProvider.none();
@@ -52,7 +52,7 @@ public class SurrogateStoreConfig<D> {
    * speak to an axis declared here, a ceiling has to constrain every axis a label speaks to, and a
    * stored row naming an axis no longer declared is refused rather than quietly read without it.
    */
-  public SurrogateStoreConfig<D> axes(Axis<?>... axes) {
+  public SurrogateStoreConfig axes(Axis<?>... axes) {
     Objects.requireNonNull(axes, "a store needs axes");
     if (axes.length == 0) {
       throw new IllegalArgumentException(
@@ -74,7 +74,7 @@ public class SurrogateStoreConfig<D> {
   }
 
   /** Somewhere values may go. Registered once; referenced by name forever after. */
-  public SurrogateStoreConfig<D> destination(DestinationSpec destination) {
+  public SurrogateStoreConfig destination(DestinationSpec destination) {
     destinations.add(Objects.requireNonNull(destination, "a destination must not be null"));
     return this;
   }
@@ -110,20 +110,20 @@ public class SurrogateStoreConfig<D> {
   // ------------------------------------------------------------------ minting capabilities
 
   /** A source whose label depends on neither what arrives nor who is acting. */
-  public <T extends D> Conceal<T> source(String name, SurrogateType<T> type, Label label) {
+  public <T> Conceal<T> source(String name, SurrogateType<T> type, Label label) {
     Objects.requireNonNull(label, "a source needs a label");
     return source(name, type, (value, context) -> label);
   }
 
   /** The same, for a label that does not depend on what is arriving. */
-  public <T extends D> Conceal<T> source(
+  public <T> Conceal<T> source(
       String name,
       SurrogateType<T> type,
       java.util.function.Function<AccessContext, Label> labelling) {
     return source(name, type, (value, context) -> labelling.apply(context));
   }
 
-  public <T extends D> Conceal<T> source(
+  public <T> Conceal<T> source(
       String name,
       SurrogateType<T> type,
       java.util.function.BiFunction<T, AccessContext, Label> labelling) {
@@ -168,7 +168,7 @@ public class SurrogateStoreConfig<D> {
    * @param reads every type this destination will hand over, and no others
    */
   @SafeVarargs
-  public final SurrogateDestination<D> destination(
+  public final SurrogateDestination destination(
       String name,
       java.util.function.Function<AccessContext, Ceiling> ceiling,
       SurrogateType<?>... reads) {
@@ -188,24 +188,24 @@ public class SurrogateStoreConfig<D> {
     }
     destination(Destinations.varying(name, ceiling));
     // Declaration order, not hash order: this list ends up in an error message somebody reads.
-    return new Door<D>(
+    return new Door(
         name, java.util.Collections.unmodifiableSet(names), binding("destination '" + name + "'"));
   }
 
   /** The same, for a ceiling that does not depend on who is asking. */
   @SafeVarargs
-  public final SurrogateDestination<D> destination(
+  public final SurrogateDestination destination(
       String name, Ceiling ceiling, SurrogateType<?>... reads) {
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
     return destination(name, context -> ceiling, reads);
   }
 
   /** The implementation of a destination: a name, what it reads, and what it is attached to. */
-  private record Door<D>(String name, java.util.Set<String> reads, Binding binding)
-      implements SurrogateDestination<D> {
+  private record Door(String name, java.util.Set<String> reads, Binding binding)
+      implements SurrogateDestination {
 
     @Override
-    public <T extends D> Reveal<T> reading(SurrogateType<T> type) {
+    public <T> Reveal<T> reading(SurrogateType<T> type) {
       Objects.requireNonNull(type, "a reader needs to say what comes out of it");
       if (!reads.contains(type.name())) {
         throw new IllegalStateException(
@@ -243,7 +243,7 @@ public class SurrogateStoreConfig<D> {
    * where the parents share a type, use {@link #fold}.
    */
   /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<O, Derivation<I, O>> derivation(
+  public <I, O> Minting<O, Derivation<I, O>> derivation(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function) {
     registered(input);
     registered(output);
@@ -268,7 +268,7 @@ public class SurrogateStoreConfig<D> {
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
   /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<O, Derivation<I, O>> checking(
+  public <I, O> Minting<O, Derivation<I, O>> checking(
       String name,
       SurrogateType<I> input,
       SurrogateType<O> output,
@@ -299,7 +299,7 @@ public class SurrogateStoreConfig<D> {
    * something labelled for both, which no destination admits.
    */
   /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<O, Fold<I, O>> fold(
+  public <I, O> Minting<O, Fold<I, O>> fold(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<List<I>, O> function) {
     return new Minting<>(
         this,
@@ -328,7 +328,7 @@ public class SurrogateStoreConfig<D> {
    */
   public static final class Minting<O, C> {
 
-    private final SurrogateStoreConfig<?> config;
+    private final SurrogateStoreConfig config;
     private final String name;
     private final List<SurrogateType<?>> inputTypes;
     private final SurrogateType<O> outputType;
@@ -340,7 +340,7 @@ public class SurrogateStoreConfig<D> {
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Minting(
-        SurrogateStoreConfig<?> config,
+        SurrogateStoreConfig config,
         String name,
         List<SurrogateType<?>> inputTypes,
         SurrogateType<O> outputType,
@@ -423,7 +423,7 @@ public class SurrogateStoreConfig<D> {
    * {@link Query}.
    */
   /** The same, for a type already declared. */
-  public <I extends D, Q> Querying<I, Q> query(
+  public <I, Q> Querying<I, Q> query(
       String name, SurrogateType<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
     Objects.requireNonNull(name, "a query needs a name");
     Objects.requireNonNull(against, "a query needs to say what it is asked against");
@@ -434,7 +434,7 @@ public class SurrogateStoreConfig<D> {
   /** What a query still needs said about it before it becomes a capability. */
   public static final class Querying<I, Q> {
 
-    private final SurrogateStoreConfig<?> config;
+    private final SurrogateStoreConfig config;
     private final String name;
     private final SurrogateType<I> inputType;
     private final Query.Asking<I, Q> asking;
@@ -442,7 +442,7 @@ public class SurrogateStoreConfig<D> {
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Querying(
-        SurrogateStoreConfig<?> config,
+        SurrogateStoreConfig config,
         String name,
         SurrogateType<I> inputType,
         Query.Asking<I, Q> asking) {
@@ -563,7 +563,7 @@ public class SurrogateStoreConfig<D> {
    *
    * <p>An application with no notion of identity says nothing and every context is empty.
    */
-  public SurrogateStoreConfig<D> currentAccess(AccessContextProvider ambient) {
+  public SurrogateStoreConfig currentAccess(AccessContextProvider ambient) {
     this.ambient = Objects.requireNonNull(ambient, "an access source must not be null");
     return this;
   }
@@ -594,7 +594,7 @@ public class SurrogateStoreConfig<D> {
    * it is removed whether or not it is labelled more constrained -- which is what erasure means. A
    * value derived from two customers dies with either of them.
    */
-  public SurrogateStoreConfig<D> mayErase(
+  public SurrogateStoreConfig mayErase(
       java.util.function.BiPredicate<Label, AccessContext> mayErase) {
     this.mayErase = Objects.requireNonNull(mayErase, "an erasure policy must not be null");
     return this;

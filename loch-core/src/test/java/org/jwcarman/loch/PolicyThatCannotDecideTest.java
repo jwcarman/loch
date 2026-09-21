@@ -44,8 +44,7 @@ class PolicyThatCannotDecideTest {
 
   private final MemoryStorage storage = new MemoryStorage();
 
-  private final SurrogateStoreConfig<Object> config =
-      new SurrogateStoreConfig<Object>().axes(TENANT);
+  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
 
   private final Conceal<String> source =
       config.source("source", STRING_TYPE, ctx -> Label.of(TENANT, "acme"));

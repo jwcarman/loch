@@ -55,8 +55,8 @@ class LabellingWhatArrivesTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Object> config =
-      new SurrogateStoreConfig<Object>().axes(TENANT, INTEGRITY).currentAccess(edge::get);
+  private final SurrogateStoreConfig config =
+      new SurrogateStoreConfig().axes(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final Conceal<Mail> mail =
