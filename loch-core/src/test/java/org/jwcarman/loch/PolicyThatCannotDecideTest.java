@@ -83,7 +83,7 @@ class PolicyThatCannotDecideTest {
 
   private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
-  private final Handle<String> held = source.hold("secret");
+  private final Surrogate<String> held = source.exchange("secret");
 
   /** Whatever a real one would be: the point is only that it is unchecked and unhandled. */
   private static <T> T boom() {
@@ -93,7 +93,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is not a sink that accepts the value")
   void is_not_a_sink_that_accepts_the_value() {
-    assertThat(sinkWhoseCeilingThrows.read(held).allowed()).isFalse();
+    assertThat(sinkWhoseCeilingThrows.exchange(held).allowed()).isFalse();
   }
 
   @Test
@@ -160,7 +160,7 @@ class PolicyThatCannotDecideTest {
   void is_recorded_as_a_refusal() {
     audit.clear();
 
-    sinkWhoseCeilingThrows.read(held);
+    sinkWhoseCeilingThrows.exchange(held);
     queryWhoseCeilingThrows.ask(held, "secret");
     queryWhoseGateThrows.ask(held, "secret");
     derivationWhoseCeilingThrows.derive(held);

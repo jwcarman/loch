@@ -16,7 +16,6 @@
 package org.jwcarman.loch.example.billing;
 
 import org.jwcarman.loch.AccessDeniedException;
-import org.jwcarman.loch.HandleId;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -31,8 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The HTTP surface.
  *
- * <p>References cross the wire as ids, which is all a {@link HandleId} is. A client can hold one,
- * log it, put it in a URL and hand it back tomorrow; none of that is permission to read anything.
+ * <p>References cross the wire as ids, which is all a {@link String} is. A client can hold one, log
+ * it, put it in a URL and hand it back tomorrow; none of that is permission to read anything.
  */
 @RestController
 @RequestMapping("/disputes")
@@ -52,32 +51,32 @@ public class DisputeController {
   // request by CurrentAccess, so there is nowhere for this method to get it wrong.
   @PostMapping
   public Reference raise(@RequestBody Raise raise) {
-    return new Reference(disputes.receive(new Domain.Mail(raise.from(), raise.body())).value());
+    return new Reference(disputes.receive(new Domain.Mail(raise.from(), raise.body())));
   }
 
   @GetMapping("/{id}/mentions")
   public boolean mentions(@PathVariable String id, @RequestParam String text) {
-    return disputes.mentions(new HandleId(id), text);
+    return disputes.mentions(id, text);
   }
 
   @PostMapping("/{id}/confirm")
   public Reference confirm(@PathVariable String id) {
-    return new Reference(disputes.confirm(new HandleId(id)).value());
+    return new Reference(disputes.confirm(id));
   }
 
   @GetMapping("/{id}/card")
   public Domain.Last4 card(@PathVariable String id) {
-    return disputes.cardForApproval(new HandleId(id));
+    return disputes.cardForApproval(id);
   }
 
   @GetMapping("/{id}")
   public Domain.Invoice invoice(@PathVariable String id) {
-    return disputes.forSupportScreen(new HandleId(id));
+    return disputes.forSupportScreen(id);
   }
 
   @PostMapping("/{id}/refund")
   public String refund(@PathVariable String id) {
-    return disputes.refund(new HandleId(id));
+    return disputes.refund(id);
   }
 
   /** A refusal is a 403, and says which gate said no without saying what was behind it. */

@@ -43,8 +43,8 @@ public interface Fold<I, O> {
    * <p>An empty list is a refusal rather than a thrown error: nothing arrived is data, not a
    * mistake in the caller.
    */
-  Derived<O> fold(List<Handle<I>> parents);
+  Derived<O> fold(List<Surrogate<I>> parents);
 
   /** The same, with attributes the caller is contributing to the decision. */
-  Derived<O> fold(List<Handle<I>> parents, AccessContext context);
+  Derived<O> fold(List<Surrogate<I>> parents, AccessContext context);
 }

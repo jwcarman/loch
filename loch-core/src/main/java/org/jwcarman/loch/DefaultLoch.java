@@ -83,7 +83,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    * police a label the caller supplied; an inlet's label is a property of the door, decided during
    * configuration, and the caller contributes nothing to it.
    */
-  <T> Handle<T> holdVia(
+  <T> Surrogate<T> exchangeVia(
       String inlet,
       TypeRef<T> type,
       java.util.function.Function<AccessContext, A> labelling,
@@ -101,7 +101,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     if (label == null) {
       audit(
           AuditRecord.Operation.HOLD,
-          HandleId.fresh(),
+          freshId(),
           inlet,
           AuditRecord.Outcome.REFUSED,
           "the inlet could not say how to label this",
@@ -110,12 +110,12 @@ public final class DefaultLoch<A> implements Loch<A> {
       throw new AccessDeniedException(
           "INLET_CANNOT_LABEL", "'" + inlet + "' could not say what it labels values");
     }
-    HandleId id = HandleId.fresh();
+    String id = freshId();
     // Recorded before it is stored, for the reason given in hold(...): an auditor that throws must
     // leave nothing behind. The inlet is named, so the record says which door this came in through.
     audit(AuditRecord.Operation.HOLD, id, inlet, AuditRecord.Outcome.ALLOWED, null, label, asking);
     storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
-    return new Handle<>(id, type);
+    return new Surrogate<>(id);
   }
 
   /**
@@ -174,7 +174,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    */
   private void audit(
       AuditRecord.Operation operation,
-      HandleId value,
+      String value,
       String target,
       AuditRecord.Outcome outcome,
       String reason,
@@ -195,7 +195,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private <T> Dereferenced<T> denied(
       Dereferenced.Reason reason,
       String detail,
-      HandleId value,
+      String value,
       String target,
       A label,
       AccessContext context) {
@@ -239,28 +239,40 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public A label(HandleId id) {
+  public A label(String id) {
     return metadataOf(id).label();
   }
 
-  private StoredMetadata<A> metadataOf(HandleId id) {
+  private StoredMetadata<A> metadataOf(String id) {
     return storage
         .metadata(id)
         .orElseThrow(() -> new IllegalArgumentException("this loch is not holding " + id));
   }
 
-  /** What a handle says it is, in the form the store wrote it. */
+  /**
+   * A fresh identifier for a value nobody has seen yet.
+   *
+   * <p>Random rather than sequential, and that is load-bearing rather than incidental. Two values
+   * at the same label are indistinguishable to a ceiling, so within a label the thing that
+   * separates your record from somebody else's is that they cannot name it. 122 random bits is what
+   * makes that true, and it is also why a surrogate in a log file matters.
+   */
+  private static String freshId() {
+    return "loch_" + java.util.UUID.randomUUID();
+  }
+
+  /** What a surrogate says it is, in the form the store wrote it. */
   private static String nameOf(TypeRef<?> type) {
     return type.getType().getTypeName();
   }
 
   @Override
-  public boolean holds(HandleId id) {
+  public boolean holds(String id) {
     return storage.contains(id);
   }
 
   @Override
-  public int erase(Handle<?> root, AccessContext context) {
+  public int erase(Surrogate<?> root, AccessContext context) {
     AccessContext asking = asking(context);
     StoredMetadata<A> entry = storage.metadata(root.id()).orElse(null);
     if (entry == null) {
@@ -291,7 +303,8 @@ public final class DefaultLoch<A> implements Loch<A> {
     return removed;
   }
 
-  <I, Q> Answer askVia(QuerySpec<A, I, Q> spec, Handle<I> about, Q against, AccessContext given) {
+  <I, Q> Answer askVia(
+      QuerySpec<A, I, Q> spec, Surrogate<I> about, Q against, AccessContext given) {
     AccessContext asking = asking(given);
     AtomicReference<A> label = new AtomicReference<>();
     Answer answer = answering(spec, about, against, asking, label);
@@ -310,7 +323,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   private <I, Q> Answer answering(
       QuerySpec<A, I, Q> spec,
-      Handle<I> held,
+      Surrogate<I> held,
       Q against,
       AccessContext context,
       AtomicReference<A> refused) {
@@ -372,7 +385,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public Lineage lineage(HandleId id) {
+  public Lineage lineage(String id) {
     return metadataOf(id).lineage();
   }
 
@@ -409,18 +422,19 @@ public final class DefaultLoch<A> implements Loch<A> {
    *
    * <p>The parents' types and their number were settled by the capability the caller held, so this
    * does not re-derive them -- it checks each parent against the type declared for its position,
-   * which is the one thing the compiler could not know: a {@link HandleId} that arrived as text can
-   * be given any type by {@link Handle#of}, so what the store wrote remains the only ground truth.
+   * which is the one thing the compiler could not know: a {@link String} that arrived as text can
+   * be given any type by {@link Surrogate#of}, so what the store wrote remains the only ground
+   * truth.
    */
   <O> Derived<O> deriveVia(
-      DerivationSpec<A, O> spec, List<Handle<?>> parents, AccessContext explicit) {
+      DerivationSpec<A, O> spec, List<Surrogate<?>> parents, AccessContext explicit) {
     AccessContext asking = asking(explicit);
     AtomicReference<A> label = new AtomicReference<>();
     Derived<O> result = deriving(spec, parents, asking, label);
     if (result instanceof Derived.Refused<O> refused) {
       audit(
           AuditRecord.Operation.DERIVE,
-          parents.isEmpty() ? HandleId.fresh() : parents.getFirst().id(),
+          parents.isEmpty() ? freshId() : parents.getFirst().id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
           refused.reason().name(),
@@ -432,7 +446,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   private <O> Derived<O> deriving(
       DerivationSpec<A, O> spec,
-      List<Handle<?>> parents,
+      List<Surrogate<?>> parents,
       AccessContext context,
       AtomicReference<A> refused) {
     String id = spec.name();
@@ -461,10 +475,10 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     List<Object> inputs = new ArrayList<>();
-    List<HandleId> parentIds = new ArrayList<>();
+    List<String> parentIds = new ArrayList<>();
     A joined = null;
     for (int position = 0; position < parents.size(); position++) {
-      Handle<?> parent = parents.get(position);
+      Surrogate<?> parent = parents.get(position);
       TypeRef<?> expected = spec.typeAt(position);
       StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
       if (entry == null) {
@@ -522,7 +536,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
 
-    HandleId newId = HandleId.fresh();
+    String newId = freshId();
     audit(
         AuditRecord.Operation.DERIVE,
         newId,
@@ -535,10 +549,11 @@ public final class DefaultLoch<A> implements Loch<A> {
         newId,
         new StoredValue<>(
             produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)));
-    return new Derived.Made<>(new Handle<>(newId, spec.outputType()));
+    return new Derived.Made<>(new Surrogate<>(newId));
   }
 
-  <T> Dereferenced<T> dereference(Handle<T> held, String to, AccessContext context) {
+  <T> Dereferenced<T> dereference(
+      Surrogate<T> held, TypeRef<T> expected, String to, AccessContext context) {
     context = asking(context);
     Destination<A> destination = destinations.get(to);
     if (destination == null) {
@@ -560,10 +575,10 @@ public final class DefaultLoch<A> implements Loch<A> {
           null,
           context);
     }
-    if (!entry.typeName().equals(nameOf(held.type()))) {
+    if (!entry.typeName().equals(nameOf(expected))) {
       return denied(
           Dereferenced.Reason.WRONG_TYPE,
-          held.id() + " is a " + entry.typeName() + ", not a " + nameOf(held.type()),
+          held.id() + " is a " + entry.typeName() + ", not a " + nameOf(expected),
           held.id(),
           to,
           entry.label(),
@@ -598,7 +613,7 @@ public final class DefaultLoch<A> implements Loch<A> {
         context);
     // The type was confirmed against what the store wrote, so this decodes a verified fact.
     return storage
-        .value(held.id(), held.type())
+        .value(held.id(), expected)
         .<Dereferenced<T>>map(Dereferenced.Allowed::new)
         .orElseGet(
             () ->

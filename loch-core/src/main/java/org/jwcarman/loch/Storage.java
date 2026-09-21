@@ -32,10 +32,10 @@ import org.jwcarman.codec.spi.TypeRef;
 public interface Storage<A> {
 
   /** Keeps a value. */
-  void put(HandleId id, StoredValue<A> value);
+  void put(String id, StoredValue<A> value);
 
   /** The label, the lineage and what it was stored as -- without decoding the value. */
-  Optional<StoredMetadata<A>> metadata(HandleId id);
+  Optional<StoredMetadata<A>> metadata(String id);
 
   /**
    * The value, decoded as the caller says it is.
@@ -43,9 +43,9 @@ public interface Storage<A> {
    * <p>Only ever called once {@link #metadata} has confirmed the stored type name matches, so the
    * type here is a verified fact rather than a claim being trusted.
    */
-  <T> Optional<T> value(HandleId id, TypeRef<T> type);
+  <T> Optional<T> value(String id, TypeRef<T> type);
 
-  boolean contains(HandleId id);
+  boolean contains(String id);
 
   /**
    * Removes a value and everything derived from it, however deeply.
@@ -56,5 +56,5 @@ public interface Storage<A> {
    *
    * @return how many values were removed, the root included
    */
-  int erase(HandleId root);
+  int erase(String root);
 }

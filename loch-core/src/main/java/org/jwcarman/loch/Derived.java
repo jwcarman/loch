@@ -21,7 +21,7 @@ import java.util.Optional;
 public sealed interface Derived<O> {
 
   /** A new handle, stored, labelled and with its lineage recorded. */
-  record Made<O>(Handle<O> value) implements Derived<O> {}
+  record Made<O>(Surrogate<O> value) implements Derived<O> {}
 
   /** No new value, and why. */
   record Refused<O>(Reason reason, String detail) implements Derived<O> {}
@@ -50,7 +50,7 @@ public sealed interface Derived<O> {
     DECLINED
   }
 
-  default Optional<Handle<O>> made() {
+  default Optional<Surrogate<O>> made() {
     return this instanceof Made<O> made ? Optional.of(made.value()) : Optional.empty();
   }
 
@@ -59,7 +59,7 @@ public sealed interface Derived<O> {
   }
 
   /** The handle, or an exception naming the refusal. */
-  default Handle<O> orThrow() {
+  default Surrogate<O> orThrow() {
     if (this instanceof Made<O> made) {
       return made.value();
     }

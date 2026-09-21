@@ -81,8 +81,8 @@ public class LochConfig<A, D> {
     }
     return new Inlet<>() {
       @Override
-      public Handle<T> hold(T value) {
-        return binding.engine().holdVia(name, type, labelling, value);
+      public Surrogate<T> exchange(T value) {
+        return binding.engine().exchangeVia(name, type, labelling, value);
       }
 
       @Override
@@ -123,13 +123,13 @@ public class LochConfig<A, D> {
       }
 
       @Override
-      public Dereferenced<T> read(Handle<T> held) {
-        return read(held, AccessContext.empty());
+      public Dereferenced<T> exchange(Surrogate<T> surrogate) {
+        return exchange(surrogate, AccessContext.empty());
       }
 
       @Override
-      public Dereferenced<T> read(Handle<T> held, AccessContext context) {
-        return binding.engine().dereference(held, name, context);
+      public Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context) {
+        return binding.engine().dereference(surrogate, type, name, context);
       }
 
       @Override
@@ -173,12 +173,12 @@ public class LochConfig<A, D> {
         (spec, binding) ->
             new Derivation<>() {
               @Override
-              public Derived<O> derive(Handle<I> parent) {
+              public Derived<O> derive(Surrogate<I> parent) {
                 return derive(parent, AccessContext.empty());
               }
 
               @Override
-              public Derived<O> derive(Handle<I> parent, AccessContext context) {
+              public Derived<O> derive(Surrogate<I> parent, AccessContext context) {
                 return binding.engine().deriveVia(spec, List.of(parent), context);
               }
             });
@@ -202,12 +202,12 @@ public class LochConfig<A, D> {
         (spec, binding) ->
             new Derivation<>() {
               @Override
-              public Derived<O> derive(Handle<I> parent) {
+              public Derived<O> derive(Surrogate<I> parent) {
                 return derive(parent, AccessContext.empty());
               }
 
               @Override
-              public Derived<O> derive(Handle<I> parent, AccessContext context) {
+              public Derived<O> derive(Surrogate<I> parent, AccessContext context) {
                 return binding.engine().deriveVia(spec, List.of(parent), context);
               }
             });
@@ -232,12 +232,13 @@ public class LochConfig<A, D> {
         (spec, binding) ->
             new Derivation2<>() {
               @Override
-              public Derived<O> derive(Handle<I1> one, Handle<I2> two) {
+              public Derived<O> derive(Surrogate<I1> one, Surrogate<I2> two) {
                 return derive(one, two, AccessContext.empty());
               }
 
               @Override
-              public Derived<O> derive(Handle<I1> one, Handle<I2> two, AccessContext context) {
+              public Derived<O> derive(
+                  Surrogate<I1> one, Surrogate<I2> two, AccessContext context) {
                 return binding.engine().deriveVia(spec, List.of(one, two), context);
               }
             });
@@ -262,12 +263,12 @@ public class LochConfig<A, D> {
         (spec, binding) ->
             new Fold<>() {
               @Override
-              public Derived<O> fold(List<Handle<I>> parents) {
+              public Derived<O> fold(List<Surrogate<I>> parents) {
                 return fold(parents, AccessContext.empty());
               }
 
               @Override
-              public Derived<O> fold(List<Handle<I>> parents, AccessContext context) {
+              public Derived<O> fold(List<Surrogate<I>> parents, AccessContext context) {
                 return binding.engine().deriveVia(spec, List.copyOf(parents), context);
               }
             });
@@ -465,12 +466,12 @@ public class LochConfig<A, D> {
       Binding<A> binding = config.binding("query '" + name + "'");
       return new Query<>() {
         @Override
-        public Answer ask(Handle<I> about, Q against) {
+        public Answer ask(Surrogate<I> about, Q against) {
           return ask(about, against, AccessContext.empty());
         }
 
         @Override
-        public Answer ask(Handle<I> about, Q against, AccessContext context) {
+        public Answer ask(Surrogate<I> about, Q against, AccessContext context) {
           return binding.engine().askVia(spec, about, against, context);
         }
       };

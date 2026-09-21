@@ -28,7 +28,7 @@ import java.util.Optional;
  * @param parents the values this was derived from, in the order they were given
  * @param derivation what made it, absent for a value that was held directly
  */
-public record Lineage(List<HandleId> parents, Optional<String> derivation) {
+public record Lineage(List<String> parents, Optional<String> derivation) {
 
   private static final Lineage HELD = new Lineage(List.of(), Optional.empty());
 
@@ -41,7 +41,7 @@ public record Lineage(List<HandleId> parents, Optional<String> derivation) {
     return HELD;
   }
 
-  public static Lineage derivedFrom(List<HandleId> parents, String derivation) {
+  public static Lineage derivedFrom(List<String> parents, String derivation) {
     return new Lineage(parents, Optional.of(derivation));
   }
 

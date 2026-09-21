@@ -37,10 +37,10 @@ import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Handle;
 import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Outlet;
+import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -227,32 +227,32 @@ class JdbcLochTest {
     loch = JdbcLoch.create(Billing.class, c);
   }
 
-  private Handle<Card> card() {
+  private Surrogate<Card> card() {
     acme();
-    return cards.hold(new Card("4111111111114821", "J CARMAN"));
+    return cards.exchange(new Card("4111111111114821", "J CARMAN"));
   }
 
   @Test
   @DisplayName("keeps a value and gives it back to somewhere allowed to have it")
   void keeps_a_value_and_gives_it_back() {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
-    assertThat(paymentProcessor.read(card, acme()).granted())
+    assertThat(paymentProcessor.exchange(card, acme()).granted())
         .contains(new Card("4111111111114821", "J CARMAN"));
-    assertThat(vendorLlm.read(card, acme()).allowed()).isFalse();
+    assertThat(vendorLlm.exchange(card, acme()).allowed()).isFalse();
   }
 
   /** The point of the whole module: what is on disk is not the value. */
   @Test
   @DisplayName("stores no plaintext, not the value and not the label either")
   void stores_no_plaintext() throws SQLException {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "SELECT payload, label FROM loch_value WHERE value_id = ?")) {
-      statement.setString(1, card.id().value());
+      statement.setString(1, card.id());
       try (ResultSet rows = statement.executeQuery()) {
         assertThat(rows.next()).isTrue();
         String payload = new String(rows.getBytes("payload"));
@@ -266,7 +266,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("a fresh loch over the same database reads what the last one wrote")
   void survives_a_restart() {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
     assertThat(loch.holds(card)).isTrue();
     assertThat(loch.label(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
@@ -275,9 +275,9 @@ class JdbcLochTest {
   @Test
   @DisplayName("a derived value keeps its parentage and its lowered label")
   void a_derived_value_keeps_its_parentage() {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
-    Handle<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
+    Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
     assertThat(loch.lineage(last4).parents()).containsExactly(card.id());
@@ -287,10 +287,10 @@ class JdbcLochTest {
   @Test
   @DisplayName("deriving the same thing twice stores it twice, and says so")
   void deriving_twice_stores_twice() throws SQLException {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
-    Handle<Last4> once = cardLast4.derive(card, acme()).orThrow();
-    Handle<Last4> twice = cardLast4.derive(card, acme()).orThrow();
+    Surrogate<Last4> once = cardLast4.derive(card, acme()).orThrow();
+    Surrogate<Last4> twice = cardLast4.derive(card, acme()).orThrow();
 
     assertThat(once.id()).isNotEqualTo(twice.id());
     assertThat(rowCount("loch_value")).isEqualTo(3);
@@ -300,8 +300,8 @@ class JdbcLochTest {
   @Test
   @DisplayName("erasing a value takes everything ever derived from it")
   void erasing_takes_everything_derived_from_it() throws SQLException {
-    Handle<Card> card = card();
-    Handle<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
+    Surrogate<Card> card = card();
+    Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     int removed = loch.erase(card);
@@ -315,8 +315,8 @@ class JdbcLochTest {
   @Test
   @DisplayName("erasing a derived value leaves its parent alone")
   void erasing_a_derived_value_leaves_its_parent() {
-    Handle<Card> card = card();
-    Handle<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
+    Surrogate<Card> card = card();
+    Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     assertThat(loch.erase(last4)).isEqualTo(1);
@@ -326,7 +326,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("another tenant's access is refused, whatever is on disk")
   void another_tenants_access_is_refused() {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
     assertThat(dereferenceAs("globex", card)).isFalse();
   }
@@ -349,9 +349,9 @@ class JdbcLochTest {
   }
 
   /** A different tenant, established at the edge rather than claimed by the caller. */
-  private boolean dereferenceAs(String tenant, Handle<Card> card) {
+  private boolean dereferenceAs(String tenant, Surrogate<Card> card) {
     edge.set(AccessContext.of("tenant", tenant));
-    return paymentProcessor.read(card).allowed();
+    return paymentProcessor.exchange(card).allowed();
   }
 
   private int rowCount(String table) throws SQLException {
@@ -381,9 +381,10 @@ class JdbcLochTest {
   @Test
   @DisplayName("compresses a big repetitive value before encrypting it")
   void compresses_a_big_value_before_encrypting() throws SQLException {
-    Handle<Card> small = card();
+    Surrogate<Card> small = card();
     acme();
-    Handle<Card> repetitive = cards.hold(new Card("4111111111114821", "J CARMAN ".repeat(200)));
+    Surrogate<Card> repetitive =
+        cards.exchange(new Card("4111111111114821", "J CARMAN ".repeat(200)));
 
     // 1800 characters of a repeated name, stored in nothing like 1800 bytes.
     assertThat(payloadLength(repetitive)).isLessThan(payloadLength(small) + 300);
@@ -396,7 +397,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("does not make a small value bigger by compressing it")
   void does_not_make_a_small_value_bigger() throws SQLException {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
 
     int stored = payloadLength(card);
     int plain =
@@ -410,11 +411,11 @@ class JdbcLochTest {
     assertThat(stored).isLessThan(plain + 100);
   }
 
-  private int payloadLength(Handle<?> held) throws SQLException {
+  private int payloadLength(Surrogate<?> held) throws SQLException {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement("SELECT payload FROM loch_value WHERE value_id = ?")) {
-      statement.setString(1, held.id().value());
+      statement.setString(1, held.id());
       try (ResultSet rows = statement.executeQuery()) {
         assertThat(rows.next()).isTrue();
         return rows.getBytes("payload").length;
@@ -434,25 +435,25 @@ class JdbcLochTest {
         List.of(new Card("4111111111114821", "A"), new Card("4111111111119999", "B"));
 
     acme();
-    Handle<List<Card>> held = cardLists.hold(cards);
+    Surrogate<List<Card>> held = cardLists.exchange(cards);
 
-    assertThat(cardListProcessor.read(held, acme()).granted())
+    assertThat(cardListProcessor.exchange(held, acme()).granted())
         .hasValueSatisfying(
             back -> {
               assertThat(back).hasSize(2);
               assertThat(back.getFirst().number()).isEqualTo("4111111111114821");
             });
-    assertThat(cardListVendor.read(held, acme()).allowed()).isFalse();
+    assertThat(cardListVendor.exchange(held, acme()).allowed()).isFalse();
   }
 
   @Test
   @DisplayName("a handle claiming the wrong element type is refused")
   void a_handle_claiming_the_wrong_element_type_is_refused() {
     acme();
-    Handle<List<Card>> cards = cardLists.hold(List.of(new Card("4111111111114821", "A")));
-    Handle<List<Last4>> lying = new Handle<>(cards.id(), TypeRef.listOf(TypeRef.of(Last4.class)));
+    Surrogate<List<Card>> cards = cardLists.exchange(List.of(new Card("4111111111114821", "A")));
+    Surrogate<List<Last4>> lying = Surrogate.of(cards.id());
 
-    assertThat(last4ListProcessor.read(lying, acme()).allowed()).isFalse();
+    assertThat(last4ListProcessor.exchange(lying, acme()).allowed()).isFalse();
   }
 
   /** Reading a label should not decrypt a payload. */
@@ -460,7 +461,7 @@ class JdbcLochTest {
   @DisplayName("asking what a value is labelled does not decode the value")
   void asking_for_a_label_does_not_decode_the_value() {
     acme();
-    Handle<List<Card>> cards = cardLists.hold(List.of(new Card("4111111111114821", "A")));
+    Surrogate<List<Card>> cards = cardLists.exchange(List.of(new Card("4111111111114821", "A")));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
     assertThat(loch.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
@@ -471,7 +472,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("refuses to erase for anyone the application did not name")
   void refuses_to_erase_for_anyone_not_named() {
-    Handle<Card> card = card();
+    Surrogate<Card> card = card();
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "agent")));
 
     assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> loch.erase(card)))

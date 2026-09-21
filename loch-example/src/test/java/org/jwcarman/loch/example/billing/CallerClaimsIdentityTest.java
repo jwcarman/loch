@@ -61,7 +61,8 @@ class CallerClaimsIdentityTest {
     assertThat(Loch.class.getMethods())
         .isNotEmpty()
         .noneSatisfy(
-            method -> assertThat(method.getReturnType()).isEqualTo(org.jwcarman.loch.Handle.class));
+            method ->
+                assertThat(method.getReturnType()).isEqualTo(org.jwcarman.loch.Surrogate.class));
   }
 
   /**

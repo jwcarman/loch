@@ -19,24 +19,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.Handle;
-import org.jwcarman.loch.HandleId;
+import org.jwcarman.loch.Surrogate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The claim this library makes most often: a reference can go anywhere, because holding one is not
  * permission to read it.
  *
- * <p>It only holds if the reference actually survives the journey. A {@code Handle<T>} does not: it
- * carries a {@code TypeRef}, which no serialiser can reconstruct, and the type was never authority
- * anyway -- the gate checks it against what the store wrote. So what travels is the id, and the
- * receiving side says what it expects.
+ * <p>It only holds if the reference actually survives the journey. A {@code Surrogate<T>} does not:
+ * it carries a {@code TypeRef}, which no serialiser can reconstruct, and the type was never
+ * authority anyway -- the gate checks it against what the store wrote. So what travels is the id,
+ * and the receiving side says what it expects.
  */
 @DisplayName("A reference in an event")
-class HandleTravelTest {
+class SurrogateTravelTest {
 
   /** An ordinary application event. Nothing here knows about Loch except the id. */
-  record InboundMail(String from, HandleId body) {}
+  record InboundMail(String from, String body) {}
 
   record Card(String number) {}
 
@@ -44,32 +43,36 @@ class HandleTravelTest {
   @DisplayName("survives a round trip through JSON with nothing taught to any serialiser")
   void survives_a_round_trip_through_json() {
     JsonMapper mapper = JsonMapper.builder().build();
-    HandleId id = HandleId.fresh();
+    String id = "loch_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
 
     String json = mapper.writeValueAsString(new InboundMail("x@y.example", id));
     InboundMail back = mapper.readValue(json, InboundMail.class);
 
     assertThat(back.body()).isEqualTo(id);
-    assertThat(json).contains(id.value());
+    assertThat(json).contains(id);
   }
 
   @Test
   @DisplayName("becomes a typed view again where it is used")
   void becomes_a_typed_view_again_where_it_is_used() {
-    HandleId id = HandleId.fresh();
+    String id = "loch_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
 
-    Handle<Card> held = Handle.of(id, Card.class);
+    Surrogate<Card> held = Surrogate.of(id);
 
     assertThat(held.id()).isEqualTo(id);
-    assertThat(held.type().rawClass()).isEqualTo(Card.class);
+    // The type parameter is the compiler's, not the surrogate's: nothing about Card survives
+    // into the value, which is why it is safe to let one travel through somebody else's context.
+    assertThat(Surrogate.class.getRecordComponents())
+        .singleElement()
+        .satisfies(component -> assertThat(component.getName()).isEqualTo("id"));
   }
 
   /** Anything that prints a reference gets a name, and learns nothing else from it. */
   @Test
   @DisplayName("prints as its id and nothing else")
   void prints_as_its_id_and_nothing_else() {
-    HandleId id = HandleId.fresh();
+    String id = "loch_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
 
-    assertThat(Handle.of(id, Card.class).toString()).isEqualTo(id.value()).doesNotContain("Card");
+    assertThat(Surrogate.of(id).toString()).isEqualTo(id).doesNotContain("Card");
   }
 }

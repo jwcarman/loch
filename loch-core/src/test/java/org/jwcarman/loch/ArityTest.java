@@ -54,8 +54,8 @@ class ArityTest {
 
   private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
-  private final Handle<Note> first = notes.hold(new Note("a"));
-  private final Handle<Note> second = notes.hold(new Note("b"));
+  private final Surrogate<Note> first = notes.exchange(new Note("a"));
+  private final Surrogate<Note> second = notes.exchange(new Note("b"));
 
   @Test
   @DisplayName("of one is fine for a fold, which is what folding over one value means")
@@ -78,7 +78,7 @@ class ArityTest {
   @Test
   @DisplayName("carries the join of every parent's label")
   void carries_the_join_of_every_parents_label() {
-    Handle<Note> result = joined.fold(List.of(first, second)).orThrow();
+    Surrogate<Note> result = joined.fold(List.of(first, second)).orThrow();
 
     assertThat(loch.label(result.id())).isEqualTo(Exact.of("acme"));
   }

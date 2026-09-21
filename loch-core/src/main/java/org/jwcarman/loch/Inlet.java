@@ -47,10 +47,14 @@ package org.jwcarman.loch;
 public interface Inlet<T> {
 
   /**
-   * Puts a value into the loch, labelled the way this inlet labels things.
+   * Exchanges the real value for a surrogate that stands in for it.
+   *
+   * <p>The value stays; the caller leaves with something that names it and discloses nothing about
+   * it. The counterpart runs the other way, and both are exchanges: hand a value here and get a
+   * surrogate, hand that surrogate to an outlet and get the value.
    *
    * @throws IllegalArgumentException if the value is null
-   * @throws IllegalStateException if this inlet was never bound to a loch
+   * @throws IllegalStateException if this inlet was never attached to a loch
    */
-  Handle<T> hold(T value);
+  Surrogate<T> exchange(T value);
 }

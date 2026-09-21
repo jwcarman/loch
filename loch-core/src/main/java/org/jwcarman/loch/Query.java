@@ -36,10 +36,10 @@ package org.jwcarman.loch;
 public interface Query<I, Q> {
 
   /** Answers, or refuses. The answer is a bit; what was asked never appears in the record. */
-  Answer ask(Handle<I> about, Q against);
+  Answer ask(Surrogate<I> about, Q against);
 
   /** The same, with attributes the caller is contributing to the decision. */
-  Answer ask(Handle<I> about, Q against, AccessContext context);
+  Answer ask(Surrogate<I> about, Q against, AccessContext context);
 
   /** What a query actually does: looks at the value, and returns one bit. */
   @FunctionalInterface

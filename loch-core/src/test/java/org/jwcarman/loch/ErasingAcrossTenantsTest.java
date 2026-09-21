@@ -74,7 +74,7 @@ class ErasingAcrossTenantsTest {
 
     Loch<Labels> loch = MemoryLoch.create(config);
 
-    Handle<Record> globexRecord = globexRecords.hold(new Record("globex's records"));
+    Surrogate<Record> globexRecord = globexRecords.exchange(new Record("globex's records"));
 
     edge.set(AccessContext.of(Map.of("tenant", "acme", "role", "compliance")));
 

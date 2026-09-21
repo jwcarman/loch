@@ -34,7 +34,6 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
-import org.jwcarman.loch.HandleId;
 import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.StoredMetadata;
@@ -126,7 +125,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public void put(HandleId id, StoredValue<A> value) {
+  public void put(String id, StoredValue<A> value) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
@@ -145,10 +144,10 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private void insertValue(Connection connection, HandleId id, StoredValue<A> value)
+  private void insertValue(Connection connection, String id, StoredValue<A> value)
       throws SQLException {
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
-      statement.setString(1, id.value());
+      statement.setString(1, id);
       statement.setString(2, value.type().getType().getTypeName());
       statement.setBytes(3, encode(value.type(), value.value()));
       statement.setBytes(4, labels.encode(value.label()));
@@ -158,34 +157,34 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private void insertLineage(Connection connection, HandleId id, Lineage lineage)
+  private void insertLineage(Connection connection, String id, Lineage lineage)
       throws SQLException {
     try (PreparedStatement self = connection.prepareStatement(INSERT_SELF_CLOSURE)) {
-      self.setString(1, id.value());
-      self.setString(2, id.value());
+      self.setString(1, id);
+      self.setString(2, id);
       self.executeUpdate();
     }
-    List<HandleId> parents = lineage.parents();
+    List<String> parents = lineage.parents();
     for (int i = 0; i < parents.size(); i++) {
       try (PreparedStatement parent = connection.prepareStatement(INSERT_PARENT)) {
-        parent.setString(1, id.value());
-        parent.setString(2, parents.get(i).value());
+        parent.setString(1, id);
+        parent.setString(2, parents.get(i));
         parent.setInt(3, i);
         parent.executeUpdate();
       }
       try (PreparedStatement closure = connection.prepareStatement(INSERT_CLOSURE)) {
-        closure.setString(1, id.value());
-        closure.setString(2, parents.get(i).value());
+        closure.setString(1, id);
+        closure.setString(2, parents.get(i));
         closure.executeUpdate();
       }
     }
   }
 
   @Override
-  public Optional<StoredMetadata<A>> metadata(HandleId id) {
+  public Optional<StoredMetadata<A>> metadata(String id) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(SELECT_METADATA)) {
-      statement.setString(1, id.value());
+      statement.setString(1, id);
       try (ResultSet rows = statement.executeQuery()) {
         if (!rows.next()) {
           return Optional.empty();
@@ -204,10 +203,10 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public <T> Optional<T> value(HandleId id, TypeRef<T> type) {
+  public <T> Optional<T> value(String id, TypeRef<T> type) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(SELECT_PAYLOAD)) {
-      statement.setString(1, id.value());
+      statement.setString(1, id);
       try (ResultSet rows = statement.executeQuery()) {
         if (!rows.next()) {
           return Optional.empty();
@@ -219,13 +218,13 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private List<HandleId> parentsOf(Connection connection, HandleId id) throws SQLException {
-    List<HandleId> parents = new ArrayList<>();
+  private List<String> parentsOf(Connection connection, String id) throws SQLException {
+    List<String> parents = new ArrayList<>();
     try (PreparedStatement statement = connection.prepareStatement(SELECT_PARENTS)) {
-      statement.setString(1, id.value());
+      statement.setString(1, id);
       try (ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
-          parents.add(new HandleId(rows.getString("parent_id")));
+          parents.add(new String(rows.getString("parent_id")));
         }
       }
     }
@@ -233,11 +232,11 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public boolean contains(HandleId id) {
+  public boolean contains(String id) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement("SELECT 1 FROM loch_value WHERE value_id = ?")) {
-      statement.setString(1, id.value());
+      statement.setString(1, id);
       try (ResultSet rows = statement.executeQuery()) {
         return rows.next();
       }
@@ -247,14 +246,14 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public int erase(HandleId root) {
+  public int erase(String root) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
       try {
         int removed;
         try (PreparedStatement statement = connection.prepareStatement(DELETE_REACHABLE)) {
-          statement.setString(1, root.value());
+          statement.setString(1, root);
           removed = statement.executeUpdate();
         }
         try (Statement tidy = connection.createStatement()) {

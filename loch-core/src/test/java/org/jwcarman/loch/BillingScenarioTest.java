@@ -22,7 +22,6 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -399,12 +398,12 @@ class BillingScenarioTest {
    * Holds a value at exactly the label given, by encoding it into the ambient context an inlet's
    * generic {@link #labelFrom} reads back out, then restoring whatever the edge held before.
    *
-   * <p>This is the plumbing equivalent of the old {@code loch.hold(value, type, label)}: the label
-   * is still asserted by trusted code at a boundary, not computed, and still fixed before the value
-   * is stored. What changed is the mechanism -- there is no method left that takes a label as an
-   * argument, so the label has to travel through the one channel an inlet reads.
+   * <p>This is the plumbing equivalent of the old {@code loch.exchange(value, type, label)}: the
+   * label is still asserted by trusted code at a boundary, not computed, and still fixed before the
+   * value is stored. What changed is the mechanism -- there is no method left that takes a label as
+   * an argument, so the label has to travel through the one channel an inlet reads.
    */
-  private <T> Handle<T> holdAs(Billing label, Inlet<T> inlet, T value) {
+  private <T> Surrogate<T> holdAs(Billing label, Inlet<T> inlet, T value) {
     AccessContext previous = edge.get();
     edge.set(
         AccessContext.of(
@@ -414,7 +413,7 @@ class BillingScenarioTest {
                 "tlp", label.tlp().name(),
                 "dataClass", label.dataClass().name())));
     try {
-      return inlet.hold(value);
+      return inlet.exchange(value);
     } finally {
       edge.set(previous);
     }
@@ -422,7 +421,7 @@ class BillingScenarioTest {
 
   // ---------------------------------------------------------------- the scenario
 
-  private Handle<String> customerEmail() {
+  private Surrogate<String> customerEmail() {
     return holdAs(
         Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
         customerMail,
@@ -436,9 +435,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("never reaches a vendor's model")
     void never_reaches_a_vendors_model() {
-      Handle<String> email = customerEmail();
+      Surrogate<String> email = customerEmail();
 
-      Dereferenced<String> attempt = vendorLlmText.read(email, acme());
+      Dereferenced<String> attempt = vendorLlmText.exchange(email, acme());
 
       assertThat(attempt.allowed()).isFalse();
       assertThat(attempt)
@@ -450,16 +449,16 @@ class BillingScenarioTest {
     @Test
     @DisplayName("does reach the quarantined model, which is what it is for")
     void does_reach_the_quarantined_model() {
-      Handle<String> email = customerEmail();
+      Surrogate<String> email = customerEmail();
 
-      assertThat(quarantinedLlmText.read(email, acme()).granted())
+      assertThat(quarantinedLlmText.exchange(email, acme()).granted())
           .hasValueSatisfying(text -> assertThat(text).contains("INV-4471"));
     }
 
     @Test
     @DisplayName("is still a handle everywhere else, and says nothing when printed")
     void is_still_a_handle_everywhere_else() {
-      Handle<String> email = customerEmail();
+      Surrogate<String> email = customerEmail();
 
       assertThat(email.toString()).doesNotContain("123-45-6789").contains("loch_");
     }
@@ -469,7 +468,7 @@ class BillingScenarioTest {
   @DisplayName("the card token")
   class TheCardToken {
 
-    private Handle<String> token() {
+    private Surrogate<String> token() {
       return holdAs(
           Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
           cardTokens,
@@ -479,18 +478,19 @@ class BillingScenarioTest {
     @Test
     @DisplayName("reaches the payment processor")
     void reaches_the_payment_processor() {
-      assertThat(paymentProcessorText.read(token(), acme()).granted()).contains("tok_1P9xyz");
+      assertThat(paymentProcessorText.exchange(token(), acme()).granted()).contains("tok_1P9xyz");
     }
 
     /** Not by policy anyone wrote. By arithmetic: every model sits below CARDHOLDER. */
     @Test
     @DisplayName("cannot reach any model, and cannot reach a person")
     void cannot_reach_any_model_or_person() {
-      Handle<String> token = token();
+      Surrogate<String> token = token();
 
-      assertThat(vendorLlmText.read(token, acme()).allowed()).isFalse();
-      assertThat(quarantinedLlmText.read(token, acme()).allowed()).isFalse();
-      assertThat(approvalCardText.read(token, acme("clearance", "finance")).allowed()).isFalse();
+      assertThat(vendorLlmText.exchange(token, acme()).allowed()).isFalse();
+      assertThat(quarantinedLlmText.exchange(token, acme()).allowed()).isFalse();
+      assertThat(approvalCardText.exchange(token, acme("clearance", "finance")).allowed())
+          .isFalse();
     }
   }
 
@@ -498,7 +498,7 @@ class BillingScenarioTest {
   @DisplayName("the approval card")
   class TheApprovalCard {
 
-    private Handle<String> last4() {
+    private Surrogate<String> last4() {
       return holdAs(
           Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII), last4Digits, "4821");
     }
@@ -506,20 +506,21 @@ class BillingScenarioTest {
     @Test
     @DisplayName("shows a finance approver the last four")
     void shows_a_finance_approver_the_last_four() {
-      assertThat(approvalCardText.read(last4(), acme("clearance", "finance")).granted())
+      assertThat(approvalCardText.exchange(last4(), acme("clearance", "finance")).granted())
           .contains("4821");
     }
 
     @Test
     @DisplayName("shows anyone else a handle")
     void shows_anyone_else_a_handle() {
-      assertThat(approvalCardText.read(last4(), acme("clearance", "support")).allowed()).isFalse();
+      assertThat(approvalCardText.exchange(last4(), acme("clearance", "support")).allowed())
+          .isFalse();
     }
 
     @Test
     @DisplayName("and with nobody named at all, shows nothing")
     void with_nobody_named_shows_nothing() {
-      assertThat(approvalCardText.read(last4(), acme()).allowed()).isFalse();
+      assertThat(approvalCardText.exchange(last4(), acme()).allowed()).isFalse();
     }
   }
 
@@ -542,24 +543,24 @@ class BillingScenarioTest {
     @Test
     @DisplayName("folding two tenants' data makes a report that can go nowhere at all")
     void folding_two_tenants_data_makes_a_report_that_can_go_nowhere() {
-      Handle<String> acmeNote =
+      Surrogate<String> acmeNote =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "acme disputes INV-1");
-      Handle<String> globexNote =
+      Surrogate<String> globexNote =
           holdAs(
               Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "globex disputes INV-2");
 
-      Handle<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
+      Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
 
       assertThat(loch.label(report).tenant().conflicted()).isTrue();
-      assertThat(vendorLlmReports.read(report, acme()).allowed()).isFalse();
-      assertThat(paymentProcessorReports.read(report, acme()).allowed()).isFalse();
-      assertThat(quarantinedLlmReports.read(report, acme()).allowed()).isFalse();
-      assertThat(vendorLlmReports.read(report, AccessContext.of("tenant", "globex")).allowed())
+      assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
+      assertThat(paymentProcessorReports.exchange(report, acme()).allowed()).isFalse();
+      assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isFalse();
+      assertThat(vendorLlmReports.exchange(report, AccessContext.of("tenant", "globex")).allowed())
           .isFalse();
       // It exists, and it remembers where it came from.
       assertThat(loch.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
@@ -568,20 +569,20 @@ class BillingScenarioTest {
     @Test
     @DisplayName("folding one tenant's own notes is perfectly usable")
     void folding_one_tenants_notes_is_usable() {
-      Handle<String> first =
+      Surrogate<String> first =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "first note");
-      Handle<String> second =
+      Surrogate<String> second =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "second note");
 
-      Handle<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
+      Surrogate<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
 
-      assertThat(vendorLlmReports.read(report, acme()).granted())
+      assertThat(vendorLlmReports.exchange(report, acme()).granted())
           .contains(new Report("first note / second note"));
     }
 
@@ -589,22 +590,22 @@ class BillingScenarioTest {
     @Test
     @DisplayName("one restricted parent constrains the whole result")
     void one_restricted_parent_constrains_the_whole_result() {
-      Handle<String> ordinary =
+      Surrogate<String> ordinary =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "nothing special");
-      Handle<String> personal =
+      Surrogate<String> personal =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
               notes,
               "and their home address");
 
-      Handle<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
+      Surrogate<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
 
       assertThat(loch.label(report).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(vendorLlmReports.read(report, acme()).allowed()).isFalse();
-      assertThat(quarantinedLlmReports.read(report, acme()).allowed()).isTrue();
+      assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
+      assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isTrue();
     }
 
     @Test
@@ -619,25 +620,25 @@ class BillingScenarioTest {
     @Test
     @DisplayName("another tenant's data is refused, even though it is perfectly ordinary")
     void another_tenants_data_is_refused() {
-      Handle<String> globexNote =
+      Surrogate<String> globexNote =
           holdAs(
               Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "globex's entirely unremarkable note");
 
-      assertThat(vendorLlmText.read(globexNote, acme()).allowed()).isFalse();
+      assertThat(vendorLlmText.exchange(globexNote, acme()).allowed()).isFalse();
     }
 
     @Test
     @DisplayName("one tenant's ordinary data is fine")
     void one_tenants_ordinary_data_is_fine() {
-      Handle<String> held =
+      Surrogate<String> held =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               notes,
               "nothing secret");
 
-      assertThat(vendorLlmText.read(held, acme()).allowed()).isTrue();
+      assertThat(vendorLlmText.exchange(held, acme()).allowed()).isTrue();
     }
   }
 
@@ -648,10 +649,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses an id nobody minted, rather than computing anything")
     void refuses_an_id_nobody_minted() {
-      Handle<String> invented =
-          new Handle<>(new HandleId("loch_whatever-i-like"), TypeRef.of(String.class));
+      Surrogate<String> invented = Surrogate.of("loch_whatever-i-like");
 
-      assertThat(quarantinedLlmText.read(invented, acme()))
+      assertThat(quarantinedLlmText.exchange(invented, acme()))
           .isInstanceOfSatisfying(
               Dereferenced.Denied.class,
               denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.NO_SUCH_VALUE));
@@ -674,14 +674,14 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses a handle whose claimed type is not what was stored")
     void refuses_a_handle_whose_type_is_wrong() {
-      Handle<DisputeClaim> claim =
+      Surrogate<DisputeClaim> claim =
           holdAs(
               Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
               disputeClaims,
               new DisputeClaim("INV-1", "x"));
-      Handle<String> lying = new Handle<>(claim.id(), TypeRef.of(String.class));
+      Surrogate<String> lying = new Surrogate<>(claim.id());
 
-      assertThat(quarantinedLlmText.read(lying, acme()))
+      assertThat(quarantinedLlmText.exchange(lying, acme()))
           .isInstanceOfSatisfying(
               Dereferenced.Denied.class,
               denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.WRONG_TYPE));
@@ -690,7 +690,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("tells you the label and the ceiling when it refuses, without leaking the value")
     void explains_a_refusal_without_leaking() {
-      Dereferenced<String> denied = vendorLlmText.read(customerEmail(), acme());
+      Dereferenced<String> denied = vendorLlmText.exchange(customerEmail(), acme());
 
       String detail = ((Dereferenced.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("123-45-6789");
@@ -701,7 +701,7 @@ class BillingScenarioTest {
   @DisplayName("deriving")
   class Deriving {
 
-    private Handle<DisputeClaim> claim() {
+    private Surrogate<DisputeClaim> claim() {
       return holdAs(
           Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
           disputeClaims,
@@ -711,20 +711,20 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a projection inherits its parent's labels exactly")
     void a_projection_inherits_its_parents_labels() {
-      Handle<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
+      Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
       assertThat(loch.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
-      assertThat(quarantinedLlmInvoice.read(number, acme()).granted())
+      assertThat(quarantinedLlmInvoice.exchange(number, acme()).granted())
           .contains(new InvoiceNumber("INV-4471"));
-      assertThat(vendorLlmInvoice.read(number, acme()).allowed()).isFalse();
+      assertThat(vendorLlmInvoice.exchange(number, acme()).allowed()).isFalse();
     }
 
     /** An invoice number a customer typed is a question, not an answer. */
     @Test
     @DisplayName("extracting a field does not make it trustworthy")
     void extracting_a_field_does_not_make_it_trustworthy() {
-      Handle<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
+      Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
       assertThat(loch.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
     }
@@ -732,9 +732,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records what it came from, so erasure has something to follow")
     void records_what_it_came_from() {
-      Handle<DisputeClaim> parent = claim();
+      Surrogate<DisputeClaim> parent = claim();
 
-      Handle<InvoiceNumber> number = claimedInvoice.derive(parent, acme()).orThrow();
+      Surrogate<InvoiceNumber> number = claimedInvoice.derive(parent, acme()).orThrow();
 
       assertThat(loch.lineage(number).parents()).containsExactly(parent.id());
       assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE);
@@ -752,10 +752,10 @@ class BillingScenarioTest {
     @Test
     @DisplayName("deriving twice makes two values, and each caller gets its own answer")
     void deriving_twice_makes_two_values() {
-      Handle<DisputeClaim> parent = claim();
+      Surrogate<DisputeClaim> parent = claim();
 
-      Handle<InvoiceNumber> once = claimedInvoice.derive(parent, acme()).orThrow();
-      Handle<InvoiceNumber> twice = claimedInvoice.derive(parent, acme()).orThrow();
+      Surrogate<InvoiceNumber> once = claimedInvoice.derive(parent, acme()).orThrow();
+      Surrogate<InvoiceNumber> twice = claimedInvoice.derive(parent, acme()).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
       assertThat(loch.lineage(once).parents()).containsExactly(parent.id());
@@ -790,7 +790,7 @@ class BillingScenarioTest {
                   c -> new InvoiceNumber(c.invoiceNumber()))
               .acceptingAnything()
               .mint();
-      Handle<DisputeClaim> claim = claim();
+      Surrogate<DisputeClaim> claim = claim();
 
       assertThatThrownBy(() -> invented.derive(claim, acme()))
           .isInstanceOf(IllegalStateException.class)
@@ -802,7 +802,7 @@ class BillingScenarioTest {
   @DisplayName("weakening a label")
   class Weakening {
 
-    private Handle<String> token() {
+    private Surrogate<String> token() {
       return holdAs(
           Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
           cardTokens,
@@ -816,17 +816,17 @@ class BillingScenarioTest {
     @Test
     @DisplayName("truncating a card lowers it to PII, which a person may then see")
     void truncating_a_card_lowers_it_to_pii() {
-      Handle<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
+      Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(approvalCardLast4.read(last4, acme("clearance", "finance")).granted())
+      assertThat(approvalCardLast4.exchange(last4, acme("clearance", "finance")).granted())
           .contains(new Last4("4821"));
     }
 
     @Test
     @DisplayName("and lowers nothing it did not name: still acme's, still endorsed")
     void lowers_nothing_it_did_not_name() {
-      Handle<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
+      Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).tenant().resolved()).contains("acme");
       assertThat(loch.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
@@ -839,11 +839,12 @@ class BillingScenarioTest {
     @Test
     @DisplayName("lowering only one dimension leaves the other still blocking")
     void lowering_only_one_dimension_leaves_the_other_blocking() {
-      Handle<Last4> partly = cardLast4Partial.derive(token(), acme()).orThrow();
+      Surrogate<Last4> partly = cardLast4Partial.derive(token(), acme()).orThrow();
 
       assertThat(loch.label(partly).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.label(partly).tlp()).isEqualTo(Tlp.RED);
-      assertThat(approvalCardLast4.read(partly, acme("clearance", "finance")).allowed()).isFalse();
+      assertThat(approvalCardLast4.exchange(partly, acme("clearance", "finance")).allowed())
+          .isFalse();
     }
 
     @Test
@@ -859,7 +860,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a relabel that does not actually lower is refused")
     void a_relabel_that_does_not_lower_is_refused() {
-      Handle<DisputeClaim> endorsed =
+      Surrogate<DisputeClaim> endorsed =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               disputeClaims,
@@ -923,7 +924,7 @@ class BillingScenarioTest {
   @DisplayName("asking instead of taking")
   class Checks {
 
-    private Handle<Account> account() {
+    private Surrogate<Account> account() {
       return holdAs(
           Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
           accounts,
@@ -933,7 +934,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("answers the question without the account ever leaving")
     void answers_without_the_account_leaving() {
-      Handle<Account> account = account();
+      Surrogate<Account> account = account();
 
       assertThat(ownedBy.ask(account, "someone@acme.example", acme()).isTrue()).isTrue();
       assertThat(ownedBy.ask(account, "attacker@elsewhere.example", acme()).isFalse()).isTrue();
@@ -948,7 +949,7 @@ class BillingScenarioTest {
     void a_refusal_is_neither_true_nor_false() {
       // Acme's account, asked about by globex: refused by the ceiling rather than by a name
       // nobody registered, which is the only kind of refusal there is now.
-      Handle<Account> acmeAccount = account();
+      Surrogate<Account> acmeAccount = account();
 
       Answer answer = ownedBy.ask(acmeAccount, "x", globex());
 
@@ -973,7 +974,7 @@ class BillingScenarioTest {
               .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
               .mint();
       Loch<Billing> choosy = MemoryLoch.create(choosyConfig);
-      Handle<Account> secret = secretAccounts.hold(new Account("ACC-2", "x@y.example"));
+      Surrogate<Account> secret = secretAccounts.exchange(new Account("ACC-2", "x@y.example"));
 
       assertThat(secretOwnedBy.ask(secret, "x@y.example", acme()))
           .isInstanceOfSatisfying(
@@ -989,7 +990,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an allowed result does not print the value it is carrying")
     void an_allowed_result_does_not_print_the_value() {
-      Dereferenced<String> allowed = quarantinedLlmText.read(customerEmail(), acme());
+      Dereferenced<String> allowed = quarantinedLlmText.exchange(customerEmail(), acme());
 
       assertThat(allowed.allowed()).isTrue();
       assertThat(allowed.toString()).doesNotContain("123-45-6789");
@@ -998,7 +999,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a refusal names the destination but not the labels")
     void a_refusal_names_the_destination_but_not_the_labels() {
-      Dereferenced<String> denied = vendorLlmText.read(customerEmail(), acme());
+      Dereferenced<String> denied = vendorLlmText.exchange(customerEmail(), acme());
 
       String detail = ((Dereferenced.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("acme").doesNotContain("PII");
@@ -1021,11 +1022,11 @@ class BillingScenarioTest {
               String.class,
               ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
       Loch<Billing> chatty = MemoryLoch.create(chattyConfig);
-      Handle<String> held =
+      Surrogate<String> held =
           holdAs(
               Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII), chattyMail, "x");
 
-      Dereferenced<String> denied = chattyVendorLlm.read(held, acme());
+      Dereferenced<String> denied = chattyVendorLlm.exchange(held, acme());
 
       assertThat(((Dereferenced.Denied<String>) denied).detail()).contains("PII");
     }
@@ -1046,11 +1047,11 @@ class BillingScenarioTest {
                 throw new IllegalStateException("policy service is down");
               });
       Loch<Billing> fragile = MemoryLoch.create(fragileConfig);
-      Handle<String> held =
+      Surrogate<String> held =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), fragileMail, "x");
 
-      Dereferenced<String> result = broken.read(held, acme());
+      Dereferenced<String> result = broken.exchange(held, acme());
 
       assertThat(result.allowed()).isFalse();
     }
@@ -1063,7 +1064,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("says who reached what, and never what the value was")
     void says_who_reached_what_and_never_the_value() {
-      quarantinedLlmText.read(customerEmail(), acme());
+      quarantinedLlmText.exchange(customerEmail(), acme());
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED);
@@ -1076,7 +1077,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records refusals as carefully as permissions")
     void records_refusals_as_carefully_as_permissions() {
-      vendorLlmText.read(customerEmail(), acme());
+      vendorLlmText.exchange(customerEmail(), acme());
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -1086,7 +1087,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records holding, because that is where labels are asserted rather than computed")
     void records_holding() {
-      Handle<String> email = customerEmail();
+      Surrogate<String> email = customerEmail();
 
       assertThat(audit.of(AuditRecord.Operation.HOLD))
           .anySatisfy(entry -> assertThat(entry.value()).isEqualTo(email.id()));
@@ -1095,7 +1096,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records a check, with the answer but never the question")
     void records_a_check_with_the_answer_but_not_the_question() {
-      Handle<Account> account =
+      Surrogate<Account> account =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
               accounts,
@@ -1112,7 +1113,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("says so when a derivation weakened a label")
     void says_so_when_a_derivation_weakened_a_label() {
-      Handle<String> token =
+      Surrogate<String> token =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
               cardTokens,
@@ -1128,7 +1129,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an ordinary derivation is recorded without that note")
     void an_ordinary_derivation_is_recorded_without_that_note() {
-      Handle<DisputeClaim> claim =
+      Surrogate<DisputeClaim> claim =
           holdAs(
               Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
               disputeClaims,
@@ -1142,9 +1143,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("but one made from several values says so, since it is more constrained than any")
     void one_made_from_several_says_so() {
-      Handle<String> first =
+      Surrogate<String> first =
           holdAs(Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), notes, "a");
-      Handle<String> second =
+      Surrogate<String> second =
           holdAs(Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), notes, "b");
 
       summarise.fold(java.util.List.of(first, second), acme());
@@ -1218,7 +1219,7 @@ class BillingScenarioTest {
   @DisplayName("refusals reach the record too")
   class RefusalsAreRecorded {
 
-    private Handle<DisputeClaim> claim() {
+    private Surrogate<DisputeClaim> claim() {
       return holdAs(
           Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
           disputeClaims,
@@ -1253,7 +1254,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a derivation not offered here is recorded, and says nothing about the value")
     void a_derivation_not_offered_here_is_recorded() {
-      Handle<String> token =
+      Surrogate<String> token =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
               cardTokens,
@@ -1289,7 +1290,7 @@ class BillingScenarioTest {
     void a_refused_check_is_recorded() {
       audit.clear();
 
-      Handle<Account> acmeAccount =
+      Surrogate<Account> acmeAccount =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
               accounts,

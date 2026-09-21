@@ -92,14 +92,14 @@ class WritingAtAnothersLabelTest {
   void is_refused() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
 
-    Handle<Note> written = notes.hold(new Note("globex owes us 1,000,000"));
+    Surrogate<Note> written = notes.exchange(new Note("globex owes us 1,000,000"));
 
     // Acme wrote it and acme owns it. There was no argument through which to claim otherwise.
     assertThat(loch.label(written.id()).tenant()).isEqualTo(Exact.of("acme"));
 
     // And globex does not read it as its own.
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
-    assertThat(reporting.read(written).allowed()).isFalse();
+    assertThat(reporting.exchange(written).allowed()).isFalse();
   }
 
   @Test
@@ -107,9 +107,9 @@ class WritingAtAnothersLabelTest {
   void your_own_label_is_ordinary() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
 
-    Handle<Note> mine = notes.hold(new Note("our own note"));
+    Surrogate<Note> mine = notes.exchange(new Note("our own note"));
 
     assertThat(loch.holds(mine.id())).isTrue();
-    assertThat(reporting.read(mine).granted()).contains(new Note("our own note"));
+    assertThat(reporting.exchange(mine).granted()).contains(new Note("our own note"));
   }
 }

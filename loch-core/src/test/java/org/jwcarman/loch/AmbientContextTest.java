@@ -64,20 +64,20 @@ class AmbientContextTest {
           c -> c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get())),
           ctx -> ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE);
 
-  private Handle<String> last4() {
-    return wired.cards().hold("4821");
+  private Surrogate<String> last4() {
+    return wired.cards().exchange("4821");
   }
 
   @Test
   @DisplayName("comes from the edge, with no context threaded through the call")
   void comes_from_the_edge() {
-    Handle<String> value = last4();
+    Surrogate<String> value = last4();
 
     currentUser.set("finance");
-    assertThat(wired.card().read(value).granted()).contains("4821");
+    assertThat(wired.card().exchange(value).granted()).contains("4821");
 
     currentUser.set("support");
-    assertThat(wired.card().read(value).allowed()).isFalse();
+    assertThat(wired.card().exchange(value).allowed()).isFalse();
   }
 
   @Test
@@ -94,9 +94,9 @@ class AmbientContextTest {
               seen.set(ctx);
               return Clearance.FINANCE;
             });
-    Handle<String> value = watching.cards().hold("4821");
+    Surrogate<String> value = watching.cards().exchange("4821");
 
-    watching.card().read(value, AccessContext.of("purpose", "refund"));
+    watching.card().exchange(value, AccessContext.of("purpose", "refund"));
 
     assertThat(seen.get().attributes())
         .containsEntry("clearance", "finance")
@@ -118,9 +118,9 @@ class AmbientContextTest {
               seen.set(ctx);
               return ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE;
             });
-    Handle<String> value = watching.cards().hold("4821");
+    Surrogate<String> value = watching.cards().exchange("4821");
 
-    var claimed = watching.card().read(value, AccessContext.of("clearance", "finance"));
+    var claimed = watching.card().exchange(value, AccessContext.of("clearance", "finance"));
 
     assertThat(seen.get().attributes()).containsEntry("clearance", "support");
     assertThat(claimed.allowed()).isFalse();
@@ -139,7 +139,9 @@ class AmbientContextTest {
               return Clearance.FINANCE;
             });
 
-    watching.card().read(watching.cards().hold("x"), AccessContext.of("tenant", "whatever-i-like"));
+    watching
+        .card()
+        .exchange(watching.cards().exchange("x"), AccessContext.of("tenant", "whatever-i-like"));
 
     assertThat(seen.get().attributes()).isEmpty();
   }
@@ -156,7 +158,7 @@ class AmbientContextTest {
               return Clearance.FINANCE;
             });
 
-    anonymous.card().read(anonymous.cards().hold("x"));
+    anonymous.card().exchange(anonymous.cards().exchange("x"));
 
     assertThat(seen.get().attributes()).isEmpty();
   }

@@ -39,15 +39,15 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 public final class MemoryStorage<A> implements Storage<A> {
 
-  private final Map<HandleId, StoredValue<A>> values = new ConcurrentHashMap<>();
+  private final Map<String, StoredValue<A>> values = new ConcurrentHashMap<>();
 
   @Override
-  public void put(HandleId id, StoredValue<A> value) {
+  public void put(String id, StoredValue<A> value) {
     values.put(id, value);
   }
 
   @Override
-  public Optional<StoredMetadata<A>> metadata(HandleId id) {
+  public Optional<StoredMetadata<A>> metadata(String id) {
     return Optional.ofNullable(values.get(id))
         .map(
             stored ->
@@ -56,31 +56,31 @@ public final class MemoryStorage<A> implements Storage<A> {
   }
 
   @Override
-  public <T> Optional<T> value(HandleId id, TypeRef<T> type) {
+  public <T> Optional<T> value(String id, TypeRef<T> type) {
     return Optional.ofNullable(values.get(id)).map(stored -> type.rawClass().cast(stored.value()));
   }
 
   /** Everything currently held, for tests that need to prove something was not stored. */
-  public java.util.Set<HandleId> everything() {
+  public java.util.Set<String> everything() {
     return java.util.Set.copyOf(values.keySet());
   }
 
   @Override
-  public boolean contains(HandleId id) {
+  public boolean contains(String id) {
     return values.containsKey(id);
   }
 
   @Override
-  public int erase(HandleId root) {
-    Set<HandleId> doomed = new HashSet<>();
-    Deque<HandleId> pending = new ArrayDeque<>();
+  public int erase(String root) {
+    Set<String> doomed = new HashSet<>();
+    Deque<String> pending = new ArrayDeque<>();
     pending.add(root);
     while (!pending.isEmpty()) {
-      HandleId next = pending.removeFirst();
+      String next = pending.removeFirst();
       if (!doomed.add(next)) {
         continue;
       }
-      List<HandleId> children = new ArrayList<>();
+      List<String> children = new ArrayList<>();
       values.forEach(
           (id, stored) -> {
             if (stored.lineage().parents().contains(next)) {
@@ -90,7 +90,7 @@ public final class MemoryStorage<A> implements Storage<A> {
       pending.addAll(children);
     }
     int removed = 0;
-    for (HandleId id : doomed) {
+    for (String id : doomed) {
       if (values.remove(id) != null) {
         removed++;
       }

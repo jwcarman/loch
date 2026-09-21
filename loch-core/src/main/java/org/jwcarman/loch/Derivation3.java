@@ -33,8 +33,9 @@ package org.jwcarman.loch;
 public interface Derivation3<I1, I2, I3, O> {
 
   /** Makes the new value, or refuses. */
-  Derived<O> derive(Handle<I1> first, Handle<I2> second, Handle<I3> third);
+  Derived<O> derive(Surrogate<I1> first, Surrogate<I2> second, Surrogate<I3> third);
 
   /** The same, with attributes the caller is contributing to the decision. */
-  Derived<O> derive(Handle<I1> first, Handle<I2> second, Handle<I3> third, AccessContext context);
+  Derived<O> derive(
+      Surrogate<I1> first, Surrogate<I2> second, Surrogate<I3> third, AccessContext context);
 }

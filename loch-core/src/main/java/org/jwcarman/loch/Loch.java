@@ -23,10 +23,10 @@ package org.jwcarman.loch;
  * Here redemption is decided -- against the label the value carries, the ceiling of wherever it is
  * going, and an identity the holder of the check does not control.
  *
- * <p>Values go in through a source, which hands back a {@link Handle}. The handle goes wherever you
- * like -- an event stream, a prompt, a message to another service -- because possession of a handle
- * is not permission to read it. Getting the value back out is the one checked operation, and it
- * always names where the value is going.
+ * <p>Values go in through a source, which hands back a {@link Surrogate}. The handle goes wherever
+ * you like -- an event stream, a prompt, a message to another service -- because possession of a
+ * handle is not permission to read it. Getting the value back out is the one checked operation, and
+ * it always names where the value is going.
  *
  * <p><b>There is no way to read a value without naming a destination.</b> No overload omits it. You
  * cannot obtain plaintext "in general", only plaintext for somewhere, and that somewhere is what
@@ -49,10 +49,10 @@ public interface Loch<A> {
    * <p>Reading a label is not reading a value. This is how a renderer decides what to say about a
    * handle it is not allowed to open.
    */
-  A label(HandleId id);
+  A label(String id);
 
   /** The label of a value you are holding a typed handle to. */
-  default A label(Handle<?> handle) {
+  default A label(Surrogate<?> handle) {
     return label(handle.id());
   }
 
@@ -70,26 +70,26 @@ public interface Loch<A> {
    * @return how many values were removed, the root included
    * @throws AccessDeniedException when the erasure policy refuses
    */
-  int erase(Handle<?> root, AccessContext context);
+  int erase(Surrogate<?> root, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default int erase(Handle<?> root) {
+  default int erase(Surrogate<?> root) {
     return erase(root, AccessContext.empty());
   }
 
   /** Whether the loch is holding this at all. */
-  boolean holds(HandleId id);
+  boolean holds(String id);
 
   /** Whether the loch is holding this, by typed handle. */
-  default boolean holds(Handle<?> handle) {
+  default boolean holds(Surrogate<?> handle) {
     return holds(handle.id());
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */
-  Lineage lineage(HandleId id);
+  Lineage lineage(String id);
 
   /** Where a value came from, by typed handle. */
-  default Lineage lineage(Handle<?> handle) {
+  default Lineage lineage(Surrogate<?> handle) {
     return lineage(handle.id());
   }
 

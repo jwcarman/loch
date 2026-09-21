@@ -16,12 +16,11 @@
 package org.jwcarman.loch.example.billing;
 
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Handle;
-import org.jwcarman.loch.HandleId;
 import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Outlet;
 import org.jwcarman.loch.Query;
+import org.jwcarman.loch.Surrogate;
 
 /**
  * What the support desk does.
@@ -67,13 +66,13 @@ public class DisputeService {
    *
    * <p>The one place this application states what something is. After this, labels are computed.
    */
-  public HandleId receive(Domain.Mail mail) {
-    return customerMail.hold(mail).id();
+  public String receive(Domain.Mail mail) {
+    return customerMail.exchange(mail).id();
   }
 
   /** Does the message mention this? Answered without the message leaving the store. */
-  public boolean mentions(HandleId mail, String text) {
-    return mailMentions.ask(Handle.of(mail, Domain.Mail.class), text).isTrue();
+  public boolean mentions(String mail, String text) {
+    return mailMentions.ask(Surrogate.of(mail), text).isTrue();
   }
 
   /**
@@ -82,14 +81,14 @@ public class DisputeService {
    * <p>Fails when the invoice does not exist, belongs to another tenant, or was not raised from the
    * address that wrote in. Only then does the result become endorsed.
    */
-  public HandleId confirm(HandleId mail) {
-    return confirmInvoice.derive(Handle.of(mail, Domain.Mail.class)).orThrow().id();
+  public String confirm(String mail) {
+    return confirmInvoice.derive(Surrogate.of(mail)).orThrow().id();
   }
 
   /** What an approver is shown: four digits, and only if they are an approver. */
-  public Domain.Last4 cardForApproval(HandleId invoice) {
-    HandleId last4 = cardLast4.derive(Handle.of(invoice, Domain.Invoice.class)).orThrow().id();
-    return approvalDesk.read(Handle.of(last4, Domain.Last4.class)).orThrow();
+  public Domain.Last4 cardForApproval(String invoice) {
+    String last4 = cardLast4.derive(Surrogate.of(invoice)).orThrow().id();
+    return approvalDesk.exchange(Surrogate.of(last4)).orThrow();
   }
 
   /**
@@ -99,16 +98,15 @@ public class DisputeService {
    * destination whose ceiling admits {@link BillingLabels.Sensitivity#CARDHOLDER}. Not a rule
    * anybody remembered to write: every other destination sits below it in the order.
    */
-  public String refund(HandleId invoice) {
-    Domain.Invoice confirmed =
-        paymentProcessor.read(Handle.of(invoice, Domain.Invoice.class)).orThrow();
+  public String refund(String invoice) {
+    Domain.Invoice confirmed = paymentProcessor.exchange(Surrogate.of(invoice)).orThrow();
     return "refunded %s to card ending %s"
         .formatted(confirmed.amount(), last4(confirmed.cardToken()));
   }
 
   /** What the support agent's screen may show. */
-  public Domain.Invoice forSupportScreen(HandleId invoice) {
-    return supportUi.read(Handle.of(invoice, Domain.Invoice.class)).orThrow();
+  public Domain.Invoice forSupportScreen(String invoice) {
+    return supportUi.exchange(Surrogate.of(invoice)).orThrow();
   }
 
   private static String last4(String token) {
@@ -116,7 +114,7 @@ public class DisputeService {
   }
 
   /** What a value is labelled, for a screen that must decide what to show. */
-  public BillingLabels labelOf(HandleId id) {
+  public BillingLabels labelOf(String id) {
     return loch.label(id);
   }
 }

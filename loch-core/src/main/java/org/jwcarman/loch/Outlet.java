@@ -43,8 +43,8 @@ import org.jwcarman.codec.spi.TypeRef;
  *
  * <p>It also moves the type check left. {@code Outlet<Invoice>.read(handleToSomeMail)} does not
  * compile, where naming a destination at a call site accepted any handle and refused at runtime.
- * The runtime check remains and is not redundant: a {@link HandleId} that arrived as text can be
- * given any type by {@link Handle#of}, so what the store actually wrote is still the only ground
+ * The runtime check remains and is not redundant: a {@link String} that arrived as text can be
+ * given any type by {@link Surrogate#of}, so what the store actually wrote is still the only ground
  * truth, and it is still what gets compared.
  *
  * @param <T> the type of value this outlet will hand over, and no other
@@ -55,7 +55,8 @@ public interface Outlet<T> {
   TypeRef<T> type();
 
   /**
-   * Reads the value, if its label is at or below what this outlet accepts.
+   * Exchanges a surrogate back for the value it stands in for, if its label is at or below what
+   * this outlet accepts.
    *
    * <p>Returns a refusal rather than throwing, because being turned away is an ordinary outcome
    * that calling code is expected to handle: show the handle instead, ask for approval, take the
@@ -63,7 +64,7 @@ public interface Outlet<T> {
    *
    * @throws IllegalStateException if this outlet was never bound to a loch
    */
-  Dereferenced<T> read(Handle<T> held);
+  Dereferenced<T> exchange(Surrogate<T> surrogate);
 
   /**
    * The same, with attributes the caller is contributing to the decision.
@@ -72,5 +73,5 @@ public interface Outlet<T> {
    * wins where the two disagree. A caller that could name its own tenant here would have defeated
    * the whole arrangement.
    */
-  Dereferenced<T> read(Handle<T> held, AccessContext context);
+  Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context);
 }

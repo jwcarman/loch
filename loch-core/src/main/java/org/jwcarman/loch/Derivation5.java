@@ -34,14 +34,18 @@ public interface Derivation5<I1, I2, I3, I4, I5, O> {
 
   /** Makes the new value, or refuses. */
   Derived<O> derive(
-      Handle<I1> first, Handle<I2> second, Handle<I3> third, Handle<I4> fourth, Handle<I5> fifth);
+      Surrogate<I1> first,
+      Surrogate<I2> second,
+      Surrogate<I3> third,
+      Surrogate<I4> fourth,
+      Surrogate<I5> fifth);
 
   /** The same, with attributes the caller is contributing to the decision. */
   Derived<O> derive(
-      Handle<I1> first,
-      Handle<I2> second,
-      Handle<I3> third,
-      Handle<I4> fourth,
-      Handle<I5> fifth,
+      Surrogate<I1> first,
+      Surrogate<I2> second,
+      Surrogate<I3> third,
+      Surrogate<I4> fourth,
+      Surrogate<I5> fifth,
       AccessContext context);
 }

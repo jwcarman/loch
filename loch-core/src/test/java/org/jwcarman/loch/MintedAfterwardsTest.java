@@ -55,7 +55,7 @@ class MintedAfterwardsTest {
 
   private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
-  private final Handle<Token> secret = acmeTokens.hold(new Token("acme's cardholder token"));
+  private final Surrogate<Token> secret = acmeTokens.exchange(new Token("acme's cardholder token"));
 
   @Test
   @DisplayName("proves the loch itself still works, so the refusals below mean something")
@@ -68,7 +68,7 @@ class MintedAfterwardsTest {
   void cannot_be_a_source() {
     Inlet<Token> forged = config.inlet("forged", Token.class, ctx -> Exact.of("globex"));
 
-    assertThatThrownBy(() -> forged.hold(new Token("globex owes us 1,000,000")))
+    assertThatThrownBy(() -> forged.exchange(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("attached to no loch");
   }
@@ -92,7 +92,7 @@ class MintedAfterwardsTest {
   void cannot_be_a_sink() {
     Outlet<Token> forged = config.outlet("forged", Token.class, ctx -> Exact.conflict());
 
-    assertThatThrownBy(() -> forged.read(secret))
+    assertThatThrownBy(() -> forged.exchange(secret))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("attached to no loch");
   }
