@@ -183,9 +183,15 @@ class JdbcLochTest {
         c.sink("vendor-llm", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
     // One destination, three readers. The ceiling is written once, every reader enforces it,
     // and all three audit under "payment-processor" because that is the subsystem they reach.
+    // The subsystem, its ceiling, and everything it is allowed to read. Both restrictions are
+    // settled here, so the readers below are typed views rather than grants.
     var processor =
         c.destination(
-            "payment-processor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+                "payment-processor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
+            .type(Card.class)
+            .type(Last4.class)
+            .type(TypeRef.listOf(TypeRef.of(Card.class)))
+            .mint();
     paymentProcessor = processor.reading(Card.class);
     last4Processor = processor.reading(Last4.class);
 

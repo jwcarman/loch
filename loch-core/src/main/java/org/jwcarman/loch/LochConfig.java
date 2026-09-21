@@ -122,49 +122,84 @@ public class LochConfig<A, D> {
   }
 
   /**
-   * Declares somewhere values may go, and what it will accept. Configuration time only.
+   * Begins declaring somewhere values may go.
    *
-   * <p>The restriction lives here and is said once. Typed readers are minted from it with {@link
-   * Destination#reading}, and a reader carries this ceiling rather than one of its own -- so a
-   * reader is always strictly narrower than the destination that made it, never broader.
-   *
-   * <p><b>A destination is more authority than any reader it mints</b>, because it can mint a
-   * reader for any type. It belongs beside the configuration that created it and is never handed to
-   * a service; hand out the readers instead. It looks like an inert descriptor and is not one.
+   * <p>Say the ceiling here and the types with {@link Declaring#type}. Both restrictions are
+   * settled before the destination exists and neither can be widened afterwards, which is what
+   * makes a reader a typed view rather than a grant.
    */
-  public Destination<A, D> destination(
+  public Declaring<A, D> destination(
       String name, java.util.function.Function<AccessContext, A> ceiling) {
     Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
-    destination(Destinations.varying(name, ceiling));
-    return new Destination<>(this, name);
+    return new Declaring<>(this, name, ceiling);
   }
 
-  /** A destination whose ceiling does not depend on who is asking. */
-  public Destination<A, D> destination(String name, A ceiling) {
-    Objects.requireNonNull(ceiling, "a destination needs a ceiling");
-    return destination(name, context -> ceiling);
+  /** A destination being declared: its ceiling is set, its types are being listed. */
+  public static final class Declaring<A, D> {
+
+    private final LochConfig<A, ?> config;
+    private final String name;
+    private final java.util.function.Function<AccessContext, A> ceiling;
+    private final java.util.Set<String> reads = new java.util.LinkedHashSet<>();
+
+    private Declaring(
+        LochConfig<A, ?> config,
+        String name,
+        java.util.function.Function<AccessContext, A> ceiling) {
+      this.config = config;
+      this.name = name;
+      this.ceiling = ceiling;
+    }
+
+    /** One more type this destination is allowed to hand over. */
+    public Declaring<A, D> type(Class<?> type) {
+      return type(TypeRef.of(type));
+    }
+
+    /** The same, for a generic container. */
+    public Declaring<A, D> type(TypeRef<?> type) {
+      Objects.requireNonNull(type, "a destination's type must not be null");
+      reads.add(type.getType().getTypeName());
+      return this;
+    }
+
+    /** Registers the destination and hands it back. */
+    public Destination<A, D> mint() {
+      if (reads.isEmpty()) {
+        throw new IllegalStateException(
+            "'"
+                + name
+                + "' has to say which types it reads. A destination that reads anything reads"
+                + " everything its ceiling admits, including whatever gets stored at that label"
+                + " next year.");
+      }
+      config.destination(Destinations.varying(name, ceiling));
+      return new Destination<>(
+          name, java.util.Set.copyOf(reads), config.binding("destination '" + name + "'"));
+    }
   }
 
   /**
-   * Somewhere values may go, and the only thing that can mint a reader for it.
+   * Somewhere values may go, and the readers for it.
    *
-   * <p>Minting a reader adds no authority: every reader enforces the ceiling declared when this was
-   * created, evaluated against whoever is asking at the time of the read. What a reader adds is a
-   * narrowing by type, so a service handed a {@code SurrogateSink<Card>} cannot read a {@code
-   * Last4} even though this destination would accept one.
+   * <p>Holds no configuration and cannot declare anything new. Everything it enforces was settled
+   * when it was constructed, so a reader it mints is a typed view and not a grant: mint one where
+   * you need it, keep it or drop it.
    */
   public static final class Destination<A, D> {
 
-    private final LochConfig<A, D> config;
     private final String name;
+    private final java.util.Set<String> reads;
+    private final Binding<A> binding;
 
-    private Destination(LochConfig<A, D> config, String name) {
-      this.config = config;
+    private Destination(String name, java.util.Set<String> reads, Binding<A> binding) {
       this.name = name;
+      this.reads = reads;
+      this.binding = binding;
     }
 
-    /** A reader for one type at this destination's ceiling. */
+    /** A reader for one of the types this destination was declared to read. */
     public <T extends D> SurrogateSink<T> reading(Class<T> type) {
       return reading(TypeRef.of(type));
     }
@@ -172,8 +207,15 @@ public class LochConfig<A, D> {
     /** The same, for a generic container. */
     public <T extends D> SurrogateSink<T> reading(TypeRef<T> type) {
       Objects.requireNonNull(type, "a reader needs to say what comes out of it");
+      String wanted = type.getType().getTypeName();
+      if (!reads.contains(wanted)) {
+        throw new IllegalStateException(
+            ("'%s' does not read %s. It was declared to read %s, and a reader cannot add to"
+                    + " that list.")
+                .formatted(name, wanted, reads));
+      }
       String door = name;
-      Binding<A> binding = config.binding("reader for '" + door + "'");
+      Binding<A> bound = binding;
       return new SurrogateSink<>() {
         @Override
         public TypeRef<T> type() {
@@ -187,7 +229,7 @@ public class LochConfig<A, D> {
 
         @Override
         public Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context) {
-          return binding.engine().dereference(surrogate, type, door, context);
+          return bound.engine().dereference(surrogate, type, door, context);
         }
 
         @Override
@@ -207,7 +249,7 @@ public class LochConfig<A, D> {
    */
   public <T extends D> SurrogateSink<T> sink(
       String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return destination(name, ceiling).reading(type);
+    return destination(name, ceiling).type(type).mint().reading(type);
   }
 
   /** The same, for a type with no generic parameters of its own. */
