@@ -16,7 +16,6 @@
 package org.jwcarman.loch.example.billing;
 
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Query;
 import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateSink;
@@ -31,7 +30,6 @@ import org.jwcarman.loch.SurrogateSource;
  */
 public class DisputeService {
 
-  private final Loch<BillingLabels> loch;
   private final SurrogateSource<Domain.Mail> customerMail;
   private final SurrogateSink<Domain.Invoice> supportUi;
   private final SurrogateSink<Domain.Last4> approvalDesk;
@@ -43,7 +41,6 @@ public class DisputeService {
   // What this class may do is this list. It was handed three outlets, so it can reach three
   // places; it was handed one source, so there is exactly one label it can create a value at.
   public DisputeService(
-      Loch<BillingLabels> loch,
       SurrogateSource<Domain.Mail> customerMail,
       SurrogateSink<Domain.Invoice> supportUi,
       SurrogateSink<Domain.Last4> approvalDesk,
@@ -51,7 +48,6 @@ public class DisputeService {
       Derivation<Domain.Mail, Domain.Invoice> confirmInvoice,
       Derivation<Domain.Invoice, Domain.Last4> cardLast4,
       Query<Domain.Mail, String> mailMentions) {
-    this.loch = loch;
     this.customerMail = customerMail;
     this.supportUi = supportUi;
     this.approvalDesk = approvalDesk;

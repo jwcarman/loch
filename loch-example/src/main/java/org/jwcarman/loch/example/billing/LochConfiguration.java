@@ -158,7 +158,6 @@ public class LochConfiguration {
   @Bean
   public DisputeService disputeService() {
     return new DisputeService(
-        loch,
         customerMail,
         supportUi,
         approvalDesk,
