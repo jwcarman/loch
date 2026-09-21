@@ -46,8 +46,7 @@ class ArityTest {
 
   private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
 
-  private final SurrogateSource<Note> notes =
-      config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
+  private final Conceal<Note> notes = config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
 
   private final Fold<Note, Note> joined =
       config
@@ -61,8 +60,8 @@ class ArityTest {
 
   private final SurrogateStore store = MemorySurrogateStore.create(config);
 
-  private final Surrogate<Note> first = notes.exchange(new Note("a"));
-  private final Surrogate<Note> second = notes.exchange(new Note("b"));
+  private final Surrogate<Note> first = notes.conceal(new Note("a"));
+  private final Surrogate<Note> second = notes.conceal(new Note("b"));
 
   @Test
   @DisplayName("of one is fine for a fold, which is what folding over one value means")

@@ -35,10 +35,10 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
+import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.Derivation;
+import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Surrogate;
-import org.jwcarman.loch.SurrogateSink;
-import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.SurrogateStore;
 import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.SurrogateType;
@@ -103,14 +103,14 @@ class JdbcSurrogateStoreTest {
   private DataSource dataSource;
   private SurrogateStore store;
   private Derivation<Card, Last4> cardLast4;
-  private SurrogateSource<Card> cards;
-  private SurrogateSink<Card> vendorLlm;
-  private SurrogateSink<Card> paymentProcessor;
-  private SurrogateSink<Last4> last4Processor;
-  private SurrogateSource<List<Card>> cardLists;
-  private SurrogateSink<List<Card>> cardListProcessor;
-  private SurrogateSink<List<Card>> cardListVendor;
-  private SurrogateSink<List<Last4>> last4ListProcessor;
+  private Conceal<Card> cards;
+  private Reveal<Card> vendorLlm;
+  private Reveal<Card> paymentProcessor;
+  private Reveal<Last4> last4Processor;
+  private Conceal<List<Card>> cardLists;
+  private Reveal<List<Card>> cardListProcessor;
+  private Reveal<List<Card>> cardListVendor;
+  private Reveal<List<Last4>> last4ListProcessor;
 
   /** Standing in for the edge. A caller is not allowed to say who it is. */
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
@@ -237,7 +237,7 @@ class JdbcSurrogateStoreTest {
 
   private Surrogate<Card> card() {
     acme();
-    return cards.exchange(new Card("4111111111114821", "J CARMAN"));
+    return cards.conceal(new Card("4111111111114821", "J CARMAN"));
   }
 
   @Test
@@ -245,9 +245,11 @@ class JdbcSurrogateStoreTest {
   void keeps_a_value_and_gives_it_back() {
     Surrogate<Card> card = card();
 
-    assertThat(paymentProcessor.exchange(card, acme()).granted())
+    acme();
+    assertThat(paymentProcessor.reveal(card).granted())
         .contains(new Card("4111111111114821", "J CARMAN"));
-    assertThat(vendorLlm.exchange(card, acme()).allowed()).isFalse();
+    acme();
+    assertThat(vendorLlm.reveal(card).allowed()).isFalse();
   }
 
   /** The point of the whole module: what is on disk is not the value. */
@@ -336,7 +338,7 @@ class JdbcSurrogateStoreTest {
   void another_tenants_access_is_refused() {
     Surrogate<Card> card = card();
 
-    assertThat(dereferenceAs("globex", card)).isFalse();
+    assertThat(revealAs("globex", card)).isFalse();
   }
 
   @Test
@@ -355,9 +357,9 @@ class JdbcSurrogateStoreTest {
   }
 
   /** A different tenant, established at the edge rather than claimed by the caller. */
-  private boolean dereferenceAs(String tenant, Surrogate<Card> card) {
+  private boolean revealAs(String tenant, Surrogate<Card> card) {
     edge.set(AccessContext.of("tenant", tenant));
-    return paymentProcessor.exchange(card).allowed();
+    return paymentProcessor.reveal(card).allowed();
   }
 
   /** The trail goes to the database, in the same transaction as the thing it describes. */
@@ -367,7 +369,8 @@ class JdbcSurrogateStoreTest {
     assertThat(rowCount("loch_audit")).isZero();
 
     Surrogate<Card> card = card();
-    paymentProcessor.exchange(card, acme());
+    acme();
+    paymentProcessor.reveal(card);
 
     // One line for taking it in, one for handing it over.
     assertThat(rowCount("loch_audit")).isEqualTo(2);
@@ -441,7 +444,7 @@ class JdbcSurrogateStoreTest {
     Surrogate<Card> small = card();
     acme();
     Surrogate<Card> repetitive =
-        cards.exchange(new Card("4111111111114821", "J CARMAN ".repeat(200)));
+        cards.conceal(new Card("4111111111114821", "J CARMAN ".repeat(200)));
 
     // 1800 characters of a repeated name, stored in nothing like 1800 bytes.
     assertThat(payloadLength(repetitive)).isLessThan(payloadLength(small) + 300);
@@ -492,25 +495,28 @@ class JdbcSurrogateStoreTest {
         List.of(new Card("4111111111114821", "A"), new Card("4111111111119999", "B"));
 
     acme();
-    Surrogate<List<Card>> held = cardLists.exchange(cards);
+    Surrogate<List<Card>> held = cardLists.conceal(cards);
 
-    assertThat(cardListProcessor.exchange(held, acme()).granted())
+    acme();
+    assertThat(cardListProcessor.reveal(held).granted())
         .hasValueSatisfying(
             back -> {
               assertThat(back).hasSize(2);
               assertThat(back.getFirst().number()).isEqualTo("4111111111114821");
             });
-    assertThat(cardListVendor.exchange(held, acme()).allowed()).isFalse();
+    acme();
+    assertThat(cardListVendor.reveal(held).allowed()).isFalse();
   }
 
   @Test
   @DisplayName("a handle claiming the wrong element type is refused")
   void a_handle_claiming_the_wrong_element_type_is_refused() {
     acme();
-    Surrogate<List<Card>> cards = cardLists.exchange(List.of(new Card("4111111111114821", "A")));
+    Surrogate<List<Card>> cards = cardLists.conceal(List.of(new Card("4111111111114821", "A")));
     Surrogate<List<Last4>> lying = Surrogate.of(cards.id());
 
-    assertThat(last4ListProcessor.exchange(lying, acme()).allowed()).isFalse();
+    acme();
+    assertThat(last4ListProcessor.reveal(lying).allowed()).isFalse();
   }
 
   /** Reading a label should not decrypt a payload. */
@@ -518,7 +524,7 @@ class JdbcSurrogateStoreTest {
   @DisplayName("asking what a value is labelled does not decode the value")
   void asking_for_a_label_does_not_decode_the_value() {
     acme();
-    Surrogate<List<Card>> cards = cardLists.exchange(List.of(new Card("4111111111114821", "A")));
+    Surrogate<List<Card>> cards = cardLists.conceal(List.of(new Card("4111111111114821", "A")));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
     assertThat(store.label(cards).says(DATA, DataClass.CARDHOLDER)).isTrue();

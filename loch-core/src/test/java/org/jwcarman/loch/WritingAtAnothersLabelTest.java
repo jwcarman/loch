@@ -62,7 +62,7 @@ class WritingAtAnothersLabelTest {
       new SurrogateStoreConfig<Value>().axes(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
-  private final SurrogateSource<Note> notes =
+  private final Conceal<Note> notes =
       config.source(
           "notes",
           NOTE_TYPE,
@@ -72,7 +72,7 @@ class WritingAtAnothersLabelTest {
                   .orElseGet(Label::nothing)
                   .with(INTEGRITY, Integrity.ENDORSED));
 
-  private final SurrogateSink<Note> reporting =
+  private final Reveal<Note> reporting =
       config
           .destination(
               "reporting",
@@ -94,14 +94,14 @@ class WritingAtAnothersLabelTest {
   void is_refused() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
 
-    Surrogate<Note> written = notes.exchange(new Note("globex owes us 1,000,000"));
+    Surrogate<Note> written = notes.conceal(new Note("globex owes us 1,000,000"));
 
     // Acme wrote it and acme owns it. There was no argument through which to claim otherwise.
     assertThat(store.label(written.id()).says(TENANT, "acme")).isTrue();
 
     // And globex does not read it as its own.
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
-    assertThat(reporting.exchange(written).allowed()).isFalse();
+    assertThat(reporting.reveal(written).allowed()).isFalse();
   }
 
   @Test
@@ -109,9 +109,9 @@ class WritingAtAnothersLabelTest {
   void your_own_label_is_ordinary() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
 
-    Surrogate<Note> mine = notes.exchange(new Note("our own note"));
+    Surrogate<Note> mine = notes.conceal(new Note("our own note"));
 
     assertThat(store.holds(mine.id())).isTrue();
-    assertThat(reporting.exchange(mine).granted()).contains(new Note("our own note"));
+    assertThat(reporting.reveal(mine).granted()).contains(new Note("our own note"));
   }
 }

@@ -178,22 +178,22 @@ class BillingScenarioTest {
 
   // ---------------------------------------------------------------- doors in
 
-  private final SurrogateSource<String> customerMail =
+  private final Conceal<String> customerMail =
       config.source("customer-mail", STRING_TYPE, BillingScenarioTest::labelFrom);
 
-  private final SurrogateSource<String> cardTokens =
+  private final Conceal<String> cardTokens =
       config.source("card-tokens", STRING_TYPE, BillingScenarioTest::labelFrom);
 
-  private final SurrogateSource<String> notes =
+  private final Conceal<String> notes =
       config.source("notes", STRING_TYPE, BillingScenarioTest::labelFrom);
 
-  private final SurrogateSource<String> last4Digits =
+  private final Conceal<String> last4Digits =
       config.source("last4-digits", STRING_TYPE, BillingScenarioTest::labelFrom);
 
-  private final SurrogateSource<DisputeClaim> disputeClaims =
+  private final Conceal<DisputeClaim> disputeClaims =
       config.source("dispute-claims", DISPUTE_CLAIM_TYPE, BillingScenarioTest::labelFrom);
 
-  private final SurrogateSource<Account> accounts =
+  private final Conceal<Account> accounts =
       config.source("accounts", ACCOUNT_TYPE, BillingScenarioTest::labelFrom);
 
   // ---------------------------------------------------------------- doors out: one per (door,
@@ -203,7 +203,7 @@ class BillingScenarioTest {
   // keeps this down to one text sink per destination instead of three.
 
   // A vendor's model: nothing personal, nothing unendorsed.
-  private final SurrogateSink<String> vendorLlmText =
+  private final Reveal<String> vendorLlmText =
       config
           .destination(
               "vendor-llm",
@@ -211,7 +211,7 @@ class BillingScenarioTest {
               STRING_TYPE)
           .reading(STRING_TYPE);
 
-  private final SurrogateSink<Report> vendorLlmReports =
+  private final Reveal<Report> vendorLlmReports =
       config
           .destination(
               "vendor-llm-reports",
@@ -219,7 +219,7 @@ class BillingScenarioTest {
               REPORT_TYPE)
           .reading(REPORT_TYPE);
 
-  private final SurrogateSink<InvoiceNumber> vendorLlmInvoice =
+  private final Reveal<InvoiceNumber> vendorLlmInvoice =
       config
           .destination(
               "vendor-llm-invoice",
@@ -228,7 +228,7 @@ class BillingScenarioTest {
           .reading(INVOICE_NUMBER_TYPE);
 
   // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
-  private final SurrogateSink<String> quarantinedLlmText =
+  private final Reveal<String> quarantinedLlmText =
       config
           .destination(
               "quarantined-llm",
@@ -236,7 +236,7 @@ class BillingScenarioTest {
               STRING_TYPE)
           .reading(STRING_TYPE);
 
-  private final SurrogateSink<Report> quarantinedLlmReports =
+  private final Reveal<Report> quarantinedLlmReports =
       config
           .destination(
               "quarantined-llm-reports",
@@ -244,7 +244,7 @@ class BillingScenarioTest {
               REPORT_TYPE)
           .reading(REPORT_TYPE);
 
-  private final SurrogateSink<InvoiceNumber> quarantinedLlmInvoice =
+  private final Reveal<InvoiceNumber> quarantinedLlmInvoice =
       config
           .destination(
               "quarantined-llm-invoice",
@@ -253,7 +253,7 @@ class BillingScenarioTest {
           .reading(INVOICE_NUMBER_TYPE);
 
   // The only place cardholder data may go, anywhere in the system.
-  private final SurrogateSink<String> paymentProcessorText =
+  private final Reveal<String> paymentProcessorText =
       config
           .destination(
               "payment-processor",
@@ -261,7 +261,7 @@ class BillingScenarioTest {
               STRING_TYPE)
           .reading(STRING_TYPE);
 
-  private final SurrogateSink<Report> paymentProcessorReports =
+  private final Reveal<Report> paymentProcessorReports =
       config
           .destination(
               "payment-processor-reports",
@@ -270,10 +270,10 @@ class BillingScenarioTest {
           .reading(REPORT_TYPE);
 
   // A person. What they may see depends on who they are.
-  private final SurrogateSink<String> approvalCardText =
+  private final Reveal<String> approvalCardText =
       config.destination("approval-card", approvalCardCeiling(), STRING_TYPE).reading(STRING_TYPE);
 
-  private final SurrogateSink<Last4> approvalCardLast4 =
+  private final Reveal<Last4> approvalCardLast4 =
       config
           .destination("approval-card-last4", approvalCardCeiling(), LAST4_TYPE)
           .reading(LAST4_TYPE);
@@ -400,20 +400,20 @@ class BillingScenarioTest {
   }
 
   /**
-   * Holds a value at exactly the label given, by encoding it into the ambient context an source's
+   * Holds a value at exactly the label given, by encoding it into the ambient context a door's
    * generic {@link #labelFrom} reads back out, then restoring whatever the edge held before.
    *
-   * <p>This is the plumbing equivalent of the old {@code store.exchange(value, type, label)}: the
-   * label is still asserted by trusted code at a boundary, not computed, and still fixed before the
-   * value is stored. What changed is the mechanism -- there is no method left that takes a label as
-   * an argument, so the label has to travel through the one channel an source reads.
+   * <p>This is the plumbing equivalent of the old {@code store.hold(value, type, label)}: the label
+   * is still asserted by trusted code at a boundary, not computed, and still fixed before the value
+   * is stored. What changed is the mechanism -- there is no method left that takes a label as an
+   * argument, so the label has to travel through the one channel a door reads.
    */
   private <T> Surrogate<T> holdAs(
       String tenant,
       Integrity integrity,
       Tlp tlp,
       DataClass dataClass,
-      SurrogateSource<T> source,
+      Conceal<T> source,
       T value) {
     AccessContext previous = edge.get();
     edge.set(
@@ -424,7 +424,7 @@ class BillingScenarioTest {
                 "tlp", tlp.name(),
                 "dataClass", dataClass.name())));
     try {
-      return source.exchange(value);
+      return source.conceal(value);
     } finally {
       edge.set(previous);
     }
@@ -451,7 +451,8 @@ class BillingScenarioTest {
     void never_reaches_a_vendors_model() {
       Surrogate<String> email = customerEmail();
 
-      Revealed<String> attempt = vendorLlmText.exchange(email, acme());
+      acme();
+      Revealed<String> attempt = vendorLlmText.reveal(email);
 
       assertThat(attempt.allowed()).isFalse();
       assertThat(attempt)
@@ -465,7 +466,8 @@ class BillingScenarioTest {
     void does_reach_the_quarantined_model() {
       Surrogate<String> email = customerEmail();
 
-      assertThat(quarantinedLlmText.exchange(email, acme()).granted())
+      acme();
+      assertThat(quarantinedLlmText.reveal(email).granted())
           .hasValueSatisfying(text -> assertThat(text).contains("INV-4471"));
     }
 
@@ -490,7 +492,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("reaches the payment processor")
     void reaches_the_payment_processor() {
-      assertThat(paymentProcessorText.exchange(token(), acme()).granted()).contains("tok_1P9xyz");
+      acme();
+      assertThat(paymentProcessorText.reveal(token()).granted()).contains("tok_1P9xyz");
     }
 
     /** Not by policy anyone wrote. By arithmetic: every model sits below CARDHOLDER. */
@@ -499,10 +502,12 @@ class BillingScenarioTest {
     void cannot_reach_any_model_or_person() {
       Surrogate<String> token = token();
 
-      assertThat(vendorLlmText.exchange(token, acme()).allowed()).isFalse();
-      assertThat(quarantinedLlmText.exchange(token, acme()).allowed()).isFalse();
-      assertThat(approvalCardText.exchange(token, acme("clearance", "finance")).allowed())
-          .isFalse();
+      acme();
+      assertThat(vendorLlmText.reveal(token).allowed()).isFalse();
+      acme();
+      assertThat(quarantinedLlmText.reveal(token).allowed()).isFalse();
+      acme("clearance", "finance");
+      assertThat(approvalCardText.reveal(token).allowed()).isFalse();
     }
   }
 
@@ -517,21 +522,22 @@ class BillingScenarioTest {
     @Test
     @DisplayName("shows a finance approver the last four")
     void shows_a_finance_approver_the_last_four() {
-      assertThat(approvalCardText.exchange(last4(), acme("clearance", "finance")).granted())
-          .contains("4821");
+      acme("clearance", "finance");
+      assertThat(approvalCardText.reveal(last4()).granted()).contains("4821");
     }
 
     @Test
     @DisplayName("shows anyone else a handle")
     void shows_anyone_else_a_handle() {
-      assertThat(approvalCardText.exchange(last4(), acme("clearance", "support")).allowed())
-          .isFalse();
+      acme("clearance", "support");
+      assertThat(approvalCardText.reveal(last4()).allowed()).isFalse();
     }
 
     @Test
     @DisplayName("and with nobody named at all, shows nothing")
     void with_nobody_named_shows_nothing() {
-      assertThat(approvalCardText.exchange(last4(), acme()).allowed()).isFalse();
+      acme();
+      assertThat(approvalCardText.reveal(last4()).allowed()).isFalse();
     }
   }
 
@@ -569,11 +575,14 @@ class BillingScenarioTest {
       Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
 
       assertThat(store.label(report).says(TENANT, "acme")).isFalse();
-      assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
-      assertThat(paymentProcessorReports.exchange(report, acme()).allowed()).isFalse();
-      assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isFalse();
-      assertThat(vendorLlmReports.exchange(report, AccessContext.of("tenant", "globex")).allowed())
-          .isFalse();
+      acme();
+      assertThat(vendorLlmReports.reveal(report).allowed()).isFalse();
+      acme();
+      assertThat(paymentProcessorReports.reveal(report).allowed()).isFalse();
+      acme();
+      assertThat(quarantinedLlmReports.reveal(report).allowed()).isFalse();
+      AccessContext.of("tenant", "globex");
+      assertThat(vendorLlmReports.reveal(report).allowed()).isFalse();
       // It exists, and it remembers where it came from.
       assertThat(store.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
     }
@@ -588,7 +597,8 @@ class BillingScenarioTest {
 
       Surrogate<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
 
-      assertThat(vendorLlmReports.exchange(report, acme()).granted())
+      acme();
+      assertThat(vendorLlmReports.reveal(report).granted())
           .contains(new Report("first note / second note"));
     }
 
@@ -610,8 +620,10 @@ class BillingScenarioTest {
       Surrogate<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
 
       assertThat(store.label(report).says(DATA_CLASS, DataClass.PII)).isTrue();
-      assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
-      assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isTrue();
+      acme();
+      assertThat(vendorLlmReports.reveal(report).allowed()).isFalse();
+      acme();
+      assertThat(quarantinedLlmReports.reveal(report).allowed()).isTrue();
     }
 
     @Test
@@ -635,7 +647,8 @@ class BillingScenarioTest {
               notes,
               "globex's entirely unremarkable note");
 
-      assertThat(vendorLlmText.exchange(globexNote, acme()).allowed()).isFalse();
+      acme();
+      assertThat(vendorLlmText.reveal(globexNote).allowed()).isFalse();
     }
 
     @Test
@@ -644,7 +657,8 @@ class BillingScenarioTest {
       Surrogate<String> held =
           holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "nothing secret");
 
-      assertThat(vendorLlmText.exchange(held, acme()).allowed()).isTrue();
+      acme();
+      assertThat(vendorLlmText.reveal(held).allowed()).isTrue();
     }
   }
 
@@ -657,7 +671,8 @@ class BillingScenarioTest {
     void refuses_an_id_nobody_minted() {
       Surrogate<String> invented = Surrogate.of("sur_whatever-i-like");
 
-      assertThat(quarantinedLlmText.exchange(invented, acme()))
+      acme();
+      assertThat(quarantinedLlmText.reveal(invented))
           .isInstanceOfSatisfying(
               Revealed.Denied.class,
               denied -> assertThat(denied.reason()).isEqualTo(Revealed.Reason.NO_SUCH_VALUE));
@@ -690,7 +705,8 @@ class BillingScenarioTest {
               new DisputeClaim("INV-1", "x"));
       Surrogate<String> lying = new Surrogate<>(claim.id());
 
-      assertThat(quarantinedLlmText.exchange(lying, acme()))
+      acme();
+      assertThat(quarantinedLlmText.reveal(lying))
           .isInstanceOfSatisfying(
               Revealed.Denied.class,
               denied -> assertThat(denied.reason()).isEqualTo(Revealed.Reason.WRONG_TYPE));
@@ -699,7 +715,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("tells you the label and the ceiling when it refuses, without leaking the value")
     void explains_a_refusal_without_leaking() {
-      Revealed<String> denied = vendorLlmText.exchange(customerEmail(), acme());
+      acme();
+      Revealed<String> denied = vendorLlmText.reveal(customerEmail());
 
       String detail = ((Revealed.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("123-45-6789");
@@ -727,9 +744,11 @@ class BillingScenarioTest {
 
       assertThat(store.label(number))
           .isEqualTo(label("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
-      assertThat(quarantinedLlmInvoice.exchange(number, acme()).granted())
+      acme();
+      assertThat(quarantinedLlmInvoice.reveal(number).granted())
           .contains(new InvoiceNumber("INV-4471"));
-      assertThat(vendorLlmInvoice.exchange(number, acme()).allowed()).isFalse();
+      acme();
+      assertThat(vendorLlmInvoice.reveal(number).allowed()).isFalse();
     }
 
     /** An invoice number a customer typed is a question, not an answer. */
@@ -834,8 +853,8 @@ class BillingScenarioTest {
       Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
       assertThat(store.label(last4).says(DATA_CLASS, DataClass.PII)).isTrue();
-      assertThat(approvalCardLast4.exchange(last4, acme("clearance", "finance")).granted())
-          .contains(new Last4("4821"));
+      acme("clearance", "finance");
+      assertThat(approvalCardLast4.reveal(last4).granted()).contains(new Last4("4821"));
     }
 
     @Test
@@ -858,8 +877,8 @@ class BillingScenarioTest {
 
       assertThat(store.label(partly).says(DATA_CLASS, DataClass.PII)).isTrue();
       assertThat(store.label(partly).says(TLP, Tlp.RED)).isTrue();
-      assertThat(approvalCardLast4.exchange(partly, acme("clearance", "finance")).allowed())
-          .isFalse();
+      acme("clearance", "finance");
+      assertThat(approvalCardLast4.reveal(partly).allowed()).isFalse();
     }
 
     @Test
@@ -984,7 +1003,7 @@ class BillingScenarioTest {
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
       SurrogateStoreConfig<Object> choosyConfig = new SurrogateStoreConfig<>();
       choosyConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
-      SurrogateSource<Account> secretAccounts =
+      Conceal<Account> secretAccounts =
           choosyConfig.source(
               "secret-accounts",
               ACCOUNT_TYPE,
@@ -995,7 +1014,7 @@ class BillingScenarioTest {
               .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
               .mint();
       SurrogateStore choosy = MemorySurrogateStore.create(choosyConfig);
-      Surrogate<Account> secret = secretAccounts.exchange(new Account("ACC-2", "x@y.example"));
+      Surrogate<Account> secret = secretAccounts.conceal(new Account("ACC-2", "x@y.example"));
 
       assertThat(secretOwnedBy.ask(secret, "x@y.example", acme()))
           .isInstanceOfSatisfying(
@@ -1011,7 +1030,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an allowed result does not print the value it is carrying")
     void an_allowed_result_does_not_print_the_value() {
-      Revealed<String> allowed = quarantinedLlmText.exchange(customerEmail(), acme());
+      acme();
+      Revealed<String> allowed = quarantinedLlmText.reveal(customerEmail());
 
       assertThat(allowed.allowed()).isTrue();
       assertThat(allowed.toString()).doesNotContain("123-45-6789");
@@ -1020,7 +1040,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a refusal names the destination but not the labels")
     void a_refusal_names_the_destination_but_not_the_labels() {
-      Revealed<String> denied = vendorLlmText.exchange(customerEmail(), acme());
+      acme();
+      Revealed<String> denied = vendorLlmText.reveal(customerEmail());
 
       String detail = ((Revealed.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("acme").doesNotContain("PII");
@@ -1034,9 +1055,9 @@ class BillingScenarioTest {
           .axes(TENANT, INTEGRITY, TLP, DATA_CLASS)
           .currentAccess(edge::get)
           .explainRefusals();
-      SurrogateSource<String> chattyMail =
+      Conceal<String> chattyMail =
           chattyConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
-      SurrogateSink<String> chattyVendorLlm =
+      Reveal<String> chattyVendorLlm =
           chattyConfig
               .destination(
                   "vendor-llm",
@@ -1047,7 +1068,8 @@ class BillingScenarioTest {
       Surrogate<String> held =
           holdAs("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII, chattyMail, "x");
 
-      Revealed<String> denied = chattyVendorLlm.exchange(held, acme());
+      acme();
+      Revealed<String> denied = chattyVendorLlm.reveal(held);
 
       assertThat(((Revealed.Denied<String>) denied).detail()).contains("PII");
     }
@@ -1058,9 +1080,9 @@ class BillingScenarioTest {
     void a_destination_whose_ceiling_throws_denies() {
       SurrogateStoreConfig<Object> fragileConfig = new SurrogateStoreConfig<>();
       fragileConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
-      SurrogateSource<String> fragileMail =
+      Conceal<String> fragileMail =
           fragileConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
-      SurrogateSink<String> broken =
+      Reveal<String> broken =
           fragileConfig
               .destination(
                   "broken",
@@ -1073,7 +1095,8 @@ class BillingScenarioTest {
       Surrogate<String> held =
           holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, fragileMail, "x");
 
-      Revealed<String> result = broken.exchange(held, acme());
+      acme();
+      Revealed<String> result = broken.reveal(held);
 
       assertThat(result.allowed()).isFalse();
     }
@@ -1086,7 +1109,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("says who reached what, and never what the value was")
     void says_who_reached_what_and_never_the_value() {
-      quarantinedLlmText.exchange(customerEmail(), acme());
+      acme();
+      quarantinedLlmText.reveal(customerEmail());
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED);
@@ -1099,7 +1123,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records refusals as carefully as permissions")
     void records_refusals_as_carefully_as_permissions() {
-      vendorLlmText.exchange(customerEmail(), acme());
+      acme();
+      vendorLlmText.reveal(customerEmail());
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -1198,7 +1223,7 @@ class BillingScenarioTest {
     void an_access_that_cannot_be_recorded_does_not_happen() {
       SurrogateStoreConfig<Object> watchedConfig = new SurrogateStoreConfig<>();
       watchedConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
-      SurrogateSource<String> watchedMail =
+      Conceal<String> watchedMail =
           watchedConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       MemoryStorage kept = new MemoryStorage();
       Storage broken =

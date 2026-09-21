@@ -25,10 +25,10 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jwcarman.loch.AccessContext;
+import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Query;
-import org.jwcarman.loch.SurrogateSink;
-import org.jwcarman.loch.SurrogateSource;
+import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;
@@ -80,22 +80,22 @@ public class SurrogateStoreConfiguration {
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another
     // tenant's label is not refused so much as unsayable: nothing takes a label.
-    SurrogateSource<Domain.Mail> customerMail =
+    Conceal<Domain.Mail> customerMail =
         config.source("customer-mail", Domain.MAIL, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ----------------------------------------------------
-    SurrogateSink<Domain.Invoice> supportUi =
+    Reveal<Domain.Invoice> supportUi =
         config
             .destination("support-ui", ctx -> ceiling(ctx, ENDORSED, ORDINARY), Domain.INVOICE)
             .reading(Domain.INVOICE);
-    SurrogateSink<Domain.Last4> approvalDesk =
+    Reveal<Domain.Last4> approvalDesk =
         config
             .destination(
                 "approval-desk",
                 ctx -> ceiling(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY),
                 Domain.LAST4)
             .reading(Domain.LAST4);
-    SurrogateSink<Domain.Invoice> paymentProcessor =
+    Reveal<Domain.Invoice> paymentProcessor =
         config
             .destination(
                 "payment-processor", ctx -> ceiling(ctx, ENDORSED, CARDHOLDER), Domain.INVOICE)

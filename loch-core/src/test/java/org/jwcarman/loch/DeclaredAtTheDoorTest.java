@@ -60,10 +60,10 @@ class DeclaredAtTheDoorTest {
   private final SurrogateType<Last4> last4Type = SurrogateType.of(Last4.class);
   private final SurrogateType<SessionToken> tokenType = SurrogateType.of(SessionToken.class);
 
-  private final SurrogateSource<Card> cards =
+  private final Conceal<Card> cards =
       config.source("cards", CARD_TYPE, ctx -> Label.of(TENANT, "acme"));
 
-  private final SurrogateSource<SessionToken> tokens =
+  private final Conceal<SessionToken> tokens =
       config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Label.of(TENANT, "acme"));
 
   private final SurrogateDestination<Value> processor =
@@ -78,9 +78,9 @@ class DeclaredAtTheDoorTest {
   @Test
   @DisplayName("reads the types it was declared to read")
   void reads_the_types_it_was_declared_to_read() {
-    Surrogate<Card> card = cards.exchange(new Card("4111111111114821"));
+    Surrogate<Card> card = cards.conceal(new Card("4111111111114821"));
 
-    assertThat(processor.reading(cardType).exchange(card).granted())
+    assertThat(processor.reading(cardType).reveal(card).granted())
         .contains(new Card("4111111111114821"));
   }
 
@@ -106,7 +106,7 @@ class DeclaredAtTheDoorTest {
   @Test
   @DisplayName("so a value it was never meant to see stays out of reach")
   void a_value_it_was_never_meant_to_see_stays_out_of_reach() {
-    Surrogate<SessionToken> token = tokens.exchange(new SessionToken("sess_abc"));
+    Surrogate<SessionToken> token = tokens.conceal(new SessionToken("sess_abc"));
 
     assertThat(store.label(token.id())).isEqualTo(Label.of(TENANT, "acme"));
     assertThatThrownBy(() -> processor.reading(tokenType))
@@ -126,9 +126,9 @@ class DeclaredAtTheDoorTest {
   @Test
   @DisplayName("mints readers on demand, because they grant nothing the door did not have")
   void mints_readers_on_demand() {
-    Surrogate<Card> card = cards.exchange(new Card("4111111111114821"));
+    Surrogate<Card> card = cards.conceal(new Card("4111111111114821"));
 
-    assertThat(processor.reading(cardType).exchange(card).allowed()).isTrue();
-    assertThat(processor.reading(cardType).exchange(card).allowed()).isTrue();
+    assertThat(processor.reading(cardType).reveal(card).allowed()).isTrue();
+    assertThat(processor.reading(cardType).reveal(card).allowed()).isTrue();
   }
 }

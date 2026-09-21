@@ -55,12 +55,12 @@ class MintedAfterwardsTest {
 
   private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
 
-  private final SurrogateSource<Token> acmeTokens =
+  private final Conceal<Token> acmeTokens =
       config.source("acme-tokens", TOKEN_TYPE, ctx -> Label.of(TENANT, "acme"));
 
   private final SurrogateStore store = MemorySurrogateStore.create(config);
 
-  private final Surrogate<Token> secret = acmeTokens.exchange(new Token("acme's cardholder token"));
+  private final Surrogate<Token> secret = acmeTokens.conceal(new Token("acme's cardholder token"));
 
   @Test
   @DisplayName("proves the store itself still works, so the refusals below mean something")
@@ -71,10 +71,9 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a source planting a value at somebody else's label")
   void cannot_be_a_source() {
-    SurrogateSource<Token> forged =
-        config.source("forged", TOKEN_TYPE, ctx -> Label.of(TENANT, "globex"));
+    Conceal<Token> forged = config.source("forged", TOKEN_TYPE, ctx -> Label.of(TENANT, "globex"));
 
-    assertThatThrownBy(() -> forged.exchange(new Token("globex owes us 1,000,000")))
+    assertThatThrownBy(() -> forged.conceal(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("attached to no store");
   }
@@ -96,10 +95,10 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a sink with a ceiling of its own choosing")
   void cannot_be_a_sink() {
-    SurrogateSink<Token> forged =
+    Reveal<Token> forged =
         config.destination("forged", ctx -> Ceiling.nothing(), TOKEN_TYPE).reading(TOKEN_TYPE);
 
-    assertThatThrownBy(() -> forged.exchange(secret))
+    assertThatThrownBy(() -> forged.reveal(secret))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("attached to no store");
   }

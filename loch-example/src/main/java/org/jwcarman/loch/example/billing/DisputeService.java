@@ -15,11 +15,11 @@
  */
 package org.jwcarman.loch.example.billing;
 
+import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Query;
+import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Surrogate;
-import org.jwcarman.loch.SurrogateSink;
-import org.jwcarman.loch.SurrogateSource;
 
 /**
  * What the support desk does.
@@ -30,10 +30,10 @@ import org.jwcarman.loch.SurrogateSource;
  */
 public class DisputeService {
 
-  private final SurrogateSource<Domain.Mail> customerMail;
-  private final SurrogateSink<Domain.Invoice> supportUi;
-  private final SurrogateSink<Domain.Last4> approvalDesk;
-  private final SurrogateSink<Domain.Invoice> paymentProcessor;
+  private final Conceal<Domain.Mail> customerMail;
+  private final Reveal<Domain.Invoice> supportUi;
+  private final Reveal<Domain.Last4> approvalDesk;
+  private final Reveal<Domain.Invoice> paymentProcessor;
   private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
   private final Query<Domain.Mail, String> mailMentions;
@@ -41,10 +41,10 @@ public class DisputeService {
   // What this class may do is this list. It was handed three outlets, so it can reach three
   // places; it was handed one source, so there is exactly one label it can create a value at.
   public DisputeService(
-      SurrogateSource<Domain.Mail> customerMail,
-      SurrogateSink<Domain.Invoice> supportUi,
-      SurrogateSink<Domain.Last4> approvalDesk,
-      SurrogateSink<Domain.Invoice> paymentProcessor,
+      Conceal<Domain.Mail> customerMail,
+      Reveal<Domain.Invoice> supportUi,
+      Reveal<Domain.Last4> approvalDesk,
+      Reveal<Domain.Invoice> paymentProcessor,
       Derivation<Domain.Mail, Domain.Invoice> confirmInvoice,
       Derivation<Domain.Invoice, Domain.Last4> cardLast4,
       Query<Domain.Mail, String> mailMentions) {
@@ -63,7 +63,7 @@ public class DisputeService {
    * <p>The one place this application states what something is. After this, labels are computed.
    */
   public String receive(Domain.Mail mail) {
-    return customerMail.exchange(mail).id();
+    return customerMail.conceal(mail).id();
   }
 
   /** Does the message mention this? Answered without the message leaving the store. */
@@ -84,25 +84,25 @@ public class DisputeService {
   /** What an approver is shown: four digits, and only if they are an approver. */
   public Domain.Last4 cardForApproval(String invoice) {
     String last4 = cardLast4.derive(Surrogate.of(invoice)).orThrow().id();
-    return approvalDesk.exchange(Surrogate.of(last4)).orThrow();
+    return approvalDesk.reveal(Surrogate.of(last4)).orThrow();
   }
 
   /**
    * Issues the refund.
    *
    * <p>The card token reaches the payment processor and nowhere else, because that is the only
-   * destination whose ceiling admits {@link BillingLabels.Sensitivity#CARDHOLDER}. Not a rule
-   * anybody remembered to write: every other destination sits below it in the order.
+   * destination whose ceiling admits {@link BillingAxes.Sensitivity#CARDHOLDER}. Not a rule anybody
+   * remembered to write: every other destination sits below it in the order.
    */
   public String refund(String invoice) {
-    Domain.Invoice confirmed = paymentProcessor.exchange(Surrogate.of(invoice)).orThrow();
+    Domain.Invoice confirmed = paymentProcessor.reveal(Surrogate.of(invoice)).orThrow();
     return "refunded %s to card ending %s"
         .formatted(confirmed.amount(), last4(confirmed.cardToken()));
   }
 
   /** What the support agent's screen may show. */
   public Domain.Invoice forSupportScreen(String invoice) {
-    return supportUi.exchange(Surrogate.of(invoice)).orThrow();
+    return supportUi.reveal(Surrogate.of(invoice)).orThrow();
   }
 
   private static String last4(String token) {

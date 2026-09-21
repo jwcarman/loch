@@ -48,7 +48,7 @@ public final class MemorySurrogateStore {
    * <pre>{@code
    * SurrogateStoreConfig<Billing, BillingValue> c = new SurrogateStoreConfig<>();
    * c.axes(TENANT, INTEGRITY, SENSITIVITY);
-   * SurrogateSource<Mail> mail = c.source(CUSTOMER_MAIL, Mail.class, ctx -> ...);
+   * Conceal<Mail> mail = c.source(CUSTOMER_MAIL, Mail.class, ctx -> ...);
    * SurrogateStore<Billing> store = MemorySurrogateStore.create(c);
    * }</pre>
    */

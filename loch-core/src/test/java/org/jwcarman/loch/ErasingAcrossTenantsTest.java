@@ -71,7 +71,7 @@ class ErasingAcrossTenantsTest {
                                         .permits(label))
                             .orElse(false));
 
-    SurrogateSource<Record> globexRecords =
+    Conceal<Record> globexRecords =
         config.source(
             "globex-records",
             RECORD_TYPE,
@@ -79,7 +79,7 @@ class ErasingAcrossTenantsTest {
 
     SurrogateStore store = MemorySurrogateStore.create(config);
 
-    Surrogate<Record> globexRecord = globexRecords.exchange(new Record("globex's records"));
+    Surrogate<Record> globexRecord = globexRecords.conceal(new Record("globex's records"));
 
     edge.set(AccessContext.of(Map.of("tenant", "acme", "role", "compliance")));
 

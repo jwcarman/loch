@@ -59,7 +59,7 @@ class LabellingWhatArrivesTest {
       new SurrogateStoreConfig<Object>().axes(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
-  private final SurrogateSource<Mail> mail =
+  private final Conceal<Mail> mail =
       config.source(
           "customer-mail",
           MAIL_TYPE,
@@ -84,8 +84,8 @@ class LabellingWhatArrivesTest {
   void takes_the_part_only_the_value_knows() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
 
-    Surrogate<Mail> verified = mail.exchange(new Mail("known@acme.example", "hello", true));
-    Surrogate<Mail> anonymous = mail.exchange(new Mail("who@nowhere.example", "hello", false));
+    Surrogate<Mail> verified = mail.conceal(new Mail("known@acme.example", "hello", true));
+    Surrogate<Mail> anonymous = mail.conceal(new Mail("who@nowhere.example", "hello", false));
 
     assertThat(store.label(verified.id()).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
     assertThat(store.label(anonymous.id()).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
@@ -96,7 +96,7 @@ class LabellingWhatArrivesTest {
   @DisplayName("without letting the value choose the part that is not its business")
   void without_letting_the_value_choose_the_rest() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
-    Surrogate<Mail> acmeMail = mail.exchange(new Mail("x@y.example", "globex globex globex", true));
+    Surrogate<Mail> acmeMail = mail.conceal(new Mail("x@y.example", "globex globex globex", true));
 
     assertThat(store.label(acmeMail.id()).says(TENANT, "acme")).isTrue();
   }

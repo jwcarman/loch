@@ -42,5 +42,5 @@ public interface SurrogateDestination<D> {
    *
    * @throws IllegalStateException if that type was not declared here
    */
-  <T extends D> SurrogateSink<T> reading(SurrogateType<T> type);
+  <T extends D> Reveal<T> reading(SurrogateType<T> type);
 }

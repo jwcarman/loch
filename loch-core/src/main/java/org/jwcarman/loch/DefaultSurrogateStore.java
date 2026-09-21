@@ -76,13 +76,13 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   }
 
   /**
-   * Holding through an source, which is holding without being told a label.
+   * Holding through a door, which is holding without being told a label.
    *
    * <p>No {@code mayHold} check, because there is nothing left to check. That policy existed to
-   * police a label the caller supplied; an source's label is a property of the door, decided during
+   * police a label the caller supplied; a door's label is a property of the door, decided during
    * configuration, and the caller contributes nothing to it.
    */
-  <T> Surrogate<T> exchangeVia(
+  <T> Surrogate<T> concealVia(
       String source,
       SurrogateType<T> type,
       java.util.function.BiFunction<T, AccessContext, Label> labelling,
@@ -593,7 +593,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return new Derived.Made<>(new Surrogate<>(newId));
   }
 
-  <T> Revealed<T> dereference(
+  <T> Revealed<T> revealVia(
       Surrogate<T> held, SurrogateType<T> expected, String to, AccessContext context) {
     context = asking(context);
     DestinationSpec destination = destinations.get(to);

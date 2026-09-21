@@ -112,20 +112,20 @@ public class SurrogateStoreConfig<D> {
   // ------------------------------------------------------------------ minting capabilities
 
   /** A source whose label depends on neither what arrives nor who is acting. */
-  public <T extends D> SurrogateSource<T> source(String name, SurrogateType<T> type, Label label) {
+  public <T extends D> Conceal<T> source(String name, SurrogateType<T> type, Label label) {
     Objects.requireNonNull(label, "a source needs a label");
     return source(name, type, (value, context) -> label);
   }
 
   /** The same, for a label that does not depend on what is arriving. */
-  public <T extends D> SurrogateSource<T> source(
+  public <T extends D> Conceal<T> source(
       String name,
       SurrogateType<T> type,
       java.util.function.Function<AccessContext, Label> labelling) {
     return source(name, type, (value, context) -> labelling.apply(context));
   }
 
-  public <T extends D> SurrogateSource<T> source(
+  public <T extends D> Conceal<T> source(
       String name,
       SurrogateType<T> type,
       java.util.function.BiFunction<T, AccessContext, Label> labelling) {
@@ -137,10 +137,10 @@ public class SurrogateStoreConfig<D> {
     if (!sources.add(name)) {
       throw new IllegalStateException("two sources are registered as '" + name + "'");
     }
-    return new SurrogateSource<>() {
+    return new Conceal<>() {
       @Override
-      public Surrogate<T> exchange(T value) {
-        return binding.engine().exchangeVia(name, type, labelling, value);
+      public Surrogate<T> conceal(T value) {
+        return binding.engine().concealVia(name, type, labelling, value);
       }
 
       @Override
@@ -207,7 +207,7 @@ public class SurrogateStoreConfig<D> {
       implements SurrogateDestination<D> {
 
     @Override
-    public <T extends D> SurrogateSink<T> reading(SurrogateType<T> type) {
+    public <T extends D> Reveal<T> reading(SurrogateType<T> type) {
       Objects.requireNonNull(type, "a reader needs to say what comes out of it");
       if (!reads.contains(type.name())) {
         throw new IllegalStateException(
@@ -217,20 +217,15 @@ public class SurrogateStoreConfig<D> {
       }
       String door = name;
       Binding bound = binding;
-      return new SurrogateSink<>() {
+      return new Reveal<>() {
         @Override
         public SurrogateType<T> type() {
           return type;
         }
 
         @Override
-        public Revealed<T> exchange(Surrogate<T> surrogate) {
-          return exchange(surrogate, AccessContext.empty());
-        }
-
-        @Override
-        public Revealed<T> exchange(Surrogate<T> surrogate, AccessContext context) {
-          return bound.engine().dereference(surrogate, type, door, context);
+        public Revealed<T> reveal(Surrogate<T> surrogate) {
+          return bound.engine().revealVia(surrogate, type, door, AccessContext.empty());
         }
 
         @Override
@@ -527,7 +522,7 @@ public class SurrogateStoreConfig<D> {
    *
    * <p>Per capability, not per config, and that distinction is the whole safety property. If a
    * capability reached the store through the config, one minted <i>after</i> the store was built
-   * would find it already there and work perfectly -- measured doing exactly that: an source minted
+   * would find it already there and work perfectly -- measured doing exactly that: a door minted
    * after startup planted a value at another tenant's label, and a derivation minted after startup
    * read a cardholder token. Binding each capability at construction means a late one is attached
    * to nothing, and says so.

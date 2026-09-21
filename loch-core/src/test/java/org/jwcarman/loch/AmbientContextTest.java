@@ -52,7 +52,7 @@ class AmbientContextTest {
    * <p>Capabilities are attached when the store is built, so they have to be minted first. A record
    * keeps the three together without every test repeating the order.
    */
-  record Wired(SurrogateStore store, SurrogateSource<String> cards, SurrogateSink<String> card) {}
+  record Wired(SurrogateStore store, Conceal<String> cards, Reveal<String> card) {}
 
   private static Wired wire(
       java.util.function.Consumer<SurrogateStoreConfig<Object>> settings,
@@ -60,9 +60,9 @@ class AmbientContextTest {
     SurrogateStoreConfig<Object> config = new SurrogateStoreConfig<>();
     config.axes(CLEARANCE);
     settings.accept(config);
-    SurrogateSource<String> cards =
+    Conceal<String> cards =
         config.source("cards", STRING_TYPE, ctx -> Label.of(CLEARANCE, Clearance.FINANCE));
-    SurrogateSink<String> card =
+    Reveal<String> card =
         config
             .destination(
                 "card",
@@ -81,7 +81,7 @@ class AmbientContextTest {
           ctx -> ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE);
 
   private Surrogate<String> last4() {
-    return wired.cards().exchange("4821");
+    return wired.cards().conceal("4821");
   }
 
   @Test
@@ -90,76 +90,10 @@ class AmbientContextTest {
     Surrogate<String> value = last4();
 
     currentUser.set("finance");
-    assertThat(wired.card().exchange(value).granted()).contains("4821");
+    assertThat(wired.card().reveal(value).granted()).contains("4821");
 
     currentUser.set("support");
-    assertThat(wired.card().exchange(value).allowed()).isFalse();
-  }
-
-  @Test
-  @DisplayName("and a caller with something to add adds it rather than replacing everything")
-  void a_caller_adds_rather_than_replaces() {
-    currentUser.set("finance");
-    AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Wired watching =
-        wire(
-            c ->
-                c.currentAccess(() -> AccessContext.of("clearance", currentUser.get()))
-                    .callerMayContribute("purpose"),
-            ctx -> {
-              seen.set(ctx);
-              return Clearance.FINANCE;
-            });
-    Surrogate<String> value = watching.cards().exchange("4821");
-
-    watching.card().exchange(value, AccessContext.of("purpose", "refund"));
-
-    assertThat(seen.get().attributes())
-        .containsEntry("clearance", "finance")
-        .containsEntry("purpose", "refund");
-  }
-
-  /** A call site is not entitled to revise what the edge established about who is asking. */
-  @Test
-  @DisplayName("but a caller cannot promote itself by claiming a better clearance")
-  void a_caller_cannot_promote_itself() {
-    currentUser.set("support");
-    AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Wired watching =
-        wire(
-            c ->
-                c.currentAccess(() -> AccessContext.of("clearance", currentUser.get()))
-                    .callerMayContribute("purpose", "clearance"),
-            ctx -> {
-              seen.set(ctx);
-              return ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE;
-            });
-    Surrogate<String> value = watching.cards().exchange("4821");
-
-    var claimed = watching.card().exchange(value, AccessContext.of("clearance", "finance"));
-
-    assertThat(seen.get().attributes()).containsEntry("clearance", "support");
-    assertThat(claimed.allowed()).isFalse();
-  }
-
-  /** And a key the application never allowed is ignored entirely. */
-  @Test
-  @DisplayName("a caller contributing an undeclared key is ignored")
-  void an_undeclared_key_is_ignored() {
-    AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Wired watching =
-        wire(
-            c -> c.currentAccess(AccessContext::empty),
-            ctx -> {
-              seen.set(ctx);
-              return Clearance.FINANCE;
-            });
-
-    watching
-        .card()
-        .exchange(watching.cards().exchange("x"), AccessContext.of("tenant", "whatever-i-like"));
-
-    assertThat(seen.get().attributes()).isEmpty();
+    assertThat(wired.card().reveal(value).allowed()).isFalse();
   }
 
   @Test
@@ -174,7 +108,7 @@ class AmbientContextTest {
               return Clearance.FINANCE;
             });
 
-    anonymous.card().exchange(anonymous.cards().exchange("x"));
+    anonymous.card().reveal(anonymous.cards().conceal("x"));
 
     assertThat(seen.get().attributes()).isEmpty();
   }

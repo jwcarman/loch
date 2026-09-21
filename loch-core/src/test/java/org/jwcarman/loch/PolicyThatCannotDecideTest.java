@@ -47,10 +47,10 @@ class PolicyThatCannotDecideTest {
   private final SurrogateStoreConfig<Object> config =
       new SurrogateStoreConfig<Object>().axes(TENANT);
 
-  private final SurrogateSource<String> source =
+  private final Conceal<String> source =
       config.source("source", STRING_TYPE, ctx -> Label.of(TENANT, "acme"));
 
-  private final SurrogateSink<String> sinkWhoseCeilingThrows =
+  private final Reveal<String> sinkWhoseCeilingThrows =
       config.destination("anywhere", ctx -> boom(), STRING_TYPE).reading(STRING_TYPE);
 
   private final Query<String, String> queryWhoseCeilingThrows =
@@ -87,7 +87,7 @@ class PolicyThatCannotDecideTest {
 
   private final SurrogateStore store = new DefaultSurrogateStore(config, storage);
 
-  private final Surrogate<String> held = source.exchange("secret");
+  private final Surrogate<String> held = source.conceal("secret");
 
   /** Whatever a real one would be: the point is only that it is unchecked and unhandled. */
   private static <T> T boom() {
@@ -97,7 +97,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is not a sink that accepts the value")
   void is_not_a_sink_that_accepts_the_value() {
-    assertThat(sinkWhoseCeilingThrows.exchange(held).allowed()).isFalse();
+    assertThat(sinkWhoseCeilingThrows.reveal(held).allowed()).isFalse();
   }
 
   @Test
@@ -164,7 +164,7 @@ class PolicyThatCannotDecideTest {
   void is_recorded_as_a_refusal() {
     storage.clearAudit();
 
-    sinkWhoseCeilingThrows.exchange(held);
+    sinkWhoseCeilingThrows.reveal(held);
     queryWhoseCeilingThrows.ask(held, "secret");
     queryWhoseGateThrows.ask(held, "secret");
     derivationWhoseCeilingThrows.derive(held);

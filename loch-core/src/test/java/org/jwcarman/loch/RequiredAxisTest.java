@@ -61,7 +61,7 @@ class RequiredAxisTest {
       new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL).currentAccess(edge::get);
 
   /** Exactly what an application would naturally write, including the part that was the leak. */
-  private final SurrogateSource<Note> notes =
+  private final Conceal<Note> notes =
       config.source(
           "notes",
           NOTE_TYPE,
@@ -71,7 +71,7 @@ class RequiredAxisTest {
                   .orElseGet(Label::nothing)
                   .with(LEVEL, Level.HIGH));
 
-  private final SurrogateSink<Note> reporting =
+  private final Reveal<Note> reporting =
       config
           .destination(
               "reporting",
@@ -94,7 +94,7 @@ class RequiredAxisTest {
   void is_written_when_it_was_said() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
 
-    Surrogate<Note> note = notes.exchange(new Note("ours"));
+    Surrogate<Note> note = notes.conceal(new Note("ours"));
 
     assertThat(store.label(note.id()).says(TENANT, "acme")).isTrue();
   }
@@ -105,7 +105,7 @@ class RequiredAxisTest {
   void refuses_the_write_when_it_was_not_said() {
     edge.set(AccessContext.empty());
 
-    assertThatThrownBy(() -> notes.exchange(new Note("who does this belong to?")))
+    assertThatThrownBy(() -> notes.conceal(new Note("who does this belong to?")))
         .isInstanceOf(AccessDeniedException.class)
         .hasMessageContaining("readable by everyone");
   }
@@ -116,7 +116,7 @@ class RequiredAxisTest {
   void and_says_so_in_the_record() {
     SurrogateStoreConfig<Object> own =
         new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL).currentAccess(edge::get);
-    SurrogateSource<Note> watched =
+    Conceal<Note> watched =
         own.source(
             "notes",
             NOTE_TYPE,
@@ -129,7 +129,7 @@ class RequiredAxisTest {
     SurrogateStore unused = new DefaultSurrogateStore(own, storage);
     edge.set(AccessContext.empty());
 
-    assertThatThrownBy(() -> watched.exchange(new Note("orphan")))
+    assertThatThrownBy(() -> watched.conceal(new Note("orphan")))
         .isInstanceOf(AccessDeniedException.class);
 
     assertThat(unused.holds("nothing")).isFalse();
@@ -145,11 +145,11 @@ class RequiredAxisTest {
   void does_not_constrain_an_axis_whose_bottom_means_something() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
     SurrogateStoreConfig<Object> own = new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL);
-    SurrogateSource<Note> low =
+    Conceal<Note> low =
         own.source("low", NOTE_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
     SurrogateStore other = MemorySurrogateStore.create(own);
 
-    assertThat(other.label(low.exchange(new Note("fine")).id()).says(LEVEL, Level.LOW)).isTrue();
+    assertThat(other.label(low.conceal(new Note("fine")).id()).says(LEVEL, Level.LOW)).isTrue();
   }
 
   @Test
@@ -157,10 +157,10 @@ class RequiredAxisTest {
   void nothing_unattributed_is_ever_there_to_be_read() {
     edge.set(AccessContext.empty());
 
-    assertThatThrownBy(() -> notes.exchange(new Note("orphan")))
+    assertThatThrownBy(() -> notes.conceal(new Note("orphan")))
         .isInstanceOf(AccessDeniedException.class);
 
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
-    assertThat(reporting.exchange(Surrogate.<Note>of("sur_nothing-like-this")).allowed()).isFalse();
+    assertThat(reporting.reveal(Surrogate.<Note>of("sur_nothing-like-this")).allowed()).isFalse();
   }
 }
