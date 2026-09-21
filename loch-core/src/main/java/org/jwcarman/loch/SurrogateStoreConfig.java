@@ -155,63 +155,47 @@ public class SurrogateStoreConfig<A, D> {
    */
   /** A source whose label depends on neither who is acting nor what is arriving. */
   /**
-   * Begins declaring somewhere values may go.
+   * Declares somewhere values may go: what may reach it, and what it reads.
    *
-   * <p>Say the ceiling here and the types with {@link Declaring#type}. Both restrictions are
-   * settled before the destination exists and neither can be widened afterwards, which is what
-   * makes a reader a typed view rather than a grant.
+   * <p>Both restrictions are settled here and neither can be widened afterwards. The ceiling says
+   * which labels may arrive; {@code reads} says which types come back out. Because both are fixed
+   * before any reader exists, a reader is a typed view rather than a grant -- which is what makes
+   * one safe to mint on demand, and the destination itself safe to hand to the service that talks
+   * to that subsystem.
+   *
+   * @param reads every type this destination will hand over, and no others
    */
-  public Declaring<A, D> destination(
-      String name, java.util.function.Function<AccessContext, A> ceiling) {
+  @SafeVarargs
+  public final SurrogateDestination<D> destination(
+      String name,
+      java.util.function.Function<AccessContext, A> ceiling,
+      SurrogateType<?>... reads) {
     Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
-    return new Declaring<>(this, name, ceiling);
+    if (reads.length == 0) {
+      throw new IllegalStateException(
+          "'"
+              + name
+              + "' has to say which types it reads. A destination that reads anything reads"
+              + " everything its ceiling admits, including whatever gets stored at that label"
+              + " next year.");
+    }
+    java.util.Set<String> names = new java.util.LinkedHashSet<>();
+    for (SurrogateType<?> type : reads) {
+      names.add(registered(type).name());
+    }
+    destination(Destinations.varying(name, ceiling));
+    // Declaration order, not hash order: this list ends up in an error message somebody reads.
+    return new Door<A, D>(
+        name, java.util.Collections.unmodifiableSet(names), binding("destination '" + name + "'"));
   }
 
-  /** A destination being declared: its ceiling is set, its types are being listed. */
-  public static final class Declaring<A, D> {
-
-    private final SurrogateStoreConfig<A, D> config;
-    private final String name;
-    private final java.util.function.Function<AccessContext, A> ceiling;
-    private final java.util.Set<String> reads = new java.util.LinkedHashSet<>();
-
-    private Declaring(
-        SurrogateStoreConfig<A, D> config,
-        String name,
-        java.util.function.Function<AccessContext, A> ceiling) {
-      this.config = config;
-      this.name = name;
-      this.ceiling = ceiling;
-    }
-
-    /** One more type this destination is allowed to hand over. */
-    /** The same, for a type already declared, including a generic container. */
-    public Declaring<A, D> type(SurrogateType<?> type) {
-      Objects.requireNonNull(type, "a destination's type must not be null");
-      config.registered(type);
-      reads.add(type.name());
-      return this;
-    }
-
-    /** Registers the destination and hands it back. */
-    public SurrogateDestination<D> mint() {
-      if (reads.isEmpty()) {
-        throw new IllegalStateException(
-            "'"
-                + name
-                + "' has to say which types it reads. A destination that reads anything reads"
-                + " everything its ceiling admits, including whatever gets stored at that label"
-                + " next year.");
-      }
-      config.destination(Destinations.varying(name, ceiling));
-      // Declaration order, not hash order: this list ends up in an error message somebody has to
-      // read, and "[last4, card]" changing to "[card, last4]" between runs helps nobody.
-      return new Door<A, D>(
-          name,
-          java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(reads)),
-          config.binding("destination '" + name + "'"));
-    }
+  /** The same, for a ceiling that does not depend on who is asking. */
+  @SafeVarargs
+  public final SurrogateDestination<D> destination(
+      String name, A ceiling, SurrogateType<?>... reads) {
+    Objects.requireNonNull(ceiling, "a destination needs a ceiling");
+    return destination(name, context -> ceiling, reads);
   }
 
   /** The implementation of a destination: a name, what it reads, and what it is attached to. */

@@ -64,11 +64,7 @@ class DeclaredAtTheDoorTest {
       config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Exact.of("acme"));
 
   private final SurrogateDestination<Value> processor =
-      config
-          .destination("payment-processor", ctx -> Exact.of("acme"))
-          .type(cardType)
-          .type(last4Type)
-          .mint();
+      config.destination("payment-processor", ctx -> Exact.of("acme"), cardType, last4Type);
 
   private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
 
@@ -113,7 +109,7 @@ class DeclaredAtTheDoorTest {
   @Test
   @DisplayName("has to say what it reads, because a door that reads anything reads everything")
   void has_to_say_what_it_reads() {
-    assertThatThrownBy(() -> config.destination("vague", ctx -> Exact.of("acme")).mint())
+    assertThatThrownBy(() -> config.destination("vague", ctx -> Exact.of("acme")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("which types it reads");
   }

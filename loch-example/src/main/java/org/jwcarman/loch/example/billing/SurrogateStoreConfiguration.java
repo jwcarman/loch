@@ -85,23 +85,19 @@ public class SurrogateStoreConfiguration {
     // ---- how values get out ----------------------------------------------------
     SurrogateSink<Domain.Invoice> supportUi =
         config
-            .destination("support-ui", ctx -> label(ctx, ENDORSED, ORDINARY))
-            .type(Domain.INVOICE)
-            .mint()
+            .destination("support-ui", ctx -> label(ctx, ENDORSED, ORDINARY), Domain.INVOICE)
             .reading(Domain.INVOICE);
     SurrogateSink<Domain.Last4> approvalDesk =
         config
             .destination(
                 "approval-desk",
-                ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY))
-            .type(Domain.LAST4)
-            .mint()
+                ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY),
+                Domain.LAST4)
             .reading(Domain.LAST4);
     SurrogateSink<Domain.Invoice> paymentProcessor =
         config
-            .destination("payment-processor", ctx -> label(ctx, ENDORSED, CARDHOLDER))
-            .type(Domain.INVOICE)
-            .mint()
+            .destination(
+                "payment-processor", ctx -> label(ctx, ENDORSED, CARDHOLDER), Domain.INVOICE)
             .reading(Domain.INVOICE);
 
     // ---- one value from another ------------------------------------------------

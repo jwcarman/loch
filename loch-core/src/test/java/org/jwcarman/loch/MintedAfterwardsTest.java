@@ -93,11 +93,7 @@ class MintedAfterwardsTest {
   @DisplayName("cannot be a sink with a ceiling of its own choosing")
   void cannot_be_a_sink() {
     SurrogateSink<Token> forged =
-        config
-            .destination("forged", ctx -> Exact.conflict())
-            .type(TOKEN_TYPE)
-            .mint()
-            .reading(TOKEN_TYPE);
+        config.destination("forged", ctx -> Exact.conflict(), TOKEN_TYPE).reading(TOKEN_TYPE);
 
     assertThatThrownBy(() -> forged.exchange(secret))
         .isInstanceOf(IllegalStateException.class)

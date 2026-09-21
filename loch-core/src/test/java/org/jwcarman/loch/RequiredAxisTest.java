@@ -80,9 +80,8 @@ class RequiredAxisTest {
               ctx ->
                   new Labels(
                       ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                      Level.HIGH))
-          .type(NOTE_TYPE)
-          .mint()
+                      Level.HIGH),
+              NOTE_TYPE)
           .reading(NOTE_TYPE);
 
   private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);

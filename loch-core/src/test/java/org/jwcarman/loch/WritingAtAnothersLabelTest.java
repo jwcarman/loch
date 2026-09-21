@@ -82,9 +82,8 @@ class WritingAtAnothersLabelTest {
               ctx ->
                   new Labels(
                       ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                      Integrity.UNENDORSED))
-          .type(NOTE_TYPE)
-          .mint()
+                      Integrity.UNENDORSED),
+              NOTE_TYPE)
           .reading(NOTE_TYPE);
 
   private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);

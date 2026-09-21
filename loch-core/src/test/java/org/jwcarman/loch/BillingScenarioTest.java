@@ -229,27 +229,24 @@ class BillingScenarioTest {
       config
           .destination(
               "vendor-llm",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-          .type(STRING_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              STRING_TYPE)
           .reading(STRING_TYPE);
 
   private final SurrogateSink<Report> vendorLlmReports =
       config
           .destination(
               "vendor-llm-reports",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-          .type(REPORT_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              REPORT_TYPE)
           .reading(REPORT_TYPE);
 
   private final SurrogateSink<InvoiceNumber> vendorLlmInvoice =
       config
           .destination(
               "vendor-llm-invoice",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-          .type(INVOICE_NUMBER_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              INVOICE_NUMBER_TYPE)
           .reading(INVOICE_NUMBER_TYPE);
 
   // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
@@ -257,27 +254,24 @@ class BillingScenarioTest {
       config
           .destination(
               "quarantined-llm",
-              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .type(STRING_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              STRING_TYPE)
           .reading(STRING_TYPE);
 
   private final SurrogateSink<Report> quarantinedLlmReports =
       config
           .destination(
               "quarantined-llm-reports",
-              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .type(REPORT_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              REPORT_TYPE)
           .reading(REPORT_TYPE);
 
   private final SurrogateSink<InvoiceNumber> quarantinedLlmInvoice =
       config
           .destination(
               "quarantined-llm-invoice",
-              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .type(INVOICE_NUMBER_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              INVOICE_NUMBER_TYPE)
           .reading(INVOICE_NUMBER_TYPE);
 
   // The only place cardholder data may go, anywhere in the system.
@@ -285,33 +279,25 @@ class BillingScenarioTest {
       config
           .destination(
               "payment-processor",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-          .type(STRING_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              STRING_TYPE)
           .reading(STRING_TYPE);
 
   private final SurrogateSink<Report> paymentProcessorReports =
       config
           .destination(
               "payment-processor-reports",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-          .type(REPORT_TYPE)
-          .mint()
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              REPORT_TYPE)
           .reading(REPORT_TYPE);
 
   // A person. What they may see depends on who they are.
   private final SurrogateSink<String> approvalCardText =
-      config
-          .destination("approval-card", approvalCardCeiling())
-          .type(STRING_TYPE)
-          .mint()
-          .reading(STRING_TYPE);
+      config.destination("approval-card", approvalCardCeiling(), STRING_TYPE).reading(STRING_TYPE);
 
   private final SurrogateSink<Last4> approvalCardLast4 =
       config
-          .destination("approval-card-last4", approvalCardCeiling())
-          .type(LAST4_TYPE)
-          .mint()
+          .destination("approval-card-last4", approvalCardCeiling(), LAST4_TYPE)
           .reading(LAST4_TYPE);
 
   // ---------------------------------------------------------------- derivations and folds
@@ -1053,9 +1039,8 @@ class BillingScenarioTest {
           chattyConfig
               .destination(
                   "vendor-llm",
-                  ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-              .type(STRING_TYPE)
-              .mint()
+                  ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+                  STRING_TYPE)
               .reading(STRING_TYPE);
       SurrogateStore<Billing> chatty = MemorySurrogateStore.create(chattyConfig);
       Surrogate<String> held =
@@ -1081,9 +1066,8 @@ class BillingScenarioTest {
                   "broken",
                   ctx -> {
                     throw new IllegalStateException("policy service is down");
-                  })
-              .type(STRING_TYPE)
-              .mint()
+                  },
+                  STRING_TYPE)
               .reading(STRING_TYPE);
       SurrogateStore<Billing> fragile = MemorySurrogateStore.create(fragileConfig);
       Surrogate<String> held =

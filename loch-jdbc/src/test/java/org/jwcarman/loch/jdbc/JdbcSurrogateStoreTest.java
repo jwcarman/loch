@@ -195,9 +195,7 @@ class JdbcSurrogateStoreTest {
     // One source: everything this test holds is acme's cardholder data.
     cards = c.source("cards", CARD, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     vendorLlm =
-        c.destination("vendor-llm", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE))
-            .type(CARD)
-            .mint()
+        c.destination("vendor-llm", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE), CARD)
             .reading(CARD);
     // One destination, three readers. The ceiling is written once, every reader enforces it,
     // and all three audit under "payment-processor" because that is the subsystem they reach.
@@ -205,11 +203,11 @@ class JdbcSurrogateStoreTest {
     // settled here, so the readers below are typed views rather than grants.
     var processor =
         c.destination(
-                "payment-processor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-            .type(CARD)
-            .type(LAST4)
-            .type(cardList)
-            .mint();
+            "payment-processor",
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER),
+            CARD,
+            LAST4,
+            cardList);
     paymentProcessor = processor.reading(CARD);
     last4Processor = processor.reading(LAST4);
 
@@ -220,16 +218,15 @@ class JdbcSurrogateStoreTest {
     cardListProcessor = processor.reading(cardList);
     cardListVendor =
         c.destination(
-                "card-lists-to-vendor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE))
-            .type(cardList)
-            .mint()
+                "card-lists-to-vendor",
+                ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE),
+                cardList)
             .reading(cardList);
     last4ListProcessor =
         c.destination(
                 "last4-lists-to-processor",
-                ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-            .type(last4List)
-            .mint()
+                ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER),
+                last4List)
             .reading(last4List);
 
     cardLast4 =
