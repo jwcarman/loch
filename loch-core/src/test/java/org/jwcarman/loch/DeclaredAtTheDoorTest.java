@@ -53,9 +53,9 @@ class DeclaredAtTheDoorTest {
       new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   // Declared once, named by the strategy: card, last4, session-token.
-  private final SurrogateType<Card> cardType = config.type(Card.class);
-  private final SurrogateType<Last4> last4Type = config.type(Last4.class);
-  private final SurrogateType<SessionToken> tokenType = config.type(SessionToken.class);
+  private final SurrogateType<Card> cardType = SurrogateType.of(Card.class);
+  private final SurrogateType<Last4> last4Type = SurrogateType.of(Last4.class);
+  private final SurrogateType<SessionToken> tokenType = SurrogateType.of(SessionToken.class);
 
   private final SurrogateSource<Card> cards =
       config.source("cards", CARD_TYPE, ctx -> Exact.of("acme"));

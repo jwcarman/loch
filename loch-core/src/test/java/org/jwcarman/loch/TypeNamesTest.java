@@ -59,45 +59,33 @@ class TypeNamesTest {
   void comes_from_the_kebab_cased_simple_name() {
     var c = config();
 
-    assertThat(c.type(Card.class).name()).isEqualTo("card");
-    assertThat(c.type(DisputeClaim.class).name()).isEqualTo("dispute-claim");
+    assertThat(SurrogateType.of(Card.class).name()).isEqualTo("card");
+    assertThat(SurrogateType.of(DisputeClaim.class).name()).isEqualTo("dispute-claim");
   }
 
   @Test
   @DisplayName("comes from the annotation when there is one")
   void comes_from_the_annotation_when_there_is_one() {
-    assertThat(config().type(Mail.class).name()).isEqualTo("billing.mail/v2");
+    assertThat(SurrogateType.of(Mail.class).name()).isEqualTo("billing.mail/v2");
   }
 
   @Test
   @DisplayName("comes from the caller when they say it, over both")
   void comes_from_the_caller_over_both() {
-    assertThat(config().type("billing.mail/v3", Mail.class).name()).isEqualTo("billing.mail/v3");
+    assertThat(SurrogateType.of("billing.mail/v3", Mail.class).name()).isEqualTo("billing.mail/v3");
   }
 
   /** The check the short default needs in order to be safe. */
+  /**
+   * The check the short default needs in order to be safe.
+   *
+   * <p>It lives where a type reaches a portal, not in a constructor, because types are written out
+   * by hand and there is nothing to hook. Every type reaches a portal eventually, so every type
+   * gets checked.
+   */
   @Test
   @DisplayName("cannot mean two different types")
   void cannot_mean_two_different_types() {
-    var c = config();
-    c.type("thing", Card.class);
-
-    assertThatThrownBy(() -> c.type("thing", Invoice.class))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("both want the name 'thing'")
-        .hasMessageContaining("Card")
-        .hasMessageContaining("Invoice");
-  }
-
-  /**
-   * And it fires on a type nobody registered, because the mint registers what it is handed.
-   *
-   * <p>Types can be written out by hand, so the check cannot live in a constructor. It lives where
-   * a type reaches a portal, which every type does.
-   */
-  @Test
-  @DisplayName("cannot mean two different types even when nobody declared them")
-  void cannot_mean_two_things_even_undeclared() {
     var c = config();
     c.source("cards", SurrogateType.of("thing", Card.class), ctx -> Exact.of("acme"));
 
@@ -114,7 +102,7 @@ class TypeNamesTest {
   void said_twice_for_the_same_type_is_fine() {
     var c = config();
 
-    assertThat(c.type("thing", Card.class).name()).isEqualTo("thing");
-    assertThat(c.type("thing", Card.class).name()).isEqualTo("thing");
+    assertThat(SurrogateType.of("thing", Card.class).name()).isEqualTo("thing");
+    assertThat(SurrogateType.of("thing", Card.class).name()).isEqualTo("thing");
   }
 }

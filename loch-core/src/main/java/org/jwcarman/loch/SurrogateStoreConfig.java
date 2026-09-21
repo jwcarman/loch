@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
-import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
@@ -81,31 +80,6 @@ public class SurrogateStoreConfig<A, D> {
   }
 
   // ------------------------------------------------------------------ the types it will keep
-
-  /**
-   * A type this store will keep, naming itself.
-   *
-   * <p>Shorthand for {@link SurrogateType#of(Class)}: its {@link SurrogateName} if it has one,
-   * otherwise its kebab-cased simple name.
-   */
-  public <T extends D> SurrogateType<T> type(Class<T> type) {
-    return registered(SurrogateType.of(type));
-  }
-
-  /** A type this store will keep, named explicitly. */
-  public <T extends D> SurrogateType<T> type(String name, Class<T> type) {
-    return type(name, TypeRef.of(type));
-  }
-
-  /**
-   * A type this store will keep, named explicitly, for a generic container.
-   *
-   * <p>Containers have to be named here. Their raw type is not yours to annotate and would collide
-   * with every other container over it.
-   */
-  public <T extends D> SurrogateType<T> type(String name, TypeRef<T> type) {
-    return registered(new SurrogateType<>(name, type));
-  }
 
   /**
    * Records a type and refuses a name that already means something else.
@@ -293,12 +267,6 @@ public class SurrogateStoreConfig<A, D> {
         }
       };
     }
-  }
-
-  /** The same, for a type already declared. */
-  public <T extends D> SurrogateSink<T> sink(
-      String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return destination(name, ceiling).type(type).mint().reading(type);
   }
 
   /** The same, for a type with no generic parameters of its own. */

@@ -47,7 +47,7 @@ class PolicyThatCannotDecideTest {
       config.source("source", STRING_TYPE, ctx -> Exact.of("acme"));
 
   private final SurrogateSink<String> sinkWhoseCeilingThrows =
-      config.sink("anywhere", STRING_TYPE, ctx -> boom());
+      config.destination("anywhere", ctx -> boom()).type(STRING_TYPE).mint().reading(STRING_TYPE);
 
   private final Query<String, String> queryWhoseCeilingThrows =
       config

@@ -74,13 +74,16 @@ class RequiredAxisTest {
                   Level.HIGH));
 
   private final SurrogateSink<Note> reporting =
-      config.sink(
-          "reporting",
-          NOTE_TYPE,
-          ctx ->
-              new Labels(
-                  ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                  Level.HIGH));
+      config
+          .destination(
+              "reporting",
+              ctx ->
+                  new Labels(
+                      ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
+                      Level.HIGH))
+          .type(NOTE_TYPE)
+          .mint()
+          .reading(NOTE_TYPE);
 
   private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
 

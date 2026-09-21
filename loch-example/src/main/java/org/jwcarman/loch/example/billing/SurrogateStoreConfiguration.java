@@ -84,14 +84,25 @@ public class SurrogateStoreConfiguration {
 
     // ---- how values get out ----------------------------------------------------
     SurrogateSink<Domain.Invoice> supportUi =
-        config.sink("support-ui", Domain.INVOICE, ctx -> label(ctx, ENDORSED, ORDINARY));
+        config
+            .destination("support-ui", ctx -> label(ctx, ENDORSED, ORDINARY))
+            .type(Domain.INVOICE)
+            .mint()
+            .reading(Domain.INVOICE);
     SurrogateSink<Domain.Last4> approvalDesk =
-        config.sink(
-            "approval-desk",
-            Domain.LAST4,
-            ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
+        config
+            .destination(
+                "approval-desk",
+                ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY))
+            .type(Domain.LAST4)
+            .mint()
+            .reading(Domain.LAST4);
     SurrogateSink<Domain.Invoice> paymentProcessor =
-        config.sink("payment-processor", Domain.INVOICE, ctx -> label(ctx, ENDORSED, CARDHOLDER));
+        config
+            .destination("payment-processor", ctx -> label(ctx, ENDORSED, CARDHOLDER))
+            .type(Domain.INVOICE)
+            .mint()
+            .reading(Domain.INVOICE);
 
     // ---- one value from another ------------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer

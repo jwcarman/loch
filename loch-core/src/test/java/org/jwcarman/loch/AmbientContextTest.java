@@ -56,7 +56,8 @@ class AmbientContextTest {
     config.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE));
     settings.accept(config);
     SurrogateSource<String> cards = config.source("cards", STRING_TYPE, ctx -> Clearance.FINANCE);
-    SurrogateSink<String> card = config.sink("card", STRING_TYPE, ceiling);
+    SurrogateSink<String> card =
+        config.destination("card", ceiling).type(STRING_TYPE).mint().reading(STRING_TYPE);
     return new Wired(MemorySurrogateStore.create(config), cards, card);
   }
 

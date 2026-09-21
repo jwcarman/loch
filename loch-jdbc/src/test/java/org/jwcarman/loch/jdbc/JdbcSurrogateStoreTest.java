@@ -168,9 +168,9 @@ class JdbcSurrogateStoreTest {
     // Containers have to be named: their raw type is java.util.List, which is not ours to
     // annotate and would collide with every other list.
     SurrogateType<List<Card>> cardList =
-        c.type("card-list", TypeRef.listOf(TypeRef.of(Card.class)));
+        SurrogateType.of("card-list", TypeRef.listOf(TypeRef.of(Card.class)));
     SurrogateType<List<Last4>> last4List =
-        c.type("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
+        SurrogateType.of("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
 
     // The application composes its own pipeline: squeeze, then seal.
     JdbcSurrogateStoreConfig<Billing> jdbc =
@@ -194,7 +194,11 @@ class JdbcSurrogateStoreTest {
 
     // One source: everything this test holds is acme's cardholder data.
     cards = c.source("cards", CARD, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
-    vendorLlm = c.sink("vendor-llm", CARD, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
+    vendorLlm =
+        c.destination("vendor-llm", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE))
+            .type(CARD)
+            .mint()
+            .reading(CARD);
     // One destination, three readers. The ceiling is written once, every reader enforces it,
     // and all three audit under "payment-processor" because that is the subsystem they reach.
     // The subsystem, its ceiling, and everything it is allowed to read. Both restrictions are
@@ -215,15 +219,18 @@ class JdbcSurrogateStoreTest {
             "card-lists", cardList, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     cardListProcessor = processor.reading(cardList);
     cardListVendor =
-        c.sink(
-            "card-lists-to-vendor",
-            cardList,
-            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
+        c.destination(
+                "card-lists-to-vendor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE))
+            .type(cardList)
+            .mint()
+            .reading(cardList);
     last4ListProcessor =
-        c.sink(
-            "last4-lists-to-processor",
-            last4List,
-            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+        c.destination(
+                "last4-lists-to-processor",
+                ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
+            .type(last4List)
+            .mint()
+            .reading(last4List);
 
     cardLast4 =
         c.derivation(
