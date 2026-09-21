@@ -27,8 +27,8 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
 
-  <artifactId>loch-core</artifactId>
-  <name>Loch :: Core</name>
+  <artifactId>loch-api</artifactId>
+  <name>Loch :: API</name>
   <description>Handles, lattices, derivations, destinations and the gate. Depends on nothing.
     </description>
 
@@ -37,11 +37,6 @@
        whatever concrete class happened to arrive. A dependency added here is a decision, not a
        convenience. -->
   <dependencies>
-    <dependency>
-      <groupId>org.jwcarman.loch</groupId>
-      <artifactId>loch-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
     <dependency>
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-core</artifactId>

@@ -56,6 +56,7 @@
   </scm>
 
   <modules>
+    <module>loch-api</module>
     <module>loch-core</module>
     <module>loch-jdbc</module>
     <module>loch-example</module>
