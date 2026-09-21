@@ -90,24 +90,28 @@ public class SurrogateStoreConfig<A, D> {
    * <p>Containers have to be named here. Their raw type is not yours to annotate and would collide
    * with every other container over it.
    */
-  @SuppressWarnings("unchecked")
   public <T extends D> SurrogateType<T> type(String name, TypeRef<T> type) {
-    Objects.requireNonNull(name, "a type needs a name");
-    Objects.requireNonNull(type, "a type must not be null");
-    SurrogateType<?> existing = types.get(name);
-    if (existing != null) {
-      if (!existing.type().getType().equals(type.getType())) {
-        throw new IllegalStateException(
-            ("two types both want the name '%s': %s and %s. A stored name has to identify one"
-                    + " type, or a reader gets handed the wrong one. Name one of them"
-                    + " explicitly.")
-                .formatted(
-                    name, existing.type().getType().getTypeName(), type.getType().getTypeName()));
-      }
-      return (SurrogateType<T>) existing;
+    return registered(new SurrogateType<>(name, type));
+  }
+
+  /**
+   * Records a type and refuses a name that already means something else.
+   *
+   * <p>Called by every mint, so the check does not depend on how the type was declared. A name has
+   * to identify one type: two of them sharing a name means a reader is handed the wrong one, and
+   * finding that out at startup beats finding it out from a decode failure in production.
+   */
+  <T> SurrogateType<T> registered(SurrogateType<T> declared) {
+    SurrogateType<?> existing = types.putIfAbsent(declared.name(), declared);
+    if (existing != null && !existing.type().getType().equals(declared.type().getType())) {
+      throw new IllegalStateException(
+          ("two types both want the name '%s': %s and %s. A stored name has to identify one type,"
+                  + " or a reader gets handed the wrong one. Name one of them explicitly.")
+              .formatted(
+                  declared.name(),
+                  existing.type().getType().getTypeName(),
+                  declared.type().getType().getTypeName()));
     }
-    SurrogateType<T> declared = new SurrogateType<>(name, type);
-    types.put(name, declared);
     return declared;
   }
 
@@ -134,6 +138,7 @@ public class SurrogateStoreConfig<A, D> {
       SurrogateType<T> type,
       java.util.function.BiFunction<T, AccessContext, A> labelling) {
     Objects.requireNonNull(name, "a source needs a name");
+    registered(type);
     Binding<A> binding = binding("source '" + name + "'");
     Objects.requireNonNull(type, "a source needs to know what it accepts");
     Objects.requireNonNull(labelling, "a source needs to say how it labels what arrives");
@@ -222,6 +227,7 @@ public class SurrogateStoreConfig<A, D> {
     /** The same, for a type already declared, including a generic container. */
     public Declaring<A, D> type(SurrogateType<?> type) {
       Objects.requireNonNull(type, "a destination's type must not be null");
+      config.registered(type);
       reads.add(type.name());
       return this;
     }
@@ -343,6 +349,8 @@ public class SurrogateStoreConfig<A, D> {
   /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function) {
+    registered(input);
+    registered(output);
     return new Minting<>(
         this,
         name,
@@ -382,6 +390,8 @@ public class SurrogateStoreConfig<A, D> {
       SurrogateType<I> input,
       SurrogateType<O> output,
       java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
+    registered(input);
+    registered(output);
     return new Minting<>(
         this,
         name,

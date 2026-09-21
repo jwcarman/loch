@@ -15,54 +15,53 @@
  */
 package org.jwcarman.loch;
 
+import java.util.Objects;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
- * A type this store is willing to keep, and the name it is kept under.
+ * A type this store keeps, and the name it is kept under.
  *
  * <p>Two things that must agree, carried together so they cannot drift. The Java type says how to
  * decode a value; the name is what gets written beside it and compared on the way out.
  *
  * <p><b>The name is not the class name</b>, and that is the point. A stored name is permanent: it
  * is on every row already written, so it has to survive the refactors a class does not. Rename the
- * record, move it to another package, split the module -- the name stays, and everything already
- * stored is still readable. Change the name and you have orphaned every row that carries the old
- * one, which is a migration and not a preference.
+ * record, move it to another package, split the module -- the name stays and everything already
+ * stored is still readable. Change the name and you have orphaned every row carrying the old one,
+ * which is a migration and not a preference.
  *
- * <p><b>Only the configuration makes one.</b> The pairing has to be the one the store registered,
- * because a mismatched pairing defeats the check it exists for: a name that says invoice beside a
- * type that says card would pass the comparison and then decode invoice bytes as a card. So the
- * constructor is package-private and {@code type(...)} on the configuration is the only source.
+ * <p>Declare one wherever it reads best: {@code type(...)} on the configuration applies the naming
+ * strategy for you, and this constructor is fine when you would rather say it plainly. Either way
+ * the configuration sees every type that reaches a portal and refuses two of them wanting one name,
+ * so the check does not depend on which you chose.
  *
- * <p>Holding one grants nothing. It names a type; it does not open a door. That is what separates
- * it from the id types this design deleted, which could be constructed and presented.
+ * <p>Holding one grants nothing -- it names a type, it does not open a door -- and a mismatched
+ * pairing gains nothing either. A reader still only reaches names its destination declared and its
+ * store recorded, so the worst a wrong pairing does is fail to decode something you could already
+ * read.
  *
+ * @param name what values of this type are written down as
+ * @param type how to decode one
  * @param <T> the Java type
  */
-public final class SurrogateType<T> {
+public record SurrogateType<T>(String name, TypeRef<T> type) {
 
-  private final String name;
-  private final TypeRef<T> type;
-
-  SurrogateType(String name, TypeRef<T> type) {
-    this.name = name;
-    this.type = type;
+  public SurrogateType {
+    Objects.requireNonNull(name, "a type needs a name");
+    Objects.requireNonNull(type, "a type needs to say how to decode one");
+    if (name.isBlank()) {
+      throw new IllegalArgumentException("a type's name cannot be blank");
+    }
   }
 
-  /** What values of this type are written down as. */
-  public String name() {
-    return name;
+  /** A named type. */
+  public static <T> SurrogateType<T> of(String name, Class<T> type) {
+    return new SurrogateType<>(name, TypeRef.of(type));
   }
 
-  /**
-   * How to decode a value of this type.
-   *
-   * <p>Public because a storage implementation lives in its own package and needs it. Handing out
-   * the type reference gives nothing away: what must not be forged is the <i>pairing</i> of a name
-   * with a type, and that is still settled by the package-private constructor.
-   */
-  public TypeRef<T> type() {
-    return type;
+  /** A named type, for a generic container. */
+  public static <T> SurrogateType<T> of(String name, TypeRef<T> type) {
+    return new SurrogateType<>(name, type);
   }
 
   @Override
