@@ -48,7 +48,7 @@ where nothing at the call site says which way the value is going.
 | direction | type | verb | returns |
 |---|---|---|---|
 | in | `Conceal<T>` | `conceal(value)` | `Surrogate<T>` |
-| out | `Reveal<T>` | `reveal(surrogate)` | `Dereferenced<T>` |
+| out | `Reveal<T>` | `reveal(surrogate)` | `Revealed<T>` |
 | | `Derivation<I, O>` | `derive(...)` | `Derived<O>` |
 | | `Fold<I, O>` | `fold(...)` | `Derived<O>` |
 | | `Query<I, Q>` | `ask(...)` | `Answer` |
@@ -56,6 +56,27 @@ where nothing at the call site says which way the value is going.
 
 The `Surrogate` prefix drops from both: a surrogate is what they trade in, not what they are. Each
 is left with a single method, since the `AccessContext` overloads go with `callerMayContribute`.
+
+`Dereferenced<T>` becomes **`Revealed<T>`**, keeping its `Allowed` / `Denied` arms. Every other
+outcome type is the past participle of the verb that produces it -- `derive` gives `Derived` -- and
+this was the only one still named after an operation that no longer exists.
+
+`Surrogate<T>` does **not** become `Concealed<T>`, and the two are not meant to be antonyms. They
+are different kinds of thing: a surrogate is a value that travels, serialises and sits in a field,
+while `Revealed`, `Derived` and `Answer` are outcomes, consumed where they are produced.
+
+That leaves a deliberate asymmetry worth stating rather than inheriting:
+
+```java
+conceal(value)     -> Surrogate<T>     // refuses by throwing
+reveal(surrogate)  -> Revealed<T>      // refuses by returning Denied
+```
+
+Concealing fails in exactly two ways -- a label that leaves a required axis unsaid, and a labelling
+function that could not decide -- and both are configuration bugs rather than routine outcomes, so
+they belong in an exception. Refusing a read is ordinary operation and deserves a value. Adding a
+`Concealed<T>` for symmetry would make every write site unwrap a result that is almost never
+anything but success.
 
 ## Two faces, one object
 
@@ -102,7 +123,7 @@ final class Reveal<T> {
   private final SinkDefinition<T> definition;
   private final AtomicReference<State> lifecycle;
 
-  public Dereferenced<T> reveal(Surrogate<T> value) {
+  public Revealed<T> reveal(Surrogate<T> value) {
     return engine().reveal(definition, value);
   }
 
