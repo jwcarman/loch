@@ -38,13 +38,32 @@ The vocabulary already in the code stays, because the words do not collide:
 - a **portal** is what an application holds that puts it at a gate
 - the **charter** constitutes portals, keeps the register, and renders its `manifest()`
 
+## The portals are named for what they do
+
+Three of the five already are, and each has a verb to match: `Derivation.derive`, `Fold.fold`,
+`Query.ask`. Two were named for their position in a dataflow, and shared one verb pointing in
+opposite directions -- `SurrogateSource.exchange(value)` and `SurrogateSink.exchange(surrogate)`,
+where nothing at the call site says which way the value is going.
+
+| direction | type | verb | returns |
+|---|---|---|---|
+| in | `Conceal<T>` | `conceal(value)` | `Surrogate<T>` |
+| out | `Reveal<T>` | `reveal(surrogate)` | `Dereferenced<T>` |
+| | `Derivation<I, O>` | `derive(...)` | `Derived<O>` |
+| | `Fold<I, O>` | `fold(...)` | `Derived<O>` |
+| | `Query<I, Q>` | `ask(...)` | `Answer` |
+| | `Erasure` | `erase(...)` | see open question 6 |
+
+The `Surrogate` prefix drops from both: a surrogate is what they trade in, not what they are. Each
+is left with a single method, since the `AccessContext` overloads go with `callerMayContribute`.
+
 ## Two faces, one object
 
 The friction that held this design up for a while: a charter is a *specification*, and yet the
 things it emits are *live operational objects*. A document does not manufacture machinery.
 
 The resolution is that this is not a document. The portals are not artifacts a specification happens
-to emit; they **are** the specification, in executable form. Holding a `SurrogateSink<Invoice>` is
+to emit; they **are** the specification, in executable form. Holding a `Reveal<Invoice>` is
 what it means for "this code may read invoices at this ceiling" to be true of you. The charter is a
 *rendering* of the same facts, which is why it needs no storage to produce.
 
@@ -79,11 +98,11 @@ sealed interface State {
 A portal holds its own definition and that shared reference, and nothing else:
 
 ```java
-final class SurrogateSink<T> {
+final class Reveal<T> {
   private final SinkDefinition<T> definition;
   private final AtomicReference<State> lifecycle;
 
-  public Dereferenced<T> exchange(Surrogate<T> value) {
+  public Dereferenced<T> reveal(Surrogate<T> value) {
     return engine().reveal(definition, value);
   }
 
@@ -207,8 +226,8 @@ only ever receive the declaring face:
 // application — declares, and is handed only what declares
 @Bean
 public DisputeService disputeService(Charter charter, Invoices invoices) {
-  SurrogateSource<Mail> customerMail = charter.source("customer-mail", MAIL, ...);
-  SurrogateSink<Invoice> supportUi   = charter.destination("support-ui", ...).reading(INVOICE);
+  Conceal<Mail> customerMail         = charter.source("customer-mail", MAIL, ...);
+  Reveal<Invoice> supportUi          = charter.destination("support-ui", ...).reading(INVOICE);
   return new DisputeService(customerMail, supportUi, ...);
 }
 ```
@@ -355,8 +374,12 @@ is unforgeable against ordinary application code, not against reflection.
    `String` and JDK collections would catch the sloppiness the bound was aimed at, uniformly and
    without generics.
 
-5. **`Reveal` and `Conceal`** were proposed for the sink and source. `Reveal<CardNumber>` says what
-   happens where `SurrogateSink<CardNumber>` names a dataflow position, and "I'm not sold on source
-   vs. sink" is on the record. Not decided.
+5. **`admit` and `settle`** are working titles for the two halves of a decision.
 
-6. **`admit` and `settle`** are working titles for the two halves of a decision.
+6. **Erasure has no capability.** Every other operation became "hold the portal or you cannot say
+   it". This one is still a method on `SurrogateStore` -- the type referenced nowhere in main code
+   -- guarded by `BiPredicate<Label, AccessContext> mayErase` against ambient context. It is the
+   last place authority is checked rather than held, and it is only reachable from tests today,
+   which is why nobody noticed. It should be a portal like the others, at which point `mayErase`
+   disappears and "which code can destroy customer data" is answered the same way every other
+   authority question is.
