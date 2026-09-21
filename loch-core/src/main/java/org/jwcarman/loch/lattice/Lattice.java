@@ -33,6 +33,11 @@ package org.jwcarman.loch.lattice;
  * {@code a ⊑ b} holds exactly when {@code a ⊔ b = b}, so {@link #permits} is derived rather than
  * written. Two things that must agree cannot disagree if only one of them exists.
  *
+ * <p><b>Not a functional interface</b>, deliberately. A lambda would satisfy {@code join} and
+ * inherit a {@link #bottom()} that throws, so it would compile, pass review, and fail the first
+ * time anything asked for the identity -- which is at startup, in the manifest, or in the middle of
+ * combining two values. Build one with {@link Lattices}, or write both methods.
+ *
  * <p>Implementations must satisfy the laws in {@code LatticeTck}, which property-tests them. The
  * laws are not decoration: {@link #permits} is defined through {@code equals}, so a type with
  * broken value semantics does not fail loudly — it quietly permits everything, or quietly permits
@@ -40,7 +45,6 @@ package org.jwcarman.loch.lattice;
  *
  * @param <T> the label type, which must be immutable and have value semantics
  */
-@FunctionalInterface
 public interface Lattice<T> {
 
   /**

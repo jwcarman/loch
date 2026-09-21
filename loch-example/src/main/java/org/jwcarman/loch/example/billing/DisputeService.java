@@ -16,7 +16,6 @@
 package org.jwcarman.loch.example.billing;
 
 import static org.jwcarman.loch.example.billing.BillingLabels.Integrity.UNENDORSED;
-import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.CARDHOLDER;
 import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.PERSONAL;
 
 import org.jwcarman.loch.Handle;
@@ -97,13 +96,8 @@ public class DisputeService {
     return token.substring(token.length() - 4);
   }
 
-  /** Only used to describe a refusal; never a way to read a value. */
+  /** What a value is labelled, for a screen that must decide what to show. */
   public BillingLabels labelOf(HandleId id) {
-    return loch.label(Handle.of(id, Domain.Mail.class));
-  }
-
-  static {
-    // Referenced so the constants read as documentation of what this service touches.
-    assert PERSONAL != CARDHOLDER;
+    return loch.label(id);
   }
 }

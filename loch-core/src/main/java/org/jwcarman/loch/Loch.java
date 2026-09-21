@@ -69,10 +69,22 @@ public interface Loch<A> {
   /**
    * What a value is labelled, for rendering and for reporting.
    *
+   * <p><b>Not gated, and worth knowing.</b> Anyone holding an id learns the label, the lineage and
+   * whether the value exists. That is deliberate -- a renderer must read a label to decide whether
+   * to show a value or a handle, and it cannot ask permission to ask -- but it does mean a label is
+   * disclosed more freely than the value it describes. Ids are unguessable and only handed out on
+   * purpose, which is what keeps that reasonable; a deployment that disagrees should not expose a
+   * loch directly.
+   *
    * <p>Reading a label is not reading a value. This is how a renderer decides what to say about a
    * handle it is not allowed to open.
    */
-  A label(Handle<?> held);
+  A label(HandleId id);
+
+  /** The label of a value you are holding a typed handle to. */
+  default A label(Handle<?> handle) {
+    return label(handle.id());
+  }
 
   /**
    * Removes a value and everything ever derived from it.
@@ -96,7 +108,12 @@ public interface Loch<A> {
   }
 
   /** Whether the loch is holding this at all. */
-  boolean holds(Handle<?> held);
+  boolean holds(HandleId id);
+
+  /** Whether the loch is holding this, by typed handle. */
+  default boolean holds(Handle<?> handle) {
+    return holds(handle.id());
+  }
 
   /**
    * Makes a new value from one already held, through a derivation registered at wiring.
@@ -148,7 +165,12 @@ public interface Loch<A> {
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */
-  Lineage lineage(Handle<?> held);
+  Lineage lineage(HandleId id);
+
+  /** Where a value came from, by typed handle. */
+  default Lineage lineage(Handle<?> handle) {
+    return lineage(handle.id());
+  }
 
   /**
    * What this loch is configured to allow, in a form a person can read.

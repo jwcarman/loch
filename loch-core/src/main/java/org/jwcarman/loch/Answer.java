@@ -50,4 +50,18 @@ public sealed interface Answer {
   default boolean ran() {
     return this instanceof Answered;
   }
+
+  /**
+   * The answer, or an exception naming the refusal.
+   *
+   * <p>For a caller that cannot proceed without one. Prefer {@link #isTrue()} where a refusal and a
+   * "no" should be handled differently, which is usually.
+   */
+  default boolean orThrow() {
+    if (this instanceof Answered answered) {
+      return answered.value();
+    }
+    Refused refused = (Refused) this;
+    throw new AccessDeniedException(refused.reason().name(), refused.detail());
+  }
 }

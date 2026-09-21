@@ -192,14 +192,14 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public A label(Handle<?> held) {
-    return metadataOf(held).label();
+  public A label(HandleId id) {
+    return metadataOf(id).label();
   }
 
-  private StoredMetadata<A> metadataOf(Handle<?> held) {
+  private StoredMetadata<A> metadataOf(HandleId id) {
     return storage
-        .metadata(held.id())
-        .orElseThrow(() -> new IllegalArgumentException("this loch is not holding " + held.id()));
+        .metadata(id)
+        .orElseThrow(() -> new IllegalArgumentException("this loch is not holding " + id));
   }
 
   /** What a handle says it is, in the form the store wrote it. */
@@ -208,8 +208,8 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public boolean holds(Handle<?> held) {
-    return storage.contains(held.id());
+  public boolean holds(HandleId id) {
+    return storage.contains(id);
   }
 
   @Override
@@ -315,8 +315,8 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public Lineage lineage(Handle<?> held) {
-    return metadataOf(held).lineage();
+  public Lineage lineage(HandleId id) {
+    return metadataOf(id).lineage();
   }
 
   @Override

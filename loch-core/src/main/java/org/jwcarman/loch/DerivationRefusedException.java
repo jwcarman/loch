@@ -15,17 +15,15 @@
  */
 package org.jwcarman.loch;
 
-/** Thrown by {@link Derived#orThrow()} when a derivation did not happen. */
-public class DerivationRefusedException extends RuntimeException {
-
-  private final transient Derived.Reason reason;
+/**
+ * A derivation did not happen.
+ *
+ * <p>An {@link AccessDeniedException}, so that code turning refusals into a response handles both
+ * with one catch.
+ */
+public class DerivationRefusedException extends AccessDeniedException {
 
   public DerivationRefusedException(Derived.Reason reason, String detail) {
-    super(reason + ": " + detail);
-    this.reason = reason;
-  }
-
-  public Derived.Reason reason() {
-    return reason;
+    super(reason.name(), detail);
   }
 }

@@ -152,7 +152,9 @@ class BillingSupportTest {
             null,
             String.class);
 
-    assertThat(confirmed.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    // A refusal, not a crash. This asserted INTERNAL_SERVER_ERROR while there were two exception
+    // types and the controller caught one of them.
+    assertThat(confirmed.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
   }
 
   @Test
@@ -172,7 +174,7 @@ class BillingSupportTest {
         as("acme", "agent", HttpMethod.GET, "/disputes/" + invoice + "/card", null, String.class);
 
     assertThat(approver.getBody().digits()).isEqualTo("4821");
-    assertThat(agent.getStatusCode()).isNotEqualTo(HttpStatus.OK);
+    assertThat(agent.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
   }
 
   /** The card token has exactly one place it may go, and it is not a support screen. */
