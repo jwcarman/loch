@@ -52,6 +52,18 @@ CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
 -- same reason: they name a tenant, and in the clear they would describe every value in the system
 -- to anyone who could read this table. `detail` is where a refusal says which label it turned away
 -- and against which ceiling, which is exactly the thing a refusal must never tell its caller.
+-- The head of the chain, one row, locked while a line is written.
+--
+-- This serialises writes to the trail, which is a real cost and the reason it is stated here: two
+-- threads cannot both append, because each needs the digest of whatever came last. An audit that
+-- can be appended to concurrently is an audit whose order can be argued with.
+CREATE TABLE IF NOT EXISTS loch_audit_head (
+  only_row    BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (only_row),
+  digest      BYTEA
+);
+
+INSERT INTO loch_audit_head (only_row, digest) VALUES (TRUE, NULL) ON CONFLICT DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS loch_audit (
   entry_id    BIGSERIAL PRIMARY KEY,
   at          TIMESTAMPTZ NOT NULL,
@@ -62,6 +74,14 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   reason      TEXT,
   detail      BYTEA,
   label       BYTEA,
+  -- Each line carries the digest of the one before it and its own, so the trail is a chain. A
+  -- modified row, a deleted row and a reordered row all break it, and breaking it silently is not
+  -- possible without the digests of everything after it as well.
+  --
+  -- The digest covers what is actually stored, ciphertext included, so verifying needs no key --
+  -- whoever can read the table can check it, and cannot quietly edit it.
+  previous    BYTEA,
+  digest      BYTEA       NOT NULL,
   who         TEXT        NOT NULL
 );
 

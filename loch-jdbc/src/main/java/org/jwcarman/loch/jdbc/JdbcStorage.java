@@ -76,8 +76,9 @@ public final class JdbcStorage implements Storage {
 
   private static final String INSERT_AUDIT =
       """
-      INSERT INTO loch_audit (at, operation, value_id, target, outcome, reason, detail, label, who)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO loch_audit
+        (at, operation, value_id, target, outcome, reason, detail, label, previous, digest, who)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
   private static final String INSERT_VALUE =
@@ -178,7 +179,17 @@ public final class JdbcStorage implements Storage {
   @Override
   public void record(AuditRecord entry) {
     try (Connection connection = dataSource.getConnection()) {
-      insertAudit(connection, entry);
+      boolean autoCommit = connection.getAutoCommit();
+      connection.setAutoCommit(false);
+      try {
+        insertAudit(connection, entry);
+        connection.commit();
+      } catch (SQLException | RuntimeException e) {
+        connection.rollback();
+        throw e;
+      } finally {
+        connection.setAutoCommit(autoCommit);
+      }
     } catch (SQLException e) {
       throw new IllegalStateException("could not record " + entry.operation(), e);
     }
@@ -191,17 +202,108 @@ public final class JdbcStorage implements Storage {
    * trail nobody can query is a tape backup, and a label names a tenant.
    */
   private void insertAudit(Connection connection, AuditRecord entry) throws SQLException {
+    // Locked for the rest of this transaction: the digest of this line depends on the one before
+    // it, so two appends cannot be in flight at once. An audit whose order can be argued with is
+    // not much of an audit, and the cost of that is written down in the schema.
+    byte[] previous = lockChainHead(connection);
+    byte[] detail = protected_(entry.detail());
+    byte[] label = protected_(entry.label());
+    // Truncated once, and the same value is both stored and hashed. TIMESTAMPTZ keeps microseconds
+    // and Instant.now() offers nanoseconds, so hashing what was in hand rather than what reached
+    // the column made every line fail its own check the moment it was read back.
+    Instant at = entry.at().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    byte[] digest = digestOf(previous, at, entry, detail, label);
     try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
-      statement.setTimestamp(1, Timestamp.from(entry.at()));
+      statement.setTimestamp(1, Timestamp.from(at));
       statement.setString(2, entry.operation().name());
       statement.setString(3, entry.value());
       statement.setString(4, entry.target().orElse(null));
       statement.setString(5, entry.outcome().name());
       statement.setString(6, entry.reason().orElse(null));
-      statement.setBytes(7, protected_(entry.detail()));
-      statement.setBytes(8, protected_(entry.label()));
-      statement.setString(9, entry.context().toString());
+      statement.setBytes(7, detail);
+      statement.setBytes(8, label);
+      statement.setBytes(9, previous);
+      statement.setBytes(10, digest);
+      statement.setString(11, entry.context().toString());
       statement.executeUpdate();
+    }
+    try (PreparedStatement statement =
+        connection.prepareStatement("UPDATE loch_audit_head SET digest = ?")) {
+      statement.setBytes(1, digest);
+      statement.executeUpdate();
+    }
+  }
+
+  /** The digest of the last line written, held until this transaction ends. */
+  private static byte[] lockChainHead(Connection connection) throws SQLException {
+    try (PreparedStatement statement =
+            connection.prepareStatement("SELECT digest FROM loch_audit_head FOR UPDATE");
+        ResultSet rows = statement.executeQuery()) {
+      return rows.next() ? rows.getBytes("digest") : null;
+    }
+  }
+
+  /**
+   * What this line hashes to, given the one before it.
+   *
+   * <p>Over what is actually stored, ciphertext included, so verifying the chain needs no key:
+   * whoever can read the table can check it, and cannot quietly edit it. Every field is length-
+   * prefixed, so no two different trails can encode to the same bytes by running one value into the
+   * next.
+   */
+  private static byte[] digestOf(
+      byte[] previous, Instant at, AuditRecord entry, byte[] detail, byte[] label) {
+    return digestOf(
+        previous,
+        at,
+        entry.operation().name(),
+        entry.value(),
+        entry.target().orElse(null),
+        entry.outcome().name(),
+        entry.reason().orElse(null),
+        detail,
+        label,
+        entry.context().toString());
+  }
+
+  /** The same, from a row read back, which is how the chain is checked without a key. */
+  private static byte[] digestOf(
+      byte[] previous,
+      Instant at,
+      String operation,
+      String value,
+      String target,
+      String outcome,
+      String reason,
+      byte[] detail,
+      byte[] label,
+      String who) {
+    try {
+      java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+      feed(sha, previous);
+      feed(sha, at.toString().getBytes(UTF_8));
+      feed(sha, operation.getBytes(UTF_8));
+      feed(sha, value.getBytes(UTF_8));
+      feed(sha, target == null ? null : target.getBytes(UTF_8));
+      feed(sha, outcome.getBytes(UTF_8));
+      feed(sha, reason == null ? null : reason.getBytes(UTF_8));
+      feed(sha, detail);
+      feed(sha, label);
+      feed(sha, who.getBytes(UTF_8));
+      return sha.digest();
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("this JVM has no SHA-256, which every JVM is required to", e);
+    }
+  }
+
+  private static void feed(java.security.MessageDigest sha, byte[] field) {
+    int length = field == null ? -1 : field.length;
+    sha.update(
+        new byte[] {
+          (byte) (length >>> 24), (byte) (length >>> 16), (byte) (length >>> 8), (byte) length
+        });
+    if (field != null) {
+      sha.update(field);
     }
   }
 
@@ -359,6 +461,60 @@ public final class JdbcStorage implements Storage {
       return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new IllegalStateException("could not read " + resource, e);
+    }
+  }
+
+  /**
+   * Reads the whole trail back and checks it is the one that was written.
+   *
+   * <p>Every line carries the digest of the line before it and its own, so a modified row, a
+   * deleted row, a reordered row and an inserted row all break the chain. Rewriting it without
+   * detection would mean recomputing every digest after the change, which is exactly the work this
+   * makes necessary.
+   *
+   * <p>Needs no key. The digests cover what is stored, ciphertext included, so whoever can read the
+   * table can check it -- and an auditor who cannot decrypt a label can still prove nobody edited
+   * the trail.
+   *
+   * @return the id of the first line that does not agree with the chain, or empty when the whole
+   *     trail is intact
+   */
+  public java.util.Optional<Long> firstBrokenEntry() {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                """
+                SELECT entry_id, at, operation, value_id, target, outcome, reason, detail, label,
+                       previous, digest, who
+                FROM loch_audit ORDER BY entry_id
+                """);
+        ResultSet rows = statement.executeQuery()) {
+      byte[] expected = null;
+      while (rows.next()) {
+        byte[] previous = rows.getBytes("previous");
+        if (!java.util.Arrays.equals(previous, expected)) {
+          return java.util.Optional.of(rows.getLong("entry_id"));
+        }
+        byte[] digest =
+            digestOf(
+                previous,
+                rows.getTimestamp("at").toInstant(),
+                rows.getString("operation"),
+                rows.getString("value_id"),
+                rows.getString("target"),
+                rows.getString("outcome"),
+                rows.getString("reason"),
+                rows.getBytes("detail"),
+                rows.getBytes("label"),
+                rows.getString("who"));
+        if (!java.util.Arrays.equals(digest, rows.getBytes("digest"))) {
+          return java.util.Optional.of(rows.getLong("entry_id"));
+        }
+        expected = digest;
+      }
+      return java.util.Optional.empty();
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not read the trail back", e);
     }
   }
 }

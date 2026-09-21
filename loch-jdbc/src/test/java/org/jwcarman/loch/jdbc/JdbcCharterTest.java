@@ -102,6 +102,7 @@ class JdbcCharterTest {
 
   private DataSource dataSource;
   private DefaultCharter store;
+  private JdbcStorage storage;
   private Derivation<Card, Last4> cardLast4;
   private Conceal<Card> cards;
   private Reveal<Card> vendorLlm;
@@ -150,7 +151,8 @@ class JdbcCharterTest {
     try (Connection connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
       statement.execute(
-          "DROP TABLE IF EXISTS loch_audit, loch_lineage_closure, loch_lineage, loch_value");
+          "DROP TABLE IF EXISTS loch_audit_head, loch_audit, loch_lineage_closure,"
+              + " loch_lineage, loch_value");
     }
 
     KeyGenerator generator = KeyGenerator.getInstance("AES");
@@ -231,7 +233,8 @@ class JdbcCharterTest {
                 d.accepting(ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
                     .lowering(joined -> joined.with(DATA, DataClass.PII)));
 
-    c.seal(jdbc.storage(c.axes()));
+    storage = jdbc.storage(c.axes());
+    c.seal(storage);
     store = c;
   }
 
@@ -301,6 +304,60 @@ class JdbcCharterTest {
         assertThat(detail).doesNotContain("acme").doesNotContain("CARDHOLDER");
       }
     }
+  }
+
+  /**
+   * The trail is a chain, so editing it is not quiet.
+   *
+   * <p>An audit whose central claim is "we write it down no matter what" is worth only as much as
+   * its resistance to being rewritten afterwards. Every line carries the digest of the one before
+   * it, so a modified, deleted, reordered or inserted row breaks the chain -- and covering it up
+   * means recomputing every digest after the change.
+   */
+  @Test
+  @DisplayName("writes a trail that verifies")
+  void writes_a_trail_that_verifies() throws SQLException {
+    card();
+    edge.set(AccessContext.of("tenant", "acme"));
+    vendorLlm.reveal(card());
+
+    assertThat(rowCount("loch_audit")).isGreaterThan(1);
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("notices a line somebody edited")
+  void notices_an_edited_line() throws SQLException {
+    Surrogate<Card> card = card();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement(
+                "UPDATE loch_audit SET outcome = 'REFUSED' WHERE value_id = ?")) {
+      statement.setString(1, card.id());
+      assertThat(statement.executeUpdate()).isPositive();
+    }
+
+    assertThat(storage.firstBrokenEntry()).isPresent();
+  }
+
+  /** Removing a line is the interesting one: what is gone cannot speak for itself. */
+  @Test
+  @DisplayName("notices a line somebody deleted")
+  void notices_a_deleted_line() throws SQLException {
+    card();
+    edge.set(AccessContext.of("tenant", "acme"));
+    vendorLlm.reveal(card());
+
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      assertThat(
+              statement.executeUpdate(
+                  "DELETE FROM loch_audit WHERE entry_id = (SELECT MIN(entry_id) FROM loch_audit)"))
+          .isPositive();
+    }
+
+    assertThat(storage.firstBrokenEntry()).isPresent();
   }
 
   @Test
