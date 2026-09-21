@@ -18,7 +18,6 @@ package org.jwcarman.loch.spring;
 import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.CodecFactory;
-import org.jwcarman.loch.AccessContextProvider;
 import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.jdbc.JdbcStorage;
 import org.jwcarman.loch.jdbc.JdbcStorageConfig;
@@ -66,30 +65,25 @@ public class JdbcCharterAutoConfiguration {
   }
 
   /**
-   * Builds it, last.
+   * Seals it, last.
    *
    * <p>{@link SmartInitializingSingleton} runs once the context has finished creating singletons,
    * which is the first moment every portal has been declared and the last moment a store can be
    * built before one is used.
    *
-   * <p>Conditional on the application having declared what it allows. Without that there is no
-   * policy to build a store from, and guessing one would be the worst thing this could do.
+   * <p>Sealing is deliberately not on the application's path. The charter it declares on is
+   * constructed by {@link CharterAutoConfiguration}, so the only reference able to bring one into
+   * force is the one this module holds.
    */
   @Bean
   @ConditionalOnBean({Charter.class, StorageCodec.class})
-  public SmartInitializingSingleton surrogateStoreBuilder(
-      Charter config,
-      java.util.Optional<AccessContextProvider> access,
+  public SmartInitializingSingleton charterSealer(
+      Charter charter,
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
       CharterProperties properties) {
-    // A wildcard rather than type variables: a generic @Bean method gives Spring an injection
-    // point it cannot resolve, and the bean silently never matches.
-    // Declared as a bean rather than set on the configuration: identity is where it comes from,
-    // not what this application allows, so it belongs with the wiring.
-    access.ifPresent(config::currentAccess);
-    return () -> build(config, dataSource, codecs, storageCodec, properties);
+    return () -> build(charter, dataSource, codecs, storageCodec, properties);
   }
 
   /** Seals the charter the application wrote to the storage this module supplies. */

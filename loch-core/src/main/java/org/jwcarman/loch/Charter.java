@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Label;
@@ -120,7 +121,7 @@ public final class Charter {
   /** What a declaration produced: the charter it leaves behind, and the portal it hands back. */
   private record Declared<P>(Configuration configuration, P portal) {}
 
-  private final List<Axis<?>> axes;
+  private final Axes axes;
   private final java.util.concurrent.atomic.AtomicReference<State> lifecycle =
       new java.util.concurrent.atomic.AtomicReference<>(
           new State.Configuring(Configuration.empty()));
@@ -132,29 +133,18 @@ public final class Charter {
    * They decide what a label is able to say at all and what a stored row is decoded against, so a
    * charter cannot meaningfully exist before them.
    */
-  @SafeVarargs
-  public Charter(Axis<?>... axes) {
-    Objects.requireNonNull(axes, "a charter needs axes");
-    if (axes.length == 0) {
-      throw new IllegalArgumentException(
-          "a charter needs at least one axis: a label that says nothing about anything is below"
-              + " every ceiling, which means readable by everyone");
-    }
-    java.util.Set<String> named = new java.util.LinkedHashSet<>();
-    for (Axis<?> axis : axes) {
-      Objects.requireNonNull(axis, "an axis must not be null");
-      if (!named.add(axis.name())) {
-        throw new IllegalArgumentException(
-            "two axes both want the name '"
-                + axis.name()
-                + "', and a stored label is keyed by name, so one would read as the other");
-      }
-    }
-    this.axes = List.of(axes);
+  public Charter(Axes axes) {
+    this.axes = Objects.requireNonNull(axes, "a charter needs axes");
   }
 
-  /** The axes this charter was constituted with. */
-  public List<Axis<?>> axes() {
+  /** The same, for an application naming its axes inline rather than handing over a schema. */
+  @SafeVarargs
+  public Charter(Axis<?>... axes) {
+    this(Axes.of(axes));
+  }
+
+  /** The schema this charter was constituted with. */
+  public Axes axes() {
     return axes;
   }
 

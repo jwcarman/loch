@@ -41,7 +41,7 @@ import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.StoredMetadata;
 import org.jwcarman.loch.StoredValue;
-import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Label;
 
 /**
@@ -69,10 +69,7 @@ public final class JdbcStorage implements Storage {
    * time and keyed by name, so reading one back needs to know which axes the charter declares.
    */
   static JdbcStorage of(
-      javax.sql.DataSource dataSource,
-      CodecFactory codecs,
-      StorageCodec storageCodec,
-      java.util.List<Axis<?>> axes) {
+      javax.sql.DataSource dataSource, CodecFactory codecs, StorageCodec storageCodec, Axes axes) {
     return new JdbcStorage(dataSource, codecs, storageCodec, axes);
   }
 
@@ -124,18 +121,15 @@ public final class JdbcStorage implements Storage {
   private final CodecFactory codecs;
   private final StorageCodec storageCodec;
   private final Codec<java.util.Map<String, String>> labels;
-  private final java.util.List<Axis<?>> axes;
+  private final Axes axes;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
 
   private JdbcStorage(
-      DataSource dataSource,
-      CodecFactory codecs,
-      StorageCodec storageCodec,
-      java.util.List<Axis<?>> axes) {
+      DataSource dataSource, CodecFactory codecs, StorageCodec storageCodec, Axes axes) {
     this.dataSource = dataSource;
     this.codecs = codecs;
     this.storageCodec = storageCodec;
-    this.axes = java.util.List.copyOf(axes);
+    this.axes = axes;
     // One axis at a time, keyed by name. A record would have gone to disk positionally, and then
     // declaring a fourth axis would make every row already written undecodable.
     this.labels =

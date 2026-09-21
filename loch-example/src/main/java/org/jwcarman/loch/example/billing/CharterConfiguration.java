@@ -30,6 +30,7 @@ import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Query;
 import org.jwcarman.loch.Reveal;
+import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;
 import org.jwcarman.loch.lattice.Label;
@@ -54,15 +55,16 @@ public class CharterConfiguration {
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
 
   /**
-   * The labels, and where identity comes from. Nothing about where any of it is kept.
+   * The questions this business asks about every value it holds.
    *
-   * <p>This says nothing about databases. The starter supplies the data source, the serialisation
-   * and the sealing, and builds the store once every portal has been declared -- so moving this
-   * application onto a different backing store changes no line in this file.
+   * <p>All this application says about its charter. The charter itself is constructed from these,
+   * by the starter, which is therefore the only thing able to seal it -- so nothing here can bring
+   * one into force, and nothing here can erase through one. Authority arrives the same way it does
+   * everywhere else in this file: because somebody handed it over.
    */
   @Bean
-  public Charter billingCharter() {
-    return new Charter(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
+  public Axes billingAxes() {
+    return Axes.of(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
   }
 
   /**

@@ -70,22 +70,40 @@ class CallerClaimsIdentityTest {
    * to them, and nothing can ask the context for one.
    */
   /**
-   * The configuration, unlike everything else, <b>is</b> published -- and that is the one
-   * deliberate concession in the arrangement.
+   * The charter, unlike everything else, <b>is</b> published -- and that is the one deliberate
+   * concession in the arrangement.
    *
-   * <p>Declaring a portal means holding the configuration, so it has to be reachable by whatever
-   * declares one. It is root authority: anything holding it can declare a portal at any label and
-   * any ceiling. What that buys is that the application never orchestrates the lifecycle, and what
-   * it costs is that "who can grant authority" is a grep for this type rather than one file.
+   * <p>Declaring a portal means holding a charter, so it has to be reachable by whatever declares
+   * one. Anything holding it can declare a portal at any label and any ceiling. What that buys is
+   * that the application never orchestrates the lifecycle, and what it costs is that "who can grant
+   * authority" is a grep for this type rather than one file.
    *
-   * <p>The narrowing that survives is the one that matters: holding the mint lets you declare a
-   * door, and holding a door lets you use it. Nothing lets you do both by accident.
+   * <p>This application does not create it. It says what its axes are and the starter constructs
+   * the charter from them, which is why nothing here has to remember to seal anything.
+   *
+   * <p><b>What this does not yet close:</b> a published charter still carries {@code seal} and
+   * {@code erase}, so any bean willing to name the type can reach them. Moving construction was
+   * necessary for that and is not sufficient -- the authority to seal has to become something held
+   * rather than something on the type everybody is handed.
    */
   @Test
-  @DisplayName("can obtain the configuration, because declaring a portal is what it is for")
-  void can_obtain_the_configuration() {
+  @DisplayName("can obtain the charter, because declaring a portal is what it is for")
+  void can_obtain_the_charter() {
     assertThat(context.getBeanNamesForType(org.jwcarman.loch.Charter.class))
-        .containsExactly("billingCharter");
+        .containsExactly("charter");
+  }
+
+  /** And the application is not the thing that made it. */
+  @Test
+  @DisplayName("does not declare the charter itself, only the axes it is made from")
+  void does_not_declare_the_charter_itself() {
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.lattice.Axes.class))
+        .containsExactly("billingAxes");
+    assertThat(CharterConfiguration.class.getDeclaredMethods())
+        .isNotEmpty()
+        .noneSatisfy(
+            method ->
+                assertThat(method.getReturnType()).isEqualTo(org.jwcarman.loch.Charter.class));
   }
 
   @Test

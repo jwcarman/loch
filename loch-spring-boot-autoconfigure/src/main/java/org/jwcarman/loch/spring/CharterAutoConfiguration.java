@@ -15,8 +15,14 @@
  */
 package org.jwcarman.loch.spring;
 
+import org.jwcarman.loch.AccessContextProvider;
+import org.jwcarman.loch.Charter;
+import org.jwcarman.loch.lattice.Axes;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 
 /**
  * What every backing store needs, whatever it is backed by.
@@ -29,4 +35,26 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  */
 @AutoConfiguration
 @EnableConfigurationProperties(CharterProperties.class)
-public class CharterAutoConfiguration {}
+public class CharterAutoConfiguration {
+  /**
+   * The charter itself, constructed here rather than by the application.
+   *
+   * <p>Ownership is the whole point. Whoever constructs a charter holds the thing that can seal it
+   * and the thing that can erase through it, so the application says what its axes are and receives
+   * a charter to declare on, never one it could bring into force or destroy with. That is the same
+   * rule the portals follow: authority arrives because somebody handed it to you.
+   *
+   * <p>Conditional on the application having said what it asks about every value. Guessing a
+   * vocabulary would be the worst thing this could do.
+   */
+  @Bean
+  @ConditionalOnBean(Axes.class)
+  @ConditionalOnMissingBean
+  public Charter charter(Axes axes, java.util.Optional<AccessContextProvider> access) {
+    Charter charter = new Charter(axes);
+    // Identity is where an access comes from, not what this application allows, so it belongs with
+    // the wiring rather than in the charter the application writes.
+    access.ifPresent(charter::currentAccess);
+    return charter;
+  }
+}

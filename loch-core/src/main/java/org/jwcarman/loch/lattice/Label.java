@@ -146,13 +146,11 @@ public final class Label {
    * axis was marked required and the value is refused for being incomplete, by the same rule that
    * catches a label which never mentioned it in the first place.
    */
-  public static Label decode(Map<String, String> encoded, Iterable<Axis<?>> declared) {
-    Map<String, Axis<?>> byName = new LinkedHashMap<>();
-    declared.forEach(axis -> byName.put(axis.name(), axis));
+  public static Label decode(Map<String, String> encoded, Axes declared) {
     Map<Axis<?>, Object> said = new LinkedHashMap<>();
     encoded.forEach(
         (name, value) -> {
-          Axis<?> axis = byName.get(name);
+          Axis<?> axis = declared.named(name).orElse(null);
           if (axis == null) {
             throw new IllegalArgumentException(
                 "a stored label says something about '"

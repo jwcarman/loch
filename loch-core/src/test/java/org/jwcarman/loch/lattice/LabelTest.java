@@ -18,7 +18,6 @@ package org.jwcarman.loch.lattice;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -180,7 +179,7 @@ class LabelTest {
   void round_trips_through_storage() {
     Label label = labelled("acme", Integrity.UNENDORSED, Sensitivity.CARDHOLDER);
 
-    Label read = Label.decode(label.encode(), List.of(TENANT, INTEGRITY, SENSITIVITY));
+    Label read = Label.decode(label.encode(), Axes.of(TENANT, INTEGRITY, SENSITIVITY));
 
     assertThat(read).isEqualTo(label);
   }
@@ -191,7 +190,7 @@ class LabelTest {
   void round_trips_a_mixture() {
     Label mixed = Label.of(TENANT, "acme").join(Label.of(TENANT, "globex"));
 
-    Label read = Label.decode(mixed.encode(), List.of(TENANT));
+    Label read = Label.decode(mixed.encode(), Axes.of(TENANT));
 
     assertThat(read).isEqualTo(mixed);
     assertThat(read.toString()).contains("(mixed)");
@@ -210,7 +209,7 @@ class LabelTest {
   void still_reads_a_row_written_before_an_axis_existed() {
     Label written = Label.of(TENANT, "acme").with(INTEGRITY, Integrity.ENDORSED);
 
-    Label read = Label.decode(written.encode(), List.of(TENANT, INTEGRITY, SENSITIVITY));
+    Label read = Label.decode(written.encode(), Axes.of(TENANT, INTEGRITY, SENSITIVITY));
 
     assertThat(read).isEqualTo(written);
     assertThat(read.unsaid(SENSITIVITY)).isFalse();
@@ -229,7 +228,7 @@ class LabelTest {
   void refuses_a_row_on_an_axis_no_longer_declared() {
     Map<String, String> written =
         labelled("acme", Integrity.ENDORSED, Sensitivity.CARDHOLDER).encode();
-    List<Axis<?>> nowDeclared = List.of(TENANT, INTEGRITY);
+    Axes nowDeclared = Axes.of(TENANT, INTEGRITY);
 
     assertThatThrownBy(() -> Label.decode(written, nowDeclared))
         .isInstanceOf(IllegalArgumentException.class)

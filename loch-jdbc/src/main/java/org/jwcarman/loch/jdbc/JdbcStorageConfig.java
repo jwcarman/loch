@@ -18,6 +18,7 @@ package org.jwcarman.loch.jdbc;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.jwcarman.codec.spi.CodecFactory;
+import org.jwcarman.loch.lattice.Axes;
 
 /**
  * What a database-backed store needs that has nothing to do with policy.
@@ -118,7 +119,7 @@ public final class JdbcStorageConfig {
    * <p>The only way to build one, so that what happens to the bytes on the way to disk stays a
    * decision somebody made rather than a default they inherited.
    */
-  public JdbcStorage storage(java.util.List<org.jwcarman.loch.lattice.Axis<?>> axes) {
+  public JdbcStorage storage(Axes axes) {
     JdbcStorage storage =
         JdbcStorage.of(dataSourceOrFail(), codecsOrFail(), storageCodecOrFail(), axes);
     if (migrates()) {

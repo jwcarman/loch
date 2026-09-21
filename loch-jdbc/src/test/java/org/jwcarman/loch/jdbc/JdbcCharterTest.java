@@ -41,6 +41,7 @@ import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateType;
+import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;
@@ -384,7 +385,7 @@ class JdbcCharterTest {
                     new JdbcStorageConfig()
                         .dataSource(dataSource)
                         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-                        .storage(List.of(TENANT, INTEGRITY, DATA))))
+                        .storage(Axes.of(TENANT, INTEGRITY, DATA))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("storedPlainly");
   }

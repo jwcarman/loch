@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Label;
@@ -36,7 +37,7 @@ import org.jwcarman.loch.lattice.Label;
  */
 final class Engine {
 
-  private final List<Axis<?>> axes;
+  private final Axes axes;
   private final Map<String, DestinationSpec> destinations;
   private final List<DerivationSpec<?>> derivations;
   private final List<QuerySpec<?, ?>> queries;
@@ -44,7 +45,7 @@ final class Engine {
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
 
-  Engine(List<Axis<?>> axes, Charter.Configuration config, Storage storage) {
+  Engine(Axes axes, Charter.Configuration config, Storage storage) {
     this.storage = storage;
     this.axes = axes;
     Map<String, DestinationSpec> byId = new LinkedHashMap<>();
@@ -144,7 +145,12 @@ final class Engine {
    * everyone -- silently, and in the direction nobody would notice.
    */
   private boolean leavesARequiredAxisUnsaid(Label label) {
-    return axes.stream().anyMatch(label::unsaid);
+    for (Axis<?> axis : axes) {
+      if (label.unsaid(axis)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
