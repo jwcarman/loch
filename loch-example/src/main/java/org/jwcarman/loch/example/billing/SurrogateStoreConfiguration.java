@@ -74,30 +74,31 @@ public class SurrogateStoreConfiguration {
    */
   @Bean
   public DisputeService disputeService(
-      SurrogateStoreConfig<BillingLabels, Domain.BillingValue> c, Invoices invoices) {
+      SurrogateStoreConfig<BillingLabels, Domain.BillingValue> config, Invoices invoices) {
 
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another
     // tenant's label is not refused so much as unsayable: nothing takes a label.
     SurrogateSource<Domain.Mail> customerMail =
-        c.source("customer-mail", Domain.MAIL, ctx -> label(ctx, UNENDORSED, PERSONAL));
+        config.source("customer-mail", Domain.MAIL, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ----------------------------------------------------
     SurrogateSink<Domain.Invoice> supportUi =
-        c.sink("support-ui", Domain.INVOICE, ctx -> label(ctx, ENDORSED, ORDINARY));
+        config.sink("support-ui", Domain.INVOICE, ctx -> label(ctx, ENDORSED, ORDINARY));
     SurrogateSink<Domain.Last4> approvalDesk =
-        c.sink(
+        config.sink(
             "approval-desk",
             Domain.LAST4,
             ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
     SurrogateSink<Domain.Invoice> paymentProcessor =
-        c.sink("payment-processor", Domain.INVOICE, ctx -> label(ctx, ENDORSED, CARDHOLDER));
+        config.sink("payment-processor", Domain.INVOICE, ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
     // ---- one value from another ------------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
     // claimed to the mailbox their message came from.
     Derivation<Domain.Mail, Domain.Invoice> confirmInvoice =
-        c.checking(
+        config
+            .checking(
                 "mail.confirmedInvoice",
                 Domain.MAIL,
                 Domain.INVOICE,
@@ -108,7 +109,8 @@ public class SurrogateStoreConfiguration {
 
     // Truncating a card is a declassification, which is what a PCI reviewer asks about.
     Derivation<Domain.Invoice, Domain.Last4> cardLast4 =
-        c.derivation(
+        config
+            .derivation(
                 "invoice.card.last4",
                 Domain.INVOICE,
                 Domain.LAST4,
@@ -120,7 +122,8 @@ public class SurrogateStoreConfiguration {
 
     // ---- one bit, without the value leaving ------------------------------------
     Query<Domain.Mail, String> mailMentions =
-        c.query(
+        config
+            .query(
                 "mail.mentions",
                 Domain.MAIL,
                 String.class,
