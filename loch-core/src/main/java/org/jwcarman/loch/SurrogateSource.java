@@ -18,43 +18,43 @@ package org.jwcarman.loch;
 /**
  * The authority to put a value into a loch at one particular label.
  *
- * <p><b>There is no label argument.</b> An inlet carries its own, decided once when it was minted,
- * so code holding this can write at that label and no other. A service handed the inlet for
+ * <p><b>There is no label argument.</b> An source carries its own, decided once when it was minted,
+ * so code holding this can write at that label and no other. A service handed the source for
  * customer-submitted disputes cannot mint cardholder data -- not "is refused at runtime", but
- * cannot express the operation, because the only inlet it has says something else. The question
+ * cannot express the operation, because the only source it has says something else. The question
  * "which code in this application can create an endorsed value?" is answered by grepping for a
  * constructor parameter.
  *
  * <p><b>Minted during configuration, obtained only by being handed one.</b> There is deliberately
- * no method that trades an {@link InletId} for the inlet it names. An id is what the manifest and
+ * no method that trades an {@link InletId} for the source it names. An id is what the manifest and
  * the audit trail call this door; it is not a way through it. Miller's four ways to come by a
  * capability are initial conditions, parenthood, endowment and introduction -- lookup by name is
  * not among them, and adding it here would quietly return this library to policing labels rather
  * than distributing authority.
  *
- * <p>The label may still depend on who is acting: an inlet fixes the parts that are properties of
+ * <p>The label may still depend on who is acting: an source fixes the parts that are properties of
  * the door itself -- what it is, how much it is trusted, what kind of data arrives there -- and
- * reads the rest, typically a tenant, from ambient context. So an inlet is not quite a constant,
+ * reads the rest, typically a tenant, from ambient context. So an source is not quite a constant,
  * but nothing a caller passes influences it.
  *
  * <p>What this does not establish is that a value deserves the label it gets. Minting is where data
  * enters the system, and at that moment there is no earlier label to check against. Monotone join
  * makes it a theorem that derivation cannot weaken a label; holding is the axiom that theorem rests
- * on. An inlet makes the axioms enumerable, which is all anything can do.
+ * on. An source makes the axioms enumerable, which is all anything can do.
  *
- * @param <T> the type of value this inlet accepts
+ * @param <T> the type of value this source accepts
  */
-public interface Inlet<T> {
+public interface SurrogateSource<T> {
 
   /**
    * Exchanges the real value for a surrogate that stands in for it.
    *
    * <p>The value stays; the caller leaves with something that names it and discloses nothing about
    * it. The counterpart runs the other way, and both are exchanges: hand a value here and get a
-   * surrogate, hand that surrogate to an outlet and get the value.
+   * surrogate, hand that surrogate to an sink and get the value.
    *
    * @throws IllegalArgumentException if the value is null
-   * @throws IllegalStateException if this inlet was never attached to a loch
+   * @throws IllegalStateException if this source was never attached to a loch
    */
   Surrogate<T> exchange(T value);
 }

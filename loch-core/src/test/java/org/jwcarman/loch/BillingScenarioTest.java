@@ -153,10 +153,10 @@ class BillingScenarioTest {
   }
 
   /**
-   * The generic labelling function every inlet below is minted with: it reads the whole label, axis
-   * by axis, out of whatever context {@link #holdAs} put there. An inlet is still the only door a
-   * value can enter through, and its name is still a fixed property of the door -- but the four
-   * label axes themselves come from the access, the same way a tenant always did.
+   * The generic labelling function every source below is minted with: it reads the whole label,
+   * axis by axis, out of whatever context {@link #holdAs} put there. An source is still the only
+   * door a value can enter through, and its name is still a fixed property of the door -- but the
+   * four label axes themselves come from the access, the same way a tenant always did.
    */
   private static Billing labelFrom(AccessContext ctx) {
     return Billing.of(
@@ -194,87 +194,87 @@ class BillingScenarioTest {
 
   // ---------------------------------------------------------------- doors in
 
-  private final Inlet<String> customerMail =
-      config.inlet("customer-mail", String.class, BillingScenarioTest::labelFrom);
+  private final SurrogateSource<String> customerMail =
+      config.source("customer-mail", String.class, BillingScenarioTest::labelFrom);
 
-  private final Inlet<String> cardTokens =
-      config.inlet("card-tokens", String.class, BillingScenarioTest::labelFrom);
+  private final SurrogateSource<String> cardTokens =
+      config.source("card-tokens", String.class, BillingScenarioTest::labelFrom);
 
-  private final Inlet<String> notes =
-      config.inlet("notes", String.class, BillingScenarioTest::labelFrom);
+  private final SurrogateSource<String> notes =
+      config.source("notes", String.class, BillingScenarioTest::labelFrom);
 
-  private final Inlet<String> last4Digits =
-      config.inlet("last4-digits", String.class, BillingScenarioTest::labelFrom);
+  private final SurrogateSource<String> last4Digits =
+      config.source("last4-digits", String.class, BillingScenarioTest::labelFrom);
 
-  private final Inlet<DisputeClaim> disputeClaims =
-      config.inlet("dispute-claims", DisputeClaim.class, BillingScenarioTest::labelFrom);
+  private final SurrogateSource<DisputeClaim> disputeClaims =
+      config.source("dispute-claims", DisputeClaim.class, BillingScenarioTest::labelFrom);
 
-  private final Inlet<Account> accounts =
-      config.inlet("accounts", Account.class, BillingScenarioTest::labelFrom);
+  private final SurrogateSource<Account> accounts =
+      config.source("accounts", Account.class, BillingScenarioTest::labelFrom);
 
   // ---------------------------------------------------------------- doors out: one per (door,
-  // type) pair. An outlet is narrowed by type as well as by label, so a door that used to admit
+  // type) pair. An sink is narrowed by type as well as by label, so a door that used to admit
   // whatever handle a caller presented is now one capability per shape of value it actually reads.
   // Holding everything text-shaped as a plain String (rather than one wrapper record per door)
-  // keeps this down to one text outlet per destination instead of three.
+  // keeps this down to one text sink per destination instead of three.
 
   // A vendor's model: nothing personal, nothing unendorsed.
-  private final Outlet<String> vendorLlmText =
-      config.outlet(
+  private final SurrogateSink<String> vendorLlmText =
+      config.sink(
           "vendor-llm",
           String.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-  private final Outlet<Report> vendorLlmReports =
-      config.outlet(
+  private final SurrogateSink<Report> vendorLlmReports =
+      config.sink(
           "vendor-llm-reports",
           Report.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-  private final Outlet<InvoiceNumber> vendorLlmInvoice =
-      config.outlet(
+  private final SurrogateSink<InvoiceNumber> vendorLlmInvoice =
+      config.sink(
           "vendor-llm-invoice",
           InvoiceNumber.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
   // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
-  private final Outlet<String> quarantinedLlmText =
-      config.outlet(
+  private final SurrogateSink<String> quarantinedLlmText =
+      config.sink(
           "quarantined-llm",
           String.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
-  private final Outlet<Report> quarantinedLlmReports =
-      config.outlet(
+  private final SurrogateSink<Report> quarantinedLlmReports =
+      config.sink(
           "quarantined-llm-reports",
           Report.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
-  private final Outlet<InvoiceNumber> quarantinedLlmInvoice =
-      config.outlet(
+  private final SurrogateSink<InvoiceNumber> quarantinedLlmInvoice =
+      config.sink(
           "quarantined-llm-invoice",
           InvoiceNumber.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
   // The only place cardholder data may go, anywhere in the system.
-  private final Outlet<String> paymentProcessorText =
-      config.outlet(
+  private final SurrogateSink<String> paymentProcessorText =
+      config.sink(
           "payment-processor",
           String.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
-  private final Outlet<Report> paymentProcessorReports =
-      config.outlet(
+  private final SurrogateSink<Report> paymentProcessorReports =
+      config.sink(
           "payment-processor-reports",
           Report.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
   // A person. What they may see depends on who they are.
-  private final Outlet<String> approvalCardText =
-      config.outlet("approval-card", String.class, approvalCardCeiling());
+  private final SurrogateSink<String> approvalCardText =
+      config.sink("approval-card", String.class, approvalCardCeiling());
 
-  private final Outlet<Last4> approvalCardLast4 =
-      config.outlet("approval-card-last4", Last4.class, approvalCardCeiling());
+  private final SurrogateSink<Last4> approvalCardLast4 =
+      config.sink("approval-card-last4", Last4.class, approvalCardCeiling());
 
   // ---------------------------------------------------------------- derivations and folds
 
@@ -395,15 +395,15 @@ class BillingScenarioTest {
   }
 
   /**
-   * Holds a value at exactly the label given, by encoding it into the ambient context an inlet's
+   * Holds a value at exactly the label given, by encoding it into the ambient context an source's
    * generic {@link #labelFrom} reads back out, then restoring whatever the edge held before.
    *
    * <p>This is the plumbing equivalent of the old {@code loch.exchange(value, type, label)}: the
    * label is still asserted by trusted code at a boundary, not computed, and still fixed before the
    * value is stored. What changed is the mechanism -- there is no method left that takes a label as
-   * an argument, so the label has to travel through the one channel an inlet reads.
+   * an argument, so the label has to travel through the one channel an source reads.
    */
-  private <T> Surrogate<T> holdAs(Billing label, Inlet<T> inlet, T value) {
+  private <T> Surrogate<T> holdAs(Billing label, SurrogateSource<T> source, T value) {
     AccessContext previous = edge.get();
     edge.set(
         AccessContext.of(
@@ -413,7 +413,7 @@ class BillingScenarioTest {
                 "tlp", label.tlp().name(),
                 "dataClass", label.dataClass().name())));
     try {
-      return inlet.exchange(value);
+      return source.exchange(value);
     } finally {
       edge.set(previous);
     }
@@ -659,7 +659,7 @@ class BillingScenarioTest {
 
     /**
      * This used to invent a destination name and assert the loch refused it. There is no longer a
-     * method that takes one: a door is reached by holding the outlet, and outlets are minted during
+     * method that takes one: a door is reached by holding the sink, and outlets are minted during
      * configuration. What is worth asserting is that the door really is gone, because it is exactly
      * the sort of thing that gets added back for a test fixture and left there.
      */
@@ -963,8 +963,8 @@ class BillingScenarioTest {
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
       LochConfig<Billing, Object> choosyConfig = new LochConfig<>();
       choosyConfig.lattice(Billing.LATTICE).withoutAudit().askingWhoIsAsking(edge::get);
-      Inlet<Account> secretAccounts =
-          choosyConfig.inlet(
+      SurrogateSource<Account> secretAccounts =
+          choosyConfig.source(
               "secret-accounts",
               Account.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
@@ -1014,10 +1014,10 @@ class BillingScenarioTest {
           .withoutAudit()
           .askingWhoIsAsking(edge::get)
           .explainRefusals();
-      Inlet<String> chattyMail =
-          chattyConfig.inlet("mail", String.class, BillingScenarioTest::labelFrom);
-      Outlet<String> chattyVendorLlm =
-          chattyConfig.outlet(
+      SurrogateSource<String> chattyMail =
+          chattyConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
+      SurrogateSink<String> chattyVendorLlm =
+          chattyConfig.sink(
               "vendor-llm",
               String.class,
               ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
@@ -1037,10 +1037,10 @@ class BillingScenarioTest {
     void a_destination_whose_ceiling_throws_denies() {
       LochConfig<Billing, Object> fragileConfig = new LochConfig<>();
       fragileConfig.lattice(Billing.LATTICE).withoutAudit().askingWhoIsAsking(edge::get);
-      Inlet<String> fragileMail =
-          fragileConfig.inlet("mail", String.class, BillingScenarioTest::labelFrom);
-      Outlet<String> broken =
-          fragileConfig.outlet(
+      SurrogateSource<String> fragileMail =
+          fragileConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
+      SurrogateSink<String> broken =
+          fragileConfig.sink(
               "broken",
               String.class,
               ctx -> {
@@ -1171,7 +1171,7 @@ class BillingScenarioTest {
               record -> {
                 throw new IllegalStateException("the audit sink is down");
               });
-      unloggableConfig.outlet(
+      unloggableConfig.sink(
           "quarantined-llm",
           String.class,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
@@ -1182,8 +1182,8 @@ class BillingScenarioTest {
               record -> {
                 throw new IllegalStateException("the audit sink is down");
               });
-      Inlet<String> watchedMail =
-          watchedConfig.inlet("mail", String.class, BillingScenarioTest::labelFrom);
+      SurrogateSource<String> watchedMail =
+          watchedConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
       MemoryStorage<Billing> storage = new MemoryStorage<>();
       Loch<Billing> watched = new DefaultLoch<>(watchedConfig, storage);
 

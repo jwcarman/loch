@@ -43,11 +43,11 @@ class PolicyThatCannotDecideTest {
   private final LochConfig<Exact<String>, Object> config =
       new LochConfig<Exact<String>, Object>().lattice(Lattices.exact()).auditor(audit::add);
 
-  private final Inlet<String> source =
-      config.inlet("source", String.class, ctx -> Exact.of("acme"));
+  private final SurrogateSource<String> source =
+      config.source("source", String.class, ctx -> Exact.of("acme"));
 
-  private final Outlet<String> sinkWhoseCeilingThrows =
-      config.outlet("anywhere", String.class, ctx -> boom());
+  private final SurrogateSink<String> sinkWhoseCeilingThrows =
+      config.sink("anywhere", String.class, ctx -> boom());
 
   private final Query<String, String> queryWhoseCeilingThrows =
       config

@@ -37,10 +37,10 @@ import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
-import org.jwcarman.loch.Outlet;
 import org.jwcarman.loch.Surrogate;
+import org.jwcarman.loch.SurrogateSink;
+import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -116,14 +116,14 @@ class JdbcLochTest {
   private DataSource dataSource;
   private Loch<Billing> loch;
   private Derivation<Card, Last4> cardLast4;
-  private Inlet<Card> cards;
-  private Outlet<Card> vendorLlm;
-  private Outlet<Card> paymentProcessor;
-  private Outlet<Last4> last4Processor;
-  private Inlet<List<Card>> cardLists;
-  private Outlet<List<Card>> cardListProcessor;
-  private Outlet<List<Card>> cardListVendor;
-  private Outlet<List<Last4>> last4ListProcessor;
+  private SurrogateSource<Card> cards;
+  private SurrogateSink<Card> vendorLlm;
+  private SurrogateSink<Card> paymentProcessor;
+  private SurrogateSink<Last4> last4Processor;
+  private SurrogateSource<List<Card>> cardLists;
+  private SurrogateSink<List<Card>> cardListProcessor;
+  private SurrogateSink<List<Card>> cardListVendor;
+  private SurrogateSink<List<Last4>> last4ListProcessor;
 
   /** Standing in for the edge. A caller is not allowed to say who it is. */
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
@@ -178,38 +178,39 @@ class JdbcLochTest {
 
     // One source: everything this test holds is acme's cardholder data.
     cards =
-        c.inlet("cards", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+        c.source(
+            "cards", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     vendorLlm =
-        c.outlet("vendor-llm", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
+        c.sink("vendor-llm", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
     paymentProcessor =
-        c.outlet(
+        c.sink(
             "payment-processor",
             Card.class,
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     last4Processor =
-        c.outlet(
+        c.sink(
             "payment-processor-last4",
             Last4.class,
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
 
     // A generic container is its own type, so it needs its own source and its own sinks.
     cardLists =
-        c.inlet(
+        c.source(
             "card-lists",
             TypeRef.listOf(TypeRef.of(Card.class)),
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     cardListProcessor =
-        c.outlet(
+        c.sink(
             "card-lists-to-processor",
             TypeRef.listOf(TypeRef.of(Card.class)),
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     cardListVendor =
-        c.outlet(
+        c.sink(
             "card-lists-to-vendor",
             TypeRef.listOf(TypeRef.of(Card.class)),
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
     last4ListProcessor =
-        c.outlet(
+        c.sink(
             "last4-lists-to-processor",
             TypeRef.listOf(TypeRef.of(Last4.class)),
             ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));

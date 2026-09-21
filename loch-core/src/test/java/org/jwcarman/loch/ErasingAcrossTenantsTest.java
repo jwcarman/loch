@@ -68,8 +68,8 @@ class ErasingAcrossTenantsTest {
                     ctx.has("role", "compliance")
                         && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
 
-    Inlet<Record> globexRecords =
-        config.inlet(
+    SurrogateSource<Record> globexRecords =
+        config.source(
             "globex-records", Record.class, ctx -> new Labels(Exact.of("globex"), Level.HIGH));
 
     Loch<Labels> loch = MemoryLoch.create(config);

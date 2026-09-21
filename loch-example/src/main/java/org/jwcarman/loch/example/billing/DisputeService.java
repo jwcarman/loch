@@ -16,11 +16,11 @@
 package org.jwcarman.loch.example.billing;
 
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
-import org.jwcarman.loch.Outlet;
 import org.jwcarman.loch.Query;
 import org.jwcarman.loch.Surrogate;
+import org.jwcarman.loch.SurrogateSink;
+import org.jwcarman.loch.SurrogateSource;
 
 /**
  * What the support desk does.
@@ -32,22 +32,22 @@ import org.jwcarman.loch.Surrogate;
 public class DisputeService {
 
   private final Loch<BillingLabels> loch;
-  private final Inlet<Domain.Mail> customerMail;
-  private final Outlet<Domain.Invoice> supportUi;
-  private final Outlet<Domain.Last4> approvalDesk;
-  private final Outlet<Domain.Invoice> paymentProcessor;
+  private final SurrogateSource<Domain.Mail> customerMail;
+  private final SurrogateSink<Domain.Invoice> supportUi;
+  private final SurrogateSink<Domain.Last4> approvalDesk;
+  private final SurrogateSink<Domain.Invoice> paymentProcessor;
   private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
   private final Query<Domain.Mail, String> mailMentions;
 
   // What this class may do is this list. It was handed three outlets, so it can reach three
-  // places; it was handed one inlet, so there is exactly one label it can create a value at.
+  // places; it was handed one source, so there is exactly one label it can create a value at.
   public DisputeService(
       Loch<BillingLabels> loch,
-      Inlet<Domain.Mail> customerMail,
-      Outlet<Domain.Invoice> supportUi,
-      Outlet<Domain.Last4> approvalDesk,
-      Outlet<Domain.Invoice> paymentProcessor,
+      SurrogateSource<Domain.Mail> customerMail,
+      SurrogateSink<Domain.Invoice> supportUi,
+      SurrogateSink<Domain.Last4> approvalDesk,
+      SurrogateSink<Domain.Invoice> paymentProcessor,
       Derivation<Domain.Mail, Domain.Invoice> confirmInvoice,
       Derivation<Domain.Invoice, Domain.Last4> cardLast4,
       Query<Domain.Mail, String> mailMentions) {

@@ -29,10 +29,10 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
-import org.jwcarman.loch.Outlet;
 import org.jwcarman.loch.Query;
+import org.jwcarman.loch.SurrogateSink;
+import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.jdbc.JdbcLoch;
 import org.jwcarman.loch.jdbc.JdbcLochConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
@@ -68,10 +68,10 @@ public class LochConfiguration {
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
 
   private final Loch<BillingLabels> loch;
-  private final Inlet<Domain.Mail> customerMail;
-  private final Outlet<Domain.Invoice> supportUi;
-  private final Outlet<Domain.Last4> approvalDesk;
-  private final Outlet<Domain.Invoice> paymentProcessor;
+  private final SurrogateSource<Domain.Mail> customerMail;
+  private final SurrogateSink<Domain.Invoice> supportUi;
+  private final SurrogateSink<Domain.Last4> approvalDesk;
+  private final SurrogateSink<Domain.Invoice> paymentProcessor;
   private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
   private final Query<Domain.Mail, String> mailMentions;
@@ -92,19 +92,18 @@ public class LochConfiguration {
     // The tenant is read from the access, never passed by the caller. Writing at another
     // tenant's label is not refused here so much as unsayable: nothing takes a label.
     this.customerMail =
-        c.inlet("customer-mail", Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
+        c.source("customer-mail", Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ----------------------------------------------------
     this.supportUi =
-        c.outlet("support-ui", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
+        c.sink("support-ui", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
     this.approvalDesk =
-        c.outlet(
+        c.sink(
             "approval-desk",
             Domain.Last4.class,
             ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
     this.paymentProcessor =
-        c.outlet(
-            "payment-processor", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, CARDHOLDER));
+        c.sink("payment-processor", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
     // ---- one value from another ------------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
@@ -154,10 +153,10 @@ public class LochConfiguration {
    * Hands the portals to the one class entitled to them.
    *
    * <p><b>The portals are not beans, and that is the point.</b> Spring's container is a
-   * lookup-by-type service: publish an {@code Outlet<Invoice>} and any class anywhere can ask for
-   * one in its constructor and be given it. That is obtaining authority by naming it, which is what
-   * deleting the id types was for. Authority is handed over here, in code somebody has to write and
-   * a reviewer can read, or it is not handed over at all.
+   * lookup-by-type service: publish an {@code SurrogateSink<Invoice>} and any class anywhere can
+   * ask for one in its constructor and be given it. That is obtaining authority by naming it, which
+   * is what deleting the id types was for. Authority is handed over here, in code somebody has to
+   * write and a reviewer can read, or it is not handed over at all.
    */
   @Bean
   public DisputeService disputeService() {

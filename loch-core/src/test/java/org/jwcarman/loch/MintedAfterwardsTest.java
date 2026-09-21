@@ -33,7 +33,7 @@ import org.jwcarman.loch.lattice.Lattices;
  *
  * <p>All of these were measured doing exactly that before capabilities were bound individually. A
  * source minted after startup planted a value at another tenant's label; a derivation minted after
- * startup read a cardholder token. The outlet failed, but only because the engine happened to have
+ * startup read a cardholder token. The sink failed, but only because the engine happened to have
  * snapshotted its destinations, and an accident is not a control.
  *
  * <p>There is no policy here to misconfigure and no check to switch off. A capability reaches its
@@ -50,8 +50,8 @@ class MintedAfterwardsTest {
   private final LochConfig<Exact<String>, Value> config =
       new LochConfig<Exact<String>, Value>().lattice(Lattices.exact()).withoutAudit();
 
-  private final Inlet<Token> acmeTokens =
-      config.inlet("acme-tokens", Token.class, ctx -> Exact.of("acme"));
+  private final SurrogateSource<Token> acmeTokens =
+      config.source("acme-tokens", Token.class, ctx -> Exact.of("acme"));
 
   private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
@@ -66,7 +66,7 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a source planting a value at somebody else's label")
   void cannot_be_a_source() {
-    Inlet<Token> forged = config.inlet("forged", Token.class, ctx -> Exact.of("globex"));
+    SurrogateSource<Token> forged = config.source("forged", Token.class, ctx -> Exact.of("globex"));
 
     assertThatThrownBy(() -> forged.exchange(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
@@ -90,7 +90,7 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a sink with a ceiling of its own choosing")
   void cannot_be_a_sink() {
-    Outlet<Token> forged = config.outlet("forged", Token.class, ctx -> Exact.conflict());
+    SurrogateSink<Token> forged = config.sink("forged", Token.class, ctx -> Exact.conflict());
 
     assertThatThrownBy(() -> forged.exchange(secret))
         .isInstanceOf(IllegalStateException.class)

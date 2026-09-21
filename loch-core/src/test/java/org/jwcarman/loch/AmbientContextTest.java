@@ -44,7 +44,7 @@ class AmbientContextTest {
    * <p>Capabilities are attached when the loch is built, so they have to be minted first. A record
    * keeps the three together without every test repeating the order.
    */
-  record Wired(Loch<Clearance> loch, Inlet<String> cards, Outlet<String> card) {}
+  record Wired(Loch<Clearance> loch, SurrogateSource<String> cards, SurrogateSink<String> card) {}
 
   private static Wired wire(
       java.util.function.Consumer<LochConfig<Clearance, Object>> settings,
@@ -52,8 +52,8 @@ class AmbientContextTest {
     LochConfig<Clearance, Object> config = new LochConfig<>();
     config.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE)).withoutAudit();
     settings.accept(config);
-    Inlet<String> cards = config.inlet("cards", String.class, ctx -> Clearance.FINANCE);
-    Outlet<String> card = config.outlet("card", String.class, ceiling);
+    SurrogateSource<String> cards = config.source("cards", String.class, ctx -> Clearance.FINANCE);
+    SurrogateSink<String> card = config.sink("card", String.class, ceiling);
     return new Wired(MemoryLoch.create(config), cards, card);
   }
 

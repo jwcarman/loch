@@ -89,8 +89,8 @@ class CallerClaimsIdentityTest {
   @Test
   @DisplayName("cannot obtain a portal from the application context")
   void cannot_obtain_a_portal_from_the_context() {
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Inlet.class)).isEmpty();
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Outlet.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.SurrogateSource.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.SurrogateSink.class)).isEmpty();
     assertThat(context.getBeanNamesForType(org.jwcarman.loch.Derivation.class)).isEmpty();
     assertThat(context.getBeanNamesForType(org.jwcarman.loch.Query.class)).isEmpty();
   }

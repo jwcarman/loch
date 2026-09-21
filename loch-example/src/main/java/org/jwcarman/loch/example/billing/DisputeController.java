@@ -47,7 +47,7 @@ public class DisputeController {
 
   public record Reference(String id) {}
 
-  // No tenant parameter. The inlet reads it from the access, which is established from the
+  // No tenant parameter. The source reads it from the access, which is established from the
   // request by CurrentAccess, so there is nowhere for this method to get it wrong.
   @PostMapping
   public Reference raise(@RequestBody Raise raise) {

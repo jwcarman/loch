@@ -40,7 +40,8 @@ class ArityTest {
   private final LochConfig<Exact<String>, Value> config =
       new LochConfig<Exact<String>, Value>().lattice(Lattices.exact()).withoutAudit();
 
-  private final Inlet<Note> notes = config.inlet("notes", Note.class, ctx -> Exact.of("acme"));
+  private final SurrogateSource<Note> notes =
+      config.source("notes", Note.class, ctx -> Exact.of("acme"));
 
   private final Fold<Note, Note> joined =
       config

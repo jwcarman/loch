@@ -77,14 +77,14 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   /**
-   * Holding through an inlet, which is holding without being told a label.
+   * Holding through an source, which is holding without being told a label.
    *
    * <p>No {@code mayHold} check, because there is nothing left to check. That policy existed to
-   * police a label the caller supplied; an inlet's label is a property of the door, decided during
+   * police a label the caller supplied; an source's label is a property of the door, decided during
    * configuration, and the caller contributes nothing to it.
    */
   <T> Surrogate<T> exchangeVia(
-      String inlet,
+      String source,
       TypeRef<T> type,
       java.util.function.Function<AccessContext, A> labelling,
       T value) {
@@ -102,18 +102,19 @@ public final class DefaultLoch<A> implements Loch<A> {
       audit(
           AuditRecord.Operation.HOLD,
           freshId(),
-          inlet,
+          source,
           AuditRecord.Outcome.REFUSED,
-          "the inlet could not say how to label this",
+          "the source could not say how to label this",
           null,
           asking);
       throw new AccessDeniedException(
-          "INLET_CANNOT_LABEL", "'" + inlet + "' could not say what it labels values");
+          "INLET_CANNOT_LABEL", "'" + source + "' could not say what it labels values");
     }
     String id = freshId();
     // Recorded before it is stored, for the reason given in hold(...): an auditor that throws must
-    // leave nothing behind. The inlet is named, so the record says which door this came in through.
-    audit(AuditRecord.Operation.HOLD, id, inlet, AuditRecord.Outcome.ALLOWED, null, label, asking);
+    // leave nothing behind. The source is named, so the record says which door this came in
+    // through.
+    audit(AuditRecord.Operation.HOLD, id, source, AuditRecord.Outcome.ALLOWED, null, label, asking);
     storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
     return new Surrogate<>(id);
   }

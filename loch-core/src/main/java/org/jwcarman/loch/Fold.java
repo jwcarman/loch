@@ -32,7 +32,7 @@ import java.util.List;
  *
  * <p>Reading many values needs no equivalent, and deliberately has none. In a semilattice {@code a
  * ⊔ b ⊑ c} holds exactly when {@code a ⊑ c} and {@code b ⊑ c}, so five values that each passed an
- * outlet's ceiling are proof the combination passes. A fold exists only because a <i>derived</i>
+ * sink's ceiling are proof the combination passes. A fold exists only because a <i>derived</i>
  * value's joined label has to be stored and carried forward.
  */
 public interface Fold<I, O> {

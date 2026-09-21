@@ -67,8 +67,8 @@ class WritingAtAnothersLabelTest {
           .askingWhoIsAsking(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
-  private final Inlet<Note> notes =
-      config.inlet(
+  private final SurrogateSource<Note> notes =
+      config.source(
           "notes",
           Note.class,
           ctx ->
@@ -76,8 +76,8 @@ class WritingAtAnothersLabelTest {
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
                   Integrity.ENDORSED));
 
-  private final Outlet<Note> reporting =
-      config.outlet(
+  private final SurrogateSink<Note> reporting =
+      config.sink(
           "reporting",
           Note.class,
           ctx ->

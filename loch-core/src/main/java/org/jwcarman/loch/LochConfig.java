@@ -41,7 +41,7 @@ public class LochConfig<A, D> {
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<DerivationSpec<A, ?>> derivations = new ArrayList<>();
   final List<QuerySpec<A, ?, ?>> queries = new ArrayList<>();
-  private final java.util.Set<String> inlets = new java.util.LinkedHashSet<>();
+  private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
   private DefaultLoch<A> bound;
   private final List<Binding<A>> bindings = new ArrayList<>();
 
@@ -62,24 +62,24 @@ public class LochConfig<A, D> {
   /**
    * Mints the authority to put values into this loch at one label. Configuration time only.
    *
-   * <p>Returns the {@link Inlet} rather than this config, so the fluent chain stops here and the
-   * caller has to capture what it was given. That is the point: there is no way to ask for an inlet
-   * afterwards, so a capability nobody kept is a capability nobody has.
+   * <p>Returns the {@link SurrogateSource} rather than this config, so the fluent chain stops here
+   * and the caller has to capture what it was given. That is the point: there is no way to ask for
+   * an source afterwards, so a capability nobody kept is a capability nobody has.
    *
    * <p>The function fixes the parts of the label that are properties of the door -- what this is,
    * how far it is trusted, what kind of data arrives here -- and may read the rest, typically a
    * tenant, from ambient context.
    */
-  public <T extends D> Inlet<T> inlet(
+  public <T extends D> SurrogateSource<T> source(
       String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    Objects.requireNonNull(name, "an inlet needs a name");
-    Binding<A> binding = binding("inlet '" + name + "'");
-    Objects.requireNonNull(type, "an inlet needs to know what it accepts");
-    Objects.requireNonNull(labelling, "an inlet needs to say how it labels what arrives");
-    if (!inlets.add(name)) {
-      throw new IllegalStateException("two inlets are registered as '" + name + "'");
+    Objects.requireNonNull(name, "an source needs a name");
+    Binding<A> binding = binding("source '" + name + "'");
+    Objects.requireNonNull(type, "an source needs to know what it accepts");
+    Objects.requireNonNull(labelling, "an source needs to say how it labels what arrives");
+    if (!sources.add(name)) {
+      throw new IllegalStateException("two sources are registered as '" + name + "'");
     }
-    return new Inlet<>() {
+    return new SurrogateSource<>() {
       @Override
       public Surrogate<T> exchange(T value) {
         return binding.engine().exchangeVia(name, type, labelling, value);
@@ -87,21 +87,21 @@ public class LochConfig<A, D> {
 
       @Override
       public String toString() {
-        return "inlet '" + name + "'";
+        return "source '" + name + "'";
       }
     };
   }
 
   /** The same, for a type with no generic parameters of its own. */
-  public <T extends D> Inlet<T> inlet(
+  public <T extends D> SurrogateSource<T> source(
       String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    return inlet(name, TypeRef.of(type), labelling);
+    return source(name, TypeRef.of(type), labelling);
   }
 
-  /** An inlet whose label does not depend on who is acting. */
-  public <T extends D> Inlet<T> inlet(String name, Class<T> type, A label) {
-    Objects.requireNonNull(label, "an inlet needs a label");
-    return inlet(name, TypeRef.of(type), context -> label);
+  /** An source whose label does not depend on who is acting. */
+  public <T extends D> SurrogateSource<T> source(String name, Class<T> type, A label) {
+    Objects.requireNonNull(label, "an source needs a label");
+    return source(name, TypeRef.of(type), context -> label);
   }
 
   /**
@@ -110,13 +110,13 @@ public class LochConfig<A, D> {
    * <p>Also registers the destination, so the manifest still enumerates it and audit lines still
    * name it. The id remains what this door is called; it stops being a way to reach it.
    */
-  public <T extends D> Outlet<T> outlet(
+  public <T extends D> SurrogateSink<T> sink(
       String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    Objects.requireNonNull(name, "an outlet needs a name");
-    Binding<A> binding = binding("outlet '" + name + "'");
-    Objects.requireNonNull(type, "an outlet needs to say what comes out of it");
+    Objects.requireNonNull(name, "an sink needs a name");
+    Binding<A> binding = binding("sink '" + name + "'");
+    Objects.requireNonNull(type, "an sink needs to say what comes out of it");
     destination(Destinations.varying(name, ceiling));
-    return new Outlet<>() {
+    return new SurrogateSink<>() {
       @Override
       public TypeRef<T> type() {
         return type;
@@ -134,21 +134,21 @@ public class LochConfig<A, D> {
 
       @Override
       public String toString() {
-        return "outlet '" + name + "' reading " + type.getType().getTypeName();
+        return "sink '" + name + "' reading " + type.getType().getTypeName();
       }
     };
   }
 
   /** The same, for a type with no generic parameters of its own. */
-  public <T extends D> Outlet<T> outlet(
+  public <T extends D> SurrogateSink<T> sink(
       String name, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return outlet(name, TypeRef.of(type), ceiling);
+    return sink(name, TypeRef.of(type), ceiling);
   }
 
-  /** An outlet whose ceiling does not depend on who is asking. */
-  public <T extends D> Outlet<T> outlet(String name, Class<T> type, A ceiling) {
-    Objects.requireNonNull(ceiling, "an outlet needs a ceiling");
-    return outlet(name, TypeRef.of(type), context -> ceiling);
+  /** An sink whose ceiling does not depend on who is asking. */
+  public <T extends D> SurrogateSink<T> sink(String name, Class<T> type, A ceiling) {
+    Objects.requireNonNull(ceiling, "an sink needs a ceiling");
+    return sink(name, TypeRef.of(type), context -> ceiling);
   }
 
   // ------------------------------------------------------------------ derivations and folds
@@ -487,7 +487,7 @@ public class LochConfig<A, D> {
    *
    * <p>Per capability, not per config, and that distinction is the whole safety property. If a
    * capability reached the loch through the config, one minted <i>after</i> the loch was built
-   * would find it already there and work perfectly -- measured doing exactly that: an inlet minted
+   * would find it already there and work perfectly -- measured doing exactly that: an source minted
    * after startup planted a value at another tenant's label, and a derivation minted after startup
    * read a cardholder token. Binding each capability at construction means a late one is attached
    * to nothing, and says so.
@@ -660,7 +660,7 @@ public class LochConfig<A, D> {
     return List.copyOf(destinations);
   }
 
-  java.util.Set<String> inlets() {
-    return java.util.Set.copyOf(inlets);
+  java.util.Set<String> sources() {
+    return java.util.Set.copyOf(sources);
   }
 }

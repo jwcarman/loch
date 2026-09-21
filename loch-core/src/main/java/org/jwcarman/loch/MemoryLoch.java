@@ -48,7 +48,7 @@ public final class MemoryLoch {
    * <pre>{@code
    * LochConfig<Billing, BillingValue> c = new LochConfig<>();
    * c.lattice(Billing.LATTICE).auditor(auditor);
-   * Inlet<Mail> mail = c.inlet(CUSTOMER_MAIL, Mail.class, ctx -> ...);
+   * SurrogateSource<Mail> mail = c.source(CUSTOMER_MAIL, Mail.class, ctx -> ...);
    * Loch<Billing> loch = MemoryLoch.create(c);
    * }</pre>
    */
