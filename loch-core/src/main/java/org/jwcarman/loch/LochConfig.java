@@ -71,11 +71,11 @@ public class LochConfig<A, D> {
    * tenant, from ambient context.
    */
   public <T extends D> SurrogateSource<T> source(
-      String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    Objects.requireNonNull(name, "an source needs a name");
+      String name, TypeRef<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
+    Objects.requireNonNull(name, "a source needs a name");
     Binding<A> binding = binding("source '" + name + "'");
-    Objects.requireNonNull(type, "an source needs to know what it accepts");
-    Objects.requireNonNull(labelling, "an source needs to say how it labels what arrives");
+    Objects.requireNonNull(type, "a source needs to know what it accepts");
+    Objects.requireNonNull(labelling, "a source needs to say how it labels what arrives");
     if (!sources.add(name)) {
       throw new IllegalStateException("two sources are registered as '" + name + "'");
     }
@@ -94,14 +94,32 @@ public class LochConfig<A, D> {
 
   /** The same, for a type with no generic parameters of its own. */
   public <T extends D> SurrogateSource<T> source(
-      String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
+      String name, Class<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
     return source(name, TypeRef.of(type), labelling);
   }
 
-  /** An source whose label does not depend on who is acting. */
+  /** The same, for a generic container whose label does not depend on what is arriving. */
+  public <T extends D> SurrogateSource<T> source(
+      String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    return source(name, type, (value, context) -> labelling.apply(context));
+  }
+
+  /**
+   * The same, for a label that does not depend on what is arriving.
+   *
+   * <p>The common case: a door knows what it is, so mail from customers is untrusted whatever it
+   * says. Reach for the other form when the label is a property of the value -- a classification
+   * marking inside a document, a sender the ingest verified, a scan that found card numbers.
+   */
+  public <T extends D> SurrogateSource<T> source(
+      String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    return source(name, TypeRef.of(type), (value, context) -> labelling.apply(context));
+  }
+
+  /** A source whose label depends on neither who is acting nor what is arriving. */
   public <T extends D> SurrogateSource<T> source(String name, Class<T> type, A label) {
-    Objects.requireNonNull(label, "an source needs a label");
-    return source(name, TypeRef.of(type), context -> label);
+    Objects.requireNonNull(label, "a source needs a label");
+    return source(name, TypeRef.of(type), (value, context) -> label);
   }
 
   /**
@@ -112,9 +130,9 @@ public class LochConfig<A, D> {
    */
   public <T extends D> SurrogateSink<T> sink(
       String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    Objects.requireNonNull(name, "an sink needs a name");
+    Objects.requireNonNull(name, "a sink needs a name");
     Binding<A> binding = binding("sink '" + name + "'");
-    Objects.requireNonNull(type, "an sink needs to say what comes out of it");
+    Objects.requireNonNull(type, "a sink needs to say what comes out of it");
     destination(Destinations.varying(name, ceiling));
     return new SurrogateSink<>() {
       @Override
@@ -147,7 +165,7 @@ public class LochConfig<A, D> {
 
   /** An sink whose ceiling does not depend on who is asking. */
   public <T extends D> SurrogateSink<T> sink(String name, Class<T> type, A ceiling) {
-    Objects.requireNonNull(ceiling, "an sink needs a ceiling");
+    Objects.requireNonNull(ceiling, "a sink needs a ceiling");
     return sink(name, TypeRef.of(type), context -> ceiling);
   }
 

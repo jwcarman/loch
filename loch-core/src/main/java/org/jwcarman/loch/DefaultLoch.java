@@ -86,7 +86,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   <T> Surrogate<T> exchangeVia(
       String source,
       TypeRef<T> type,
-      java.util.function.Function<AccessContext, A> labelling,
+      java.util.function.BiFunction<T, AccessContext, A> labelling,
       T value) {
     if (value == null) {
       throw new IllegalArgumentException("a loch holds values, not nulls");
@@ -94,7 +94,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     AccessContext asking = asking(AccessContext.empty());
     A label;
     try {
-      label = labelling.apply(asking);
+      label = labelling.apply(value, asking);
     } catch (RuntimeException e) {
       label = null;
     }
