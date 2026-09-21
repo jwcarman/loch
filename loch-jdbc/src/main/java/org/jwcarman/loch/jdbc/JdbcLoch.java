@@ -45,11 +45,10 @@ public final class JdbcLoch {
   /**
    * Builds one.
    *
-   * @param attributionType the application's label record, which has to be serialised like any
-   *     other value because labels are stored encrypted too
+   * @param labelType the application's label record, which has to be serialised like any other
+   *     value because labels are stored encrypted too
    */
-  public static <A> Loch<A> create(
-      Class<A> attributionType, Consumer<JdbcLochConfig<A>> customizer) {
+  public static <A> Loch<A> create(Class<A> labelType, Consumer<JdbcLochConfig<A>> customizer) {
     JdbcLochConfig<A> config = new JdbcLochConfig<>();
     customizer.accept(config);
     JdbcStorage<A> storage =
@@ -57,7 +56,7 @@ public final class JdbcLoch {
             config.dataSourceOrFail(),
             config.codecsOrFail(),
             config.storageCodecOrFail(),
-            attributionType);
+            labelType);
     if (config.migrates()) {
       storage.migrate();
     }

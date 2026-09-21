@@ -52,7 +52,7 @@ public final class MemoryStorage<A> implements Storage<A> {
         .map(
             stored ->
                 new StoredMetadata<>(
-                    stored.type().getType().getTypeName(), stored.attribution(), stored.lineage()));
+                    stored.type().getType().getTypeName(), stored.label(), stored.lineage()));
   }
 
   @Override

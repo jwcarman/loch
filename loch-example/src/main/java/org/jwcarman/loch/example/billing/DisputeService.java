@@ -97,7 +97,7 @@ public class DisputeService {
 
   /** Only used to describe a refusal; never a way to read a value. */
   public BillingLabels labelOf(HeldId id) {
-    return loch.attribution(Held.of(id, Domain.Mail.class));
+    return loch.label(Held.of(id, Domain.Mail.class));
   }
 
   static {

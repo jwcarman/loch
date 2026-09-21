@@ -27,7 +27,7 @@ import org.jwcarman.codec.spi.TypeRef;
  *
  * <p>An implementation must be safe to use from several threads.
  *
- * @param <A> the application's attribution type
+ * @param <A> the application's label type
  */
 public interface Storage<A> {
 

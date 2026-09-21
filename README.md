@@ -38,12 +38,12 @@ which nothing can deserialise into, so a loch that guessed from the object would
 it could never honour. The caller says what a value is, and `TypeRef` says it precisely:
 
 ```java
-loch.hold(cards, TypeRef.listOf(TypeRef.of(Card.class)), attribution);
+loch.hold(cards, TypeRef.listOf(TypeRef.of(Card.class)), label);
 ```
 
 **Possession is not authority.** Holding a handle does not permit reading it.
 
-**Presentation is not attribution.** A handle asserts identity only. Labels come from the store —
+**Presentation is not label.** A handle asserts identity only. Labels come from the store —
 otherwise anything that could write an id could claim to be trusted.
 
 **A handle names a value; it does not describe how to make one.** No parents, no recipe. If an id

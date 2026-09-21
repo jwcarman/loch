@@ -35,7 +35,7 @@ import org.jwcarman.codec.spi.TypeRef;
  * cannot obtain plaintext "in general", only plaintext for somewhere, and that somewhere is what
  * policy decides on and what the audit records.
  *
- * @param <A> the application's attribution type: one record holding whatever labels it cares about
+ * @param <A> the application's label type: one record holding whatever labels it cares about
  */
 public interface Loch<A> {
 
@@ -59,11 +59,11 @@ public interface Loch<A> {
    * only place labels are asserted rather than computed; everywhere else they are derived, and
    * derivation can only make them more constrained.
    */
-  <T> Held<T> hold(T value, TypeRef<T> type, A attribution);
+  <T> Held<T> hold(T value, TypeRef<T> type, A label);
 
   /** For a value whose class is its type, which is most of them. */
-  default <T> Held<T> hold(T value, Class<T> type, A attribution) {
-    return hold(value, TypeRef.of(type), attribution);
+  default <T> Held<T> hold(T value, Class<T> type, A label) {
+    return hold(value, TypeRef.of(type), label);
   }
 
   /**
@@ -72,7 +72,7 @@ public interface Loch<A> {
    * <p>Reading a label is not reading a value. This is how a renderer decides what to say about a
    * handle it is not allowed to open.
    */
-  A attribution(Held<?> held);
+  A label(Held<?> held);
 
   /**
    * Removes a value and everything ever derived from it.

@@ -49,9 +49,9 @@ import org.jwcarman.loch.StoredValue;
  * its own -- {@code EnvelopeCodec} mints a fresh data key per payload and wraps it with a key named
  * by id, which is what makes key rotation a matter of adding a key rather than rewriting a table.
  *
- * <p><b>The attribution is encrypted too.</b> A label can be as sensitive as the value: a tenant's
- * name or a project codeword sitting in the clear beside the ciphertext describes what the
- * ciphertext is to anyone who can read the table.
+ * <p><b>The label is encrypted too.</b> A label can be as sensitive as the value: a tenant's name
+ * or a project codeword sitting in the clear beside the ciphertext describes what the ciphertext is
+ * to anyone who can read the table.
  *
  * <p>Derived values arrive with their parentage, and reachability is maintained as they are stored,
  * so erasing a value and everything made from it is one indexed query.
@@ -60,11 +60,11 @@ public final class JdbcStorage<A> implements Storage<A> {
 
   private static final String INSERT_VALUE =
       """
-      INSERT INTO loch_value (value_id, value_type, payload, attribution, derivation, held_at)
+      INSERT INTO loch_value (value_id, value_type, payload, label, derivation, held_at)
       VALUES (?, ?, ?, ?, ?, ?)
       """;
   private static final String SELECT_METADATA =
-      "SELECT value_type, attribution, derivation FROM loch_value WHERE value_id = ?";
+      "SELECT value_type, label, derivation FROM loch_value WHERE value_id = ?";
   private static final String SELECT_PAYLOAD = "SELECT payload FROM loch_value WHERE value_id = ?";
   private static final String SELECT_PARENTS =
       "SELECT parent_id FROM loch_lineage WHERE child_id = ? ORDER BY position";
@@ -99,18 +99,15 @@ public final class JdbcStorage<A> implements Storage<A> {
   private final DataSource dataSource;
   private final CodecFactory codecs;
   private final StorageCodec storageCodec;
-  private final Codec<A> attributions;
+  private final Codec<A> labels;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
 
   JdbcStorage(
-      DataSource dataSource,
-      CodecFactory codecs,
-      StorageCodec storageCodec,
-      Class<A> attributionType) {
+      DataSource dataSource, CodecFactory codecs, StorageCodec storageCodec, Class<A> labelType) {
     this.dataSource = dataSource;
     this.codecs = codecs;
     this.storageCodec = storageCodec;
-    this.attributions = codecs.create(attributionType).andThen(storageCodec);
+    this.labels = codecs.create(labelType).andThen(storageCodec);
   }
 
   /** Creates the tables if they are not there. */
@@ -154,7 +151,7 @@ public final class JdbcStorage<A> implements Storage<A> {
       statement.setString(1, id.value());
       statement.setString(2, value.type().getType().getTypeName());
       statement.setBytes(3, encode(value.type(), value.value()));
-      statement.setBytes(4, attributions.encode(value.attribution()));
+      statement.setBytes(4, labels.encode(value.label()));
       statement.setString(5, value.lineage().derivation().orElse(null));
       statement.setTimestamp(6, Timestamp.from(Instant.now()));
       statement.executeUpdate();
@@ -193,14 +190,13 @@ public final class JdbcStorage<A> implements Storage<A> {
         if (!rows.next()) {
           return Optional.empty();
         }
-        A attribution = attributions.decode(rows.getBytes("attribution"));
+        A label = labels.decode(rows.getBytes("label"));
         String derivation = rows.getString("derivation");
         Lineage lineage =
             derivation == null
                 ? Lineage.held()
                 : Lineage.derivedFrom(parentsOf(connection, id), derivation);
-        return Optional.of(
-            new StoredMetadata<>(rows.getString("value_type"), attribution, lineage));
+        return Optional.of(new StoredMetadata<>(rows.getString("value_type"), label, lineage));
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not read " + id, e);

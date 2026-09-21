@@ -158,31 +158,31 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public <T> Held<T> hold(T value, TypeRef<T> type, A attribution) {
+  public <T> Held<T> hold(T value, TypeRef<T> type, A label) {
     if (value == null) {
       throw new IllegalArgumentException("a loch holds values, not nulls");
     }
-    if (attribution == null) {
+    if (label == null) {
       throw new IllegalArgumentException(
-          "a held value needs an attribution; use the lattice's bottom to say 'nothing in"
+          "a held value needs an label; use the lattice's bottom to say 'nothing in"
               + " particular'");
     }
     HeldId id = HeldId.fresh();
-    storage.put(id, new StoredValue<>(value, type, attribution, Lineage.held()));
+    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
     audit(
         AuditRecord.Operation.HOLD,
         id,
         null,
         AuditRecord.Outcome.ALLOWED,
         null,
-        attribution,
+        label,
         AccessContext.empty());
     return new Held<>(id, type);
   }
 
   @Override
-  public A attribution(Held<?> held) {
-    return metadataOf(held).attribution();
+  public A label(Held<?> held) {
+    return metadataOf(held).label();
   }
 
   private StoredMetadata<A> metadataOf(Held<?> held) {
@@ -254,7 +254,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
-    refused.set(entry.attribution());
+    refused.set(entry.label());
     if (!entry.typeName().equals(nameOf(check.inputType()))) {
       return new Answer.Refused(
           Answer.Reason.WRONG_TYPE,
@@ -262,14 +262,14 @@ public final class DefaultLoch<A> implements Loch<A> {
               .formatted(id, nameOf(check.inputType()), held.id(), entry.typeName()));
     }
     Optional<A> ceiling = check.ceiling(context);
-    if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
+    if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
           held.id()
               + " may not be looked at by '"
               + id
               + "'"
-              + explain(entry.attribution(), ceiling.get()));
+              + explain(entry.label(), ceiling.get()));
     }
     I subject = storage.value(held.id(), check.inputType()).orElse(null);
     if (subject == null) {
@@ -284,7 +284,7 @@ public final class DefaultLoch<A> implements Loch<A> {
         id.value(),
         AuditRecord.Outcome.ALLOWED,
         "answered " + answer,
-        entry.attribution(),
+        entry.label(),
         context);
     return new Answer.Answered(answer);
   }
@@ -381,14 +381,10 @@ public final class DefaultLoch<A> implements Loch<A> {
                 .formatted(id, expected, parent.id(), entry.typeName()));
       }
       Optional<A> ceiling = fold.ceiling(context);
-      if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
+      if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
-            parent.id()
-                + " may not reach '"
-                + id
-                + "'"
-                + explain(entry.attribution(), ceiling.get()));
+            parent.id() + " may not reach '" + id + "'" + explain(entry.label(), ceiling.get()));
       }
       I input = storage.value(parent.id(), fold.inputType()).orElse(null);
       if (input == null) {
@@ -398,7 +394,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       inputs.add(input);
       parentIds.add(parent.id());
       // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
-      joined = joined == null ? entry.attribution() : lattice.join(joined, entry.attribution());
+      joined = joined == null ? entry.label() : lattice.join(joined, entry.label());
       refused.set(joined);
     }
 
@@ -469,7 +465,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Derived.Refused<>(
           Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
     }
-    refused.set(entry.attribution());
+    refused.set(entry.label());
     if (!entry.typeName().equals(nameOf(derivation.inputType()))) {
       return new Derived.Refused<>(
           Derived.Reason.WRONG_TYPE,
@@ -478,11 +474,11 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
     // A derivation is handed plaintext, so it is a destination and passes the same gate.
     Optional<A> ceiling = derivation.ceiling(context);
-    if (ceiling.isPresent() && !lattice.permits(entry.attribution(), ceiling.get())) {
+    if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
       return new Derived.Refused<>(
           Derived.Reason.ABOVE_CEILING,
           "%s is labelled %s; '%s' accepts %s"
-              .formatted(parent.id(), entry.attribution(), id, ceiling.get()));
+              .formatted(parent.id(), entry.label(), id, ceiling.get()));
     }
 
     List<HeldId> parents = List.of(parent.id());
@@ -497,7 +493,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     // One parent for now, but the fold is what makes several parents need no special case.
-    A joined = entry.attribution();
+    A joined = entry.label();
     A label = joined;
     Optional<java.util.function.UnaryOperator<A>> relabel = derivation.relabel();
     if (relabel.isPresent()) {
@@ -558,7 +554,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           held.id() + " is a " + entry.typeName() + ", not a " + nameOf(held.type()),
           held.id(),
           to.value(),
-          entry.attribution(),
+          entry.label(),
           context);
     }
     A ceiling = ceilingOf(destination, context);
@@ -568,16 +564,16 @@ public final class DefaultLoch<A> implements Loch<A> {
           "'" + to + "' could not say what it accepts, so it does not accept this",
           held.id(),
           to.value(),
-          entry.attribution(),
+          entry.label(),
           context);
     }
-    if (!lattice.permits(entry.attribution(), ceiling)) {
+    if (!lattice.permits(entry.label(), ceiling)) {
       return denied(
           Dereferenced.Reason.ABOVE_CEILING,
-          held.id() + " may not reach '" + to + "'" + explain(entry.attribution(), ceiling),
+          held.id() + " may not reach '" + to + "'" + explain(entry.label(), ceiling),
           held.id(),
           to.value(),
-          entry.attribution(),
+          entry.label(),
           context);
     }
     audit(
@@ -586,7 +582,7 @@ public final class DefaultLoch<A> implements Loch<A> {
         to.value(),
         AuditRecord.Outcome.ALLOWED,
         null,
-        entry.attribution(),
+        entry.label(),
         context);
     // The type was confirmed against what the store wrote, so this decodes a verified fact.
     return storage

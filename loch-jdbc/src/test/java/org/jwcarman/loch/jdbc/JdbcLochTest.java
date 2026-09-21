@@ -216,14 +216,14 @@ class JdbcLochTest {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "SELECT payload, attribution FROM loch_value WHERE value_id = ?")) {
+                "SELECT payload, label FROM loch_value WHERE value_id = ?")) {
       statement.setString(1, card.id().value());
       try (ResultSet rows = statement.executeQuery()) {
         assertThat(rows.next()).isTrue();
         String payload = new String(rows.getBytes("payload"));
-        String attribution = new String(rows.getBytes("attribution"));
+        String label = new String(rows.getBytes("label"));
         assertThat(payload).doesNotContain("4111111111114821").doesNotContain("CARMAN");
-        assertThat(attribution).doesNotContain("acme").doesNotContain("CARDHOLDER");
+        assertThat(label).doesNotContain("acme").doesNotContain("CARDHOLDER");
       }
     }
   }
@@ -234,7 +234,7 @@ class JdbcLochTest {
     Held<Card> card = card();
 
     assertThat(loch.holds(card)).isTrue();
-    assertThat(loch.attribution(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(loch.label(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
   }
 
   @Test
@@ -244,7 +244,7 @@ class JdbcLochTest {
 
     Held<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
-    assertThat(loch.attribution(last4).dataClass()).isEqualTo(DataClass.PII);
+    assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
     assertThat(loch.lineage(last4).parents()).containsExactly(card.id());
     assertThat(loch.lineage(last4).derivation()).contains("Card.last4");
   }
@@ -438,7 +438,7 @@ class JdbcLochTest {
             Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
-    assertThat(loch.attribution(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(loch.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
     assertThat(loch.lineage(cards).asserted()).isTrue();
   }
 }

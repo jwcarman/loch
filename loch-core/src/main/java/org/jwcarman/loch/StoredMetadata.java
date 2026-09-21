@@ -26,4 +26,4 @@ package org.jwcarman.loch;
  *     rather than a reconstructed type, because comparing what was written to what is asked for
  *     needs no parser and cannot be fooled by one.
  */
-public record StoredMetadata<A>(String typeName, A attribution, Lineage lineage) {}
+public record StoredMetadata<A>(String typeName, A label, Lineage lineage) {}

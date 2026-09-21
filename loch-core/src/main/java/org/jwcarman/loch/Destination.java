@@ -25,7 +25,7 @@ package org.jwcarman.loch;
  * <p>Ceilings are declared once, at wiring, and resolved by name. That is not tidiness: a ceiling
  * constructed at a call site would let any code grant itself permission in one line.
  *
- * @param <A> the application's attribution type
+ * @param <A> the application's label type
  */
 public interface Destination<A> {
 

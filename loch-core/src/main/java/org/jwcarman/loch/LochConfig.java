@@ -179,7 +179,7 @@ public class LochConfig<A> {
   Lattice<A> lattice() {
     if (lattice == null) {
       throw new IllegalStateException(
-          "a loch needs a lattice: call lattice(...) with the order over your attribution type");
+          "a loch needs a lattice: call lattice(...) with the order over your label type");
     }
     return lattice;
   }

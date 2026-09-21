@@ -35,7 +35,7 @@ import org.jwcarman.codec.spi.TypeRef;
  * lineage to both parents, and can never be dereferenced anywhere. That is the claim this library
  * makes about cross-tenant leakage, and it cannot be demonstrated without this.
  *
- * @param <A> the application's attribution type
+ * @param <A> the application's label type
  * @param <I> what it reads, of which there are several
  * @param <O> what it produces
  */

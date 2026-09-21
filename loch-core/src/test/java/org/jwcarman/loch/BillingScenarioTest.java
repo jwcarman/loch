@@ -413,7 +413,7 @@ class BillingScenarioTest {
       Held<Report> report =
           loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE, acme()).orThrow();
 
-      assertThat(loch.attribution(report).tenant().conflicted()).isTrue();
+      assertThat(loch.label(report).tenant().conflicted()).isTrue();
       assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
       assertThat(loch.dereference(report, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
       assertThat(loch.dereference(report, QUARANTINED_LLM, acme()).allowed()).isFalse();
@@ -462,7 +462,7 @@ class BillingScenarioTest {
       Held<Report> report =
           loch.deriveAll(List.of(ordinary, personal), SUMMARISE, acme()).orThrow();
 
-      assertThat(loch.attribution(report).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(loch.label(report).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
       assertThat(loch.dereference(report, QUARANTINED_LLM, acme()).allowed()).isTrue();
     }
@@ -565,7 +565,7 @@ class BillingScenarioTest {
     void a_projection_inherits_its_parents_labels() {
       Held<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
 
-      assertThat(loch.attribution(number))
+      assertThat(loch.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
       assertThat(loch.dereference(number, QUARANTINED_LLM, acme()).granted())
           .contains(new InvoiceNumber("INV-4471"));
@@ -578,7 +578,7 @@ class BillingScenarioTest {
     void extracting_a_field_does_not_make_it_trustworthy() {
       Held<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
 
-      assertThat(loch.attribution(number).integrity()).isEqualTo(Integrity.UNENDORSED);
+      assertThat(loch.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
     }
 
     @Test
@@ -653,7 +653,7 @@ class BillingScenarioTest {
     void truncating_a_card_lowers_it_to_pii() {
       Held<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
 
-      assertThat(loch.attribution(last4).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.dereference(last4, APPROVAL_CARD, acme("clearance", "finance")).granted())
           .contains(new Last4("4821"));
     }
@@ -663,8 +663,8 @@ class BillingScenarioTest {
     void lowers_nothing_it_did_not_name() {
       Held<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
 
-      assertThat(loch.attribution(last4).tenant().resolved()).contains("acme");
-      assertThat(loch.attribution(last4).integrity()).isEqualTo(Integrity.ENDORSED);
+      assertThat(loch.label(last4).tenant().resolved()).contains("acme");
+      assertThat(loch.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
     }
 
     /**
@@ -676,8 +676,8 @@ class BillingScenarioTest {
     void lowering_only_one_dimension_leaves_the_other_blocking() {
       Held<Last4> partly = loch.derive(token(), CARD_LAST4_PARTIAL, acme()).orThrow();
 
-      assertThat(loch.attribution(partly).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(loch.attribution(partly).tlp()).isEqualTo(Tlp.RED);
+      assertThat(loch.label(partly).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(loch.label(partly).tlp()).isEqualTo(Tlp.RED);
       assertThat(loch.dereference(partly, APPROVAL_CARD, acme("clearance", "finance")).allowed())
           .isFalse();
     }

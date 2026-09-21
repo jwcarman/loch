@@ -26,7 +26,7 @@ import org.jwcarman.codec.spi.TypeRef;
  * the parent's plaintext, so the whole point of registering is that the set of code which ever sees
  * a value is enumerable and reviewable.
  *
- * @param <A> the application's attribution type
+ * @param <A> the application's label type
  * @param <I> what it reads
  * @param <O> what it produces
  */
@@ -66,9 +66,9 @@ public interface Derivation<A, I, O> {
    * same move -- down the lattice -- and differ only in which part of a label they touch.
    *
    * <p>Loch checks the result is genuinely below the join. It cannot check that <i>only</i> the
-   * intended part moved, because the attribution type is the application's and Loch cannot see
-   * inside it. Writing {@code joined -> joined.withIntegrity(ENDORSED)} is what keeps the rest
-   * still, and that line is the thing a reviewer reads.
+   * intended part moved, because the label type is the application's and Loch cannot see inside it.
+   * Writing {@code joined -> joined.withIntegrity(ENDORSED)} is what keeps the rest still, and that
+   * line is the thing a reviewer reads.
    */
   default Optional<UnaryOperator<A>> relabel() {
     return Optional.empty();

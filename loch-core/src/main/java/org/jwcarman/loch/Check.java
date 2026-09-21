@@ -42,7 +42,7 @@ import org.jwcarman.codec.spi.TypeRef;
  * the same gate. It also leaks exactly one bit per call by construction, which is the honest reason
  * a ceiling still applies: a thousand checks against a thousand guesses is a thousand bits.
  *
- * @param <A> the application's attribution type
+ * @param <A> the application's label type
  * @param <I> the kind of value this asks about
  * @param <Q> what the caller supplies to ask it
  */

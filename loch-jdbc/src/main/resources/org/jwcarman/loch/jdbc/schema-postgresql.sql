@@ -1,13 +1,13 @@
 -- Everything a loch keeps, and nothing it decides. Policy lives in the application.
 --
--- The payload and the attribution are both encrypted: a label can itself be sensitive -- a tenant's
+-- The payload and the label are both encrypted: a label can itself be sensitive -- a tenant's
 -- name, a project codeword -- so storing it in the clear beside the ciphertext would describe what
 -- the ciphertext is to anyone who can read the table.
 CREATE TABLE IF NOT EXISTS loch_value (
   value_id     TEXT PRIMARY KEY,
   value_type   TEXT        NOT NULL,
   payload      BYTEA       NOT NULL,
-  attribution  BYTEA       NOT NULL,
+  label        BYTEA       NOT NULL,
   derivation   TEXT,
   held_at      TIMESTAMPTZ NOT NULL
 );
