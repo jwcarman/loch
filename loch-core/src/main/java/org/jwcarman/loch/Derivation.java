@@ -54,6 +54,18 @@ public interface Derivation<A, I, O> {
   Optional<O> apply(List<I> inputs, AccessContext context);
 
   /**
+   * Whether this reads several values at once, or exactly one.
+   *
+   * <p>Declared rather than discovered, so the engine can turn away a call of the wrong arity
+   * before it decodes anybody's plaintext. Finding out inside {@link #apply} is too late twice
+   * over: the values have already been read, and a function that blew up on the data is by then
+   * indistinguishable from a caller that passed the wrong number of handles.
+   */
+  default boolean readsMany() {
+    return false;
+  }
+
+  /**
    * The most constrained parent this will accept, if it is choosy.
    *
    * <p>A derivation receives plaintext, so it is a destination. Empty means it accepts whatever the

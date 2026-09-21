@@ -43,7 +43,11 @@ public final class Derivations {
   public static <A, I, O> Builder<A, I, O> of(
       DerivationId<I, O> id, TypeRef<I> inputType, TypeRef<O> outputType, Function<I, O> function) {
     return new Builder<>(
-        id, inputType, outputType, (inputs, context) -> Optional.of(function.apply(only(inputs))));
+        id,
+        inputType,
+        outputType,
+        (inputs, context) -> Optional.of(function.apply(only(inputs))),
+        false);
   }
 
   /**
@@ -67,7 +71,7 @@ public final class Derivations {
       TypeRef<O> outputType,
       Function<List<I>, O> function) {
     return new Builder<>(
-        id, inputType, outputType, (inputs, context) -> Optional.of(function.apply(inputs)));
+        id, inputType, outputType, (inputs, context) -> Optional.of(function.apply(inputs)), true);
   }
 
   /**
@@ -91,7 +95,11 @@ public final class Derivations {
       TypeRef<O> outputType,
       BiFunction<I, AccessContext, Optional<O>> function) {
     return new Builder<>(
-        id, inputType, outputType, (inputs, context) -> function.apply(only(inputs), context));
+        id,
+        inputType,
+        outputType,
+        (inputs, context) -> function.apply(only(inputs), context),
+        false);
   }
 
   /** A derivation that may decline -- a lookup that finds nothing, a check that fails. */
@@ -104,7 +112,8 @@ public final class Derivations {
         id,
         TypeRef.of(inputType),
         TypeRef.of(outputType),
-        (inputs, context) -> function.apply(only(inputs), context));
+        (inputs, context) -> function.apply(only(inputs), context),
+        false);
   }
 
   /** What a registered derivation does, once the arity has been dealt with. */
@@ -120,6 +129,7 @@ public final class Derivations {
     private final TypeRef<I> inputType;
     private final TypeRef<O> outputType;
     private final Reading<I, O> function;
+    private final boolean readsMany;
     private java.util.function.Function<AccessContext, A> ceiling;
     private boolean anything;
     private UnaryOperator<A> relabel;
@@ -129,11 +139,13 @@ public final class Derivations {
         DerivationId<I, O> id,
         TypeRef<I> inputType,
         TypeRef<O> outputType,
-        Reading<I, O> function) {
+        Reading<I, O> function,
+        boolean readsMany) {
       this.id = id;
       this.inputType = inputType;
       this.outputType = outputType;
       this.function = function;
+      this.readsMany = readsMany;
     }
 
     /** The most constrained parent this will accept. */
@@ -192,6 +204,7 @@ public final class Derivations {
       java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       UnaryOperator<A> theRelabel = relabel;
       Predicate<AccessContext> theAvailability = availableTo;
+      boolean many = readsMany;
       return new Derivation<>() {
         @Override
         public DerivationId<I, O> id() {
@@ -211,6 +224,11 @@ public final class Derivations {
         @Override
         public Optional<O> apply(List<I> inputs, AccessContext context) {
           return function.apply(inputs, context);
+        }
+
+        @Override
+        public boolean readsMany() {
+          return many;
         }
 
         @Override

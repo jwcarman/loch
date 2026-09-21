@@ -479,6 +479,13 @@ public final class DefaultLoch<A> implements Loch<A> {
       return new Derived.Refused<>(
           Derived.Reason.NO_SUCH_DERIVATION, "no derivation is registered as '" + id + "'");
     }
+    // Before anything is decoded, and thrown rather than refused. Asking a one-at-a-time
+    // derivation to read three values is a mistake in the calling code, not a decision about
+    // whether this access is allowed, and the two must not arrive looking alike.
+    if (!derivation.readsMany() && parents.size() > 1) {
+      throw new IllegalArgumentException(
+          "'%s' reads one value at a time, and was given %d".formatted(id, parents.size()));
+    }
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
           Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
