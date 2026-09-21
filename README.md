@@ -188,6 +188,17 @@ checks the caller's role lets one tenant's compliance officer destroy another te
 go regardless of their own labels, which is what erasure means: a value derived from two customers
 dies with either of them.
 
+**Writing at a label is its own question.** Every other gate decides whether a value may be *read*;
+`mayHold(...)` decides whether it may be *written*. Bell–LaPadula permits a low subject to write a
+high object it cannot read — a *blind write up* — and Biba forbids it, because creating data more
+trusted than you are is how a forgery becomes a fact. Concretely: without a policy, code acting for
+one tenant can hold a value labelled as another tenant's endorsed record, and that tenant later
+reads it as authoritative. Nothing downstream can tell, because by then it is correctly labelled.
+
+It is permissive by default, which is the one exception here and worth stating: `hold` is the entry
+point every application uses, often before it knows who is acting — a mailbox listener, a batch
+import, a migration. Anything handling more than one tenant's data should set it.
+
 **And erasure is refused until you say who may.** Every other gate decides whether a value may be
 *disclosed* somewhere, and a label has nothing to say about whether it may be *destroyed* —
 "possession is not authority" is a rule about reading. So the authority to erase is named

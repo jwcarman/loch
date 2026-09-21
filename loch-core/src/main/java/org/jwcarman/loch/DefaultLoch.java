@@ -44,6 +44,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final java.util.function.Supplier<AccessContext> ambient;
   private final java.util.Set<String> callerMayContribute;
   private final java.util.function.BiPredicate<A, AccessContext> mayErase;
+  private final java.util.function.BiPredicate<A, AccessContext> mayHold;
   private final Storage<A> storage;
 
   public DefaultLoch(LochConfig<A> config, Storage<A> storage) {
@@ -77,6 +78,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     this.ambient = config.ambient();
     this.callerMayContribute = config.callerMayContribute();
     this.mayErase = config.mayErase();
+    this.mayHold = config.mayHold();
   }
 
   /**
@@ -175,18 +177,24 @@ public final class DefaultLoch<A> implements Loch<A> {
           "a held value needs an label; use the lattice's bottom to say 'nothing in"
               + " particular'");
     }
+    AccessContext asking = asking(AccessContext.empty());
+    if (!mayHold.test(label, asking)) {
+      audit(
+          AuditRecord.Operation.HOLD,
+          HandleId.fresh(),
+          null,
+          AuditRecord.Outcome.REFUSED,
+          "not permitted to hold at that label",
+          label,
+          asking);
+      throw new AccessDeniedException(
+          "MAY_NOT_HOLD", "this access may not create a value labelled that way");
+    }
     HandleId id = HandleId.fresh();
     // Recorded before it is stored, not after. An auditor that throws must leave nothing behind;
     // the other order commits a value durably under an id the caller never receives, which is a
     // secret nothing can reach, read or erase.
-    audit(
-        AuditRecord.Operation.HOLD,
-        id,
-        null,
-        AuditRecord.Outcome.ALLOWED,
-        null,
-        label,
-        AccessContext.empty());
+    audit(AuditRecord.Operation.HOLD, id, null, AuditRecord.Outcome.ALLOWED, null, label, asking);
     storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
     return new Handle<>(id, type);
   }

@@ -35,6 +35,7 @@ public class LochConfig<A> {
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
+  private java.util.function.BiPredicate<A, AccessContext> mayHold = (label, context) -> true;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Question<A, ?, ?>> questions = new ArrayList<>();
@@ -186,6 +187,38 @@ public class LochConfig<A> {
 
   java.util.function.BiPredicate<A, AccessContext> mayErase() {
     return mayErase;
+  }
+
+  /**
+   * What labels this access may create data at.
+   *
+   * <p>Every other gate decides whether a value may be <i>read</i>. This one decides whether it may
+   * be <i>written</i>, and the two are genuinely different questions: Bell-LaPadula famously
+   * permits a low subject to write a high object it cannot read, which is where the phrase "blind
+   * write up" comes from, and Biba forbids it precisely because creating data more trusted than you
+   * are is how a forgery becomes a fact.
+   *
+   * <p>Concretely: without this, code acting for one tenant can hold a value labelled as another
+   * tenant's endorsed record, and that tenant will later read it as its own authoritative data.
+   * Nothing downstream can tell the difference, because by then it is correctly labelled.
+   *
+   * <pre>{@code
+   * .mayHold((label, ctx) -> label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
+   * }</pre>
+   *
+   * <p><b>Permissive by default</b>, unlike the other policies here, and the exception is worth
+   * justifying rather than hiding. {@code hold} is the entry point every application uses, often
+   * before it has any notion of who is acting -- a mailbox listener, a batch import, a migration --
+   * and refusing by default would make the first thing anyone writes fail. An application handling
+   * more than one tenant's data should set it.
+   */
+  public LochConfig<A> mayHold(java.util.function.BiPredicate<A, AccessContext> mayHold) {
+    this.mayHold = Objects.requireNonNull(mayHold, "a hold policy must not be null");
+    return this;
+  }
+
+  java.util.function.BiPredicate<A, AccessContext> mayHold() {
+    return mayHold;
   }
 
   Auditor auditor() {

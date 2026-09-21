@@ -85,6 +85,11 @@ public class LochConfiguration {
                 .lattice(BillingLabels.LATTICE)
                 .auditor(auditor)
                 .askingWhoIsAsking(CurrentAccess::get)
+                // A blind write up: without this, code acting for one tenant can create a record
+                // labelled as another tenant's, which that tenant then reads as its own.
+                .mayHold(
+                    (label, ctx) ->
+                        label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
 
                 // ---- where values may go ------------------------------------------------
                 .destination(
