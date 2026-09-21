@@ -46,9 +46,6 @@ package org.jwcarman.loch;
  */
 public interface Inlet<T> {
 
-  /** What this door is called in the manifest and in the record. */
-  InletId id();
-
   /**
    * Puts a value into the loch, labelled the way this inlet labels things.
    *

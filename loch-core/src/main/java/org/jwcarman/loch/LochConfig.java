@@ -30,7 +30,7 @@ import org.jwcarman.loch.lattice.Lattice;
  * permitted underneath values already stored, and a destination supplied at a call site would let
  * any code invent its own permission.
  */
-public class LochConfig<A> {
+public class LochConfig<A, D> {
 
   private Lattice<A> lattice;
   private boolean explainRefusals;
@@ -38,29 +38,23 @@ public class LochConfig<A> {
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
-  private java.util.function.BiPredicate<A, AccessContext> mayHold = (label, context) -> true;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<DerivationSpec<A, ?>> derivations = new ArrayList<>();
-  private final List<Question<A, ?, ?>> questions = new ArrayList<>();
-  private final java.util.Set<InletId> inlets = new java.util.LinkedHashSet<>();
+  final List<QuerySpec<A, ?, ?>> queries = new ArrayList<>();
+  private final java.util.Set<String> inlets = new java.util.LinkedHashSet<>();
   private DefaultLoch<A> bound;
   private final List<Binding<A>> bindings = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
-  public LochConfig<A> lattice(Lattice<A> lattice) {
+  public LochConfig<A, D> lattice(Lattice<A> lattice) {
     this.lattice = Objects.requireNonNull(lattice, "a loch needs a lattice");
     return this;
   }
 
   /** Somewhere values may go. Registered once; referenced by name forever after. */
-  public LochConfig<A> destination(Destination<A> destination) {
+  public LochConfig<A, D> destination(Destination<A> destination) {
     destinations.add(Objects.requireNonNull(destination, "a destination must not be null"));
     return this;
-  }
-
-  /** A destination accepting the same thing regardless of who asks. */
-  public LochConfig<A> destination(DestinationId id, A ceiling) {
-    return destination(Destinations.fixed(id, ceiling));
   }
 
   // ------------------------------------------------------------------ minting capabilities
@@ -76,43 +70,38 @@ public class LochConfig<A> {
    * how far it is trusted, what kind of data arrives here -- and may read the rest, typically a
    * tenant, from ambient context.
    */
-  public <T> Inlet<T> inlet(
-      InletId id, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    Objects.requireNonNull(id, "an inlet needs a name");
-    Binding<A> binding = binding("inlet '" + id + "'");
+  public <T extends D> Inlet<T> inlet(
+      String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    Objects.requireNonNull(name, "an inlet needs a name");
+    Binding<A> binding = binding("inlet '" + name + "'");
     Objects.requireNonNull(type, "an inlet needs to know what it accepts");
     Objects.requireNonNull(labelling, "an inlet needs to say how it labels what arrives");
-    if (!inlets.add(id)) {
-      throw new IllegalStateException("two inlets are registered as '" + id + "'");
+    if (!inlets.add(name)) {
+      throw new IllegalStateException("two inlets are registered as '" + name + "'");
     }
     return new Inlet<>() {
       @Override
-      public InletId id() {
-        return id;
-      }
-
-      @Override
       public Handle<T> hold(T value) {
-        return binding.engine().holdVia(id, type, labelling, value);
+        return binding.engine().holdVia(name, type, labelling, value);
       }
 
       @Override
       public String toString() {
-        return "inlet '" + id + "'";
+        return "inlet '" + name + "'";
       }
     };
   }
 
   /** The same, for a type with no generic parameters of its own. */
-  public <T> Inlet<T> inlet(
-      InletId id, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    return inlet(id, TypeRef.of(type), labelling);
+  public <T extends D> Inlet<T> inlet(
+      String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    return inlet(name, TypeRef.of(type), labelling);
   }
 
   /** An inlet whose label does not depend on who is acting. */
-  public <T> Inlet<T> inlet(InletId id, Class<T> type, A label) {
+  public <T extends D> Inlet<T> inlet(String name, Class<T> type, A label) {
     Objects.requireNonNull(label, "an inlet needs a label");
-    return inlet(id, TypeRef.of(type), context -> label);
+    return inlet(name, TypeRef.of(type), context -> label);
   }
 
   /**
@@ -121,18 +110,13 @@ public class LochConfig<A> {
    * <p>Also registers the destination, so the manifest still enumerates it and audit lines still
    * name it. The id remains what this door is called; it stops being a way to reach it.
    */
-  public <T> Outlet<T> outlet(
-      DestinationId id, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    Objects.requireNonNull(id, "an outlet needs a name");
-    Binding<A> binding = binding("outlet '" + id + "'");
+  public <T extends D> Outlet<T> outlet(
+      String name, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
+    Objects.requireNonNull(name, "an outlet needs a name");
+    Binding<A> binding = binding("outlet '" + name + "'");
     Objects.requireNonNull(type, "an outlet needs to say what comes out of it");
-    destination(Destinations.varying(id, ceiling));
+    destination(Destinations.varying(name, ceiling));
     return new Outlet<>() {
-      @Override
-      public DestinationId id() {
-        return id;
-      }
-
       @Override
       public TypeRef<T> type() {
         return type;
@@ -145,26 +129,26 @@ public class LochConfig<A> {
 
       @Override
       public Dereferenced<T> read(Handle<T> held, AccessContext context) {
-        return binding.engine().dereference(held, id, context);
+        return binding.engine().dereference(held, name, context);
       }
 
       @Override
       public String toString() {
-        return "outlet '" + id + "' reading " + type.getType().getTypeName();
+        return "outlet '" + name + "' reading " + type.getType().getTypeName();
       }
     };
   }
 
   /** The same, for a type with no generic parameters of its own. */
-  public <T> Outlet<T> outlet(
-      DestinationId id, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return outlet(id, TypeRef.of(type), ceiling);
+  public <T extends D> Outlet<T> outlet(
+      String name, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
+    return outlet(name, TypeRef.of(type), ceiling);
   }
 
   /** An outlet whose ceiling does not depend on who is asking. */
-  public <T> Outlet<T> outlet(DestinationId id, Class<T> type, A ceiling) {
+  public <T extends D> Outlet<T> outlet(String name, Class<T> type, A ceiling) {
     Objects.requireNonNull(ceiling, "an outlet needs a ceiling");
-    return outlet(id, TypeRef.of(type), context -> ceiling);
+    return outlet(name, TypeRef.of(type), context -> ceiling);
   }
 
   // ------------------------------------------------------------------ derivations and folds
@@ -177,22 +161,17 @@ public class LochConfig<A> {
    * overloads for two through five flows, as do RxJava and Reactor for {@code zip}. Beyond five, or
    * where the parents share a type, use {@link #fold}.
    */
-  public <I, O> Minting<A, O, Derivation<I, O>> derivation(
-      DerivationId id, Class<I> input, Class<O> output, Function<I, O> function) {
+  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
+      String name, Class<I> input, Class<O> output, Function<I, O> function) {
     return new Minting<>(
         this,
-        id,
+        name,
         List.of(TypeRef.of(input)),
         TypeRef.of(output),
         (values, context) -> Optional.ofNullable(function.apply(input.cast(values.getFirst()))),
         false,
         (spec, binding) ->
             new Derivation<>() {
-              @Override
-              public DerivationId id() {
-                return id;
-              }
-
               @Override
               public Derived<O> derive(Handle<I> parent) {
                 return derive(parent, AccessContext.empty());
@@ -208,25 +187,20 @@ public class LochConfig<A> {
   /**
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
-  public <I, O> Minting<A, O, Derivation<I, O>> checking(
-      DerivationId id,
+  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> checking(
+      String name,
       Class<I> input,
       Class<O> output,
       java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
     return new Minting<>(
         this,
-        id,
+        name,
         List.of(TypeRef.of(input)),
         TypeRef.of(output),
         (values, context) -> function.apply(input.cast(values.getFirst()), context),
         false,
         (spec, binding) ->
             new Derivation<>() {
-              @Override
-              public DerivationId id() {
-                return id;
-              }
-
               @Override
               public Derived<O> derive(Handle<I> parent) {
                 return derive(parent, AccessContext.empty());
@@ -240,15 +214,15 @@ public class LochConfig<A> {
   }
 
   /** From two values of different types. */
-  public <I1, I2, O> Minting<A, O, Derivation2<I1, I2, O>> derivation(
-      DerivationId id,
+  public <I1 extends D, I2 extends D, O extends D> Minting<A, O, Derivation2<I1, I2, O>> derivation(
+      String name,
       Class<I1> first,
       Class<I2> second,
       Class<O> output,
       java.util.function.BiFunction<I1, I2, O> function) {
     return new Minting<>(
         this,
-        id,
+        name,
         List.of(TypeRef.of(first), TypeRef.of(second)),
         TypeRef.of(output),
         (values, context) ->
@@ -257,11 +231,6 @@ public class LochConfig<A> {
         false,
         (spec, binding) ->
             new Derivation2<>() {
-              @Override
-              public DerivationId id() {
-                return id;
-              }
-
               @Override
               public Derived<O> derive(Handle<I1> one, Handle<I2> two) {
                 return derive(one, two, AccessContext.empty());
@@ -280,11 +249,11 @@ public class LochConfig<A> {
    * <p>The result carries the join of every parent's label, so folding two tenants' data yields
    * something labelled for both, which no destination admits.
    */
-  public <I, O> Minting<A, O, Fold<I, O>> fold(
-      DerivationId id, Class<I> input, Class<O> output, Function<List<I>, O> function) {
+  public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
+      String name, Class<I> input, Class<O> output, Function<List<I>, O> function) {
     return new Minting<>(
         this,
-        id,
+        name,
         List.of(TypeRef.of(input)),
         TypeRef.of(output),
         (values, context) ->
@@ -292,11 +261,6 @@ public class LochConfig<A> {
         true,
         (spec, binding) ->
             new Fold<>() {
-              @Override
-              public DerivationId id() {
-                return id;
-              }
-
               @Override
               public Derived<O> fold(List<Handle<I>> parents) {
                 return fold(parents, AccessContext.empty());
@@ -318,8 +282,8 @@ public class LochConfig<A> {
    */
   public static final class Minting<A, O, C> {
 
-    private final LochConfig<A> config;
-    private final DerivationId id;
+    private final LochConfig<A, ?> config;
+    private final String name;
     private final List<TypeRef<?>> inputTypes;
     private final TypeRef<O> outputType;
     private final java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function;
@@ -331,15 +295,15 @@ public class LochConfig<A> {
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Minting(
-        LochConfig<A> config,
-        DerivationId id,
+        LochConfig<A, ?> config,
+        String name,
         List<TypeRef<?>> inputTypes,
         TypeRef<O> outputType,
         java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function,
         boolean fold,
         java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability) {
       this.config = config;
-      this.id = id;
+      this.name = name;
       this.inputTypes = inputTypes;
       this.outputType = outputType;
       this.function = function;
@@ -387,15 +351,15 @@ public class LochConfig<A> {
       if (ceiling == null && !anything) {
         throw new IllegalStateException(
             "'"
-                + id
+                + name
                 + "' reads plaintext, so it needs a ceiling: call accepting(...) with what it may"
                 + " look at, or acceptingAnything() if it really may look at everything");
       }
       DerivationSpec<A, O> spec =
           new DerivationSpec<>(
-              id, inputTypes, outputType, function, ceiling, relabel, availableTo, fold);
+              name, inputTypes, outputType, function, ceiling, relabel, availableTo, fold);
       config.derivations.add(spec);
-      return capability.apply(spec, config.binding("'" + id + "'"));
+      return capability.apply(spec, config.binding("'" + name + "'"));
     }
   }
 
@@ -416,6 +380,105 @@ public class LochConfig<A> {
     }
     this.bound = loch;
     bindings.forEach(binding -> binding.attach(loch));
+  }
+
+  /**
+   * Mints the authority to ask one question of a value without the value leaving.
+   *
+   * <p>Boolean, and registered here rather than named at a call site, for the reasons set out on
+   * {@link Query}.
+   */
+  /**
+   * Mints the authority to ask one question of a value without the value leaving.
+   *
+   * <p>Boolean, and registered here rather than named at a call site, for the reasons set out on
+   * {@link Query}.
+   */
+  public <I extends D, Q> Querying<A, I, Q> query(
+      String name, Class<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
+    Objects.requireNonNull(name, "a query needs a name");
+    Objects.requireNonNull(against, "a query needs to say what it is asked against");
+    Objects.requireNonNull(asking, "a query needs something to ask");
+    return new Querying<>(this, name, TypeRef.of(input), asking);
+  }
+
+  /** What a query still needs said about it before it becomes a capability. */
+  public static final class Querying<A, I, Q> {
+
+    private final LochConfig<A, ?> config;
+    private final String name;
+    private final TypeRef<I> inputType;
+    private final Query.Asking<I, Q> asking;
+    private java.util.function.Function<AccessContext, A> ceiling;
+    private boolean anything;
+    private java.util.function.Predicate<AccessContext> availableTo = context -> true;
+
+    private Querying(
+        LochConfig<A, ?> config, String name, TypeRef<I> inputType, Query.Asking<I, Q> asking) {
+      this.config = config;
+      this.name = name;
+      this.inputType = inputType;
+      this.asking = asking;
+    }
+
+    /** The most constrained value this may be asked about. */
+    public Querying<A, I, Q> accepting(java.util.function.Function<AccessContext, A> ceiling) {
+      this.ceiling = Objects.requireNonNull(ceiling, "a ceiling must not be null");
+      return this;
+    }
+
+    /** Accepts the same thing regardless of who is asking. */
+    public Querying<A, I, Q> accepting(A ceiling) {
+      Objects.requireNonNull(ceiling, "a ceiling must not be null");
+      return accepting(context -> ceiling);
+    }
+
+    /**
+     * Reads anything, at any label.
+     *
+     * <p>Required if no ceiling is set. This reads plaintext to answer, so breadth has to be said
+     * out loud rather than fallen into.
+     */
+    public Querying<A, I, Q> acceptingAnything() {
+      this.anything = true;
+      return this;
+    }
+
+    /** Whether this is offered at all, given who is asking. */
+    public Querying<A, I, Q> availableTo(java.util.function.Predicate<AccessContext> availableTo) {
+      this.availableTo = Objects.requireNonNull(availableTo, "an availability must not be null");
+      return this;
+    }
+
+    /** Registers it and hands back the capability. Nothing can obtain one any other way. */
+    public Query<I, Q> mint() {
+      if (ceiling == null && !anything) {
+        throw new IllegalStateException(
+            "'"
+                + name
+                + "' reads plaintext to answer, so it needs a ceiling: call accepting(...) with"
+                + " what it may look at, or acceptingAnything() if it really may look at"
+                + " everything");
+      }
+      QuerySpec<A, I, Q> spec = new QuerySpec<>(name, inputType, asking, ceiling, availableTo);
+      config.queries.add(spec);
+      Binding<A> binding = config.binding("query '" + name + "'");
+      return new Query<>() {
+        @Override
+        public Answer ask(Handle<I> about, Q against) {
+          return ask(about, against, AccessContext.empty());
+        }
+
+        @Override
+        public Answer ask(Handle<I> about, Q against, AccessContext context) {
+          return binding.engine().askVia(spec, about, against, context);
+        }
+      };
+    }
+  }
+
+  List<QuerySpec<A, ?, ?>> queries() {
+    return List.copyOf(queries);
   }
 
   /**
@@ -459,16 +522,6 @@ public class LochConfig<A> {
     return binding;
   }
 
-  /** A question that can be asked of a held value without the value leaving. */
-  public LochConfig<A> question(Question<A, ?, ?> question) {
-    questions.add(Objects.requireNonNull(question, "a question must not be null"));
-    return this;
-  }
-
-  List<Question<A, ?, ?>> questions() {
-    return List.copyOf(questions);
-  }
-
   List<DerivationSpec<A, ?>> derivations() {
     return List.copyOf(derivations);
   }
@@ -480,7 +533,7 @@ public class LochConfig<A> {
    * shown to a different tenant is a leak, and refusal text has a way of reaching places the value
    * never would. On for development, where the alternative is guessing.
    */
-  public LochConfig<A> explainRefusals() {
+  public LochConfig<A, D> explainRefusals() {
     this.explainRefusals = true;
     return this;
   }
@@ -496,13 +549,13 @@ public class LochConfig<A> {
    * report, which is worse than not having it, so which of the two you want is a decision rather
    * than an omission.
    */
-  public LochConfig<A> auditor(Auditor auditor) {
+  public LochConfig<A, D> auditor(Auditor auditor) {
     this.auditor = Objects.requireNonNull(auditor, "an auditor must not be null");
     return this;
   }
 
   /** Keeps no record, on purpose and in writing. */
-  public LochConfig<A> withoutAudit() {
+  public LochConfig<A, D> withoutAudit() {
     return auditor(Auditors.discarding());
   }
 
@@ -526,7 +579,7 @@ public class LochConfig<A> {
    *
    * <p>An application with no notion of identity says nothing and every context is empty.
    */
-  public LochConfig<A> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
+  public LochConfig<A, D> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
     this.ambient = Objects.requireNonNull(ambient, "an ambient context source must not be null");
     return this;
   }
@@ -541,7 +594,7 @@ public class LochConfig<A> {
    *
    * <p>Never list an identity key here.
    */
-  public LochConfig<A> callerMayContribute(String... keys) {
+  public LochConfig<A, D> callerMayContribute(String... keys) {
     this.callerMayContribute = java.util.Set.of(keys);
     return this;
   }
@@ -576,45 +629,13 @@ public class LochConfig<A> {
    * it is removed whether or not it is labelled more constrained -- which is what erasure means. A
    * value derived from two customers dies with either of them.
    */
-  public LochConfig<A> mayErase(java.util.function.BiPredicate<A, AccessContext> mayErase) {
+  public LochConfig<A, D> mayErase(java.util.function.BiPredicate<A, AccessContext> mayErase) {
     this.mayErase = Objects.requireNonNull(mayErase, "an erasure policy must not be null");
     return this;
   }
 
   java.util.function.BiPredicate<A, AccessContext> mayErase() {
     return mayErase;
-  }
-
-  /**
-   * What labels this access may create data at.
-   *
-   * <p>Every other gate decides whether a value may be <i>read</i>. This one decides whether it may
-   * be <i>written</i>, and the two are genuinely different questions: Bell-LaPadula famously
-   * permits a low subject to write a high object it cannot read, which is where the phrase "blind
-   * write up" comes from, and Biba forbids it precisely because creating data more trusted than you
-   * are is how a forgery becomes a fact.
-   *
-   * <p>Concretely: without this, code acting for one tenant can hold a value labelled as another
-   * tenant's endorsed record, and that tenant will later read it as its own authoritative data.
-   * Nothing downstream can tell the difference, because by then it is correctly labelled.
-   *
-   * <pre>{@code
-   * .mayHold((label, ctx) -> label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
-   * }</pre>
-   *
-   * <p><b>Permissive by default</b>, unlike the other policies here, and the exception is worth
-   * justifying rather than hiding. {@code hold} is the entry point every application uses, often
-   * before it has any notion of who is acting -- a mailbox listener, a batch import, a migration --
-   * and refusing by default would make the first thing anyone writes fail. An application handling
-   * more than one tenant's data should set it.
-   */
-  public LochConfig<A> mayHold(java.util.function.BiPredicate<A, AccessContext> mayHold) {
-    this.mayHold = Objects.requireNonNull(mayHold, "a hold policy must not be null");
-    return this;
-  }
-
-  java.util.function.BiPredicate<A, AccessContext> mayHold() {
-    return mayHold;
   }
 
   Auditor auditor() {
@@ -638,7 +659,7 @@ public class LochConfig<A> {
     return List.copyOf(destinations);
   }
 
-  java.util.Set<InletId> inlets() {
+  java.util.Set<String> inlets() {
     return java.util.Set.copyOf(inlets);
   }
 }

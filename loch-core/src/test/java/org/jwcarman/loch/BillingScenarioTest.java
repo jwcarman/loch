@@ -32,6 +32,11 @@ import org.jwcarman.loch.lattice.Lattices;
  *
  * <p>This is the design's own acceptance test. If something here is awkward to write, the library
  * is wrong and this is where we find out.
+ *
+ * <p><b>The domain bound is {@code Object}</b>, not a marker interface. Every stored type here
+ * (plaintext strings, {@link DisputeClaim}, {@link Account}, ...) already is what it is; a marker
+ * interface would exist only to satisfy the compiler; and being able to hold a bare {@code String}
+ * keeps most of this scenario's assertions exactly as an application would write them.
  */
 @DisplayName("A billing system using Loch")
 class BillingScenarioTest {
@@ -120,18 +125,55 @@ class BillingScenarioTest {
     }
   }
 
-  // ---------------------------------------------------------------- where values may go
+  // ---------------------------------------------------------------- what travels through the loch
 
-  static final DestinationId VENDOR_LLM = DestinationId.of("vendor-llm");
-  static final DestinationId QUARANTINED_LLM = DestinationId.of("quarantined-llm");
-  static final DestinationId PAYMENT_PROCESSOR = DestinationId.of("payment-processor");
-  static final DestinationId APPROVAL_CARD = DestinationId.of("approval-card");
+  record DisputeClaim(String invoiceNumber, String reason) {}
 
-  /** Every destination reads the tenant from the access, so none of them is a fixed ceiling. */
-  private static Destination<Billing> tenantScoped(
-      DestinationId id, Integrity integrity, Tlp tlp, DataClass dataClass) {
-    return Destinations.varying(id, ctx -> Billing.ceilingFor(ctx, integrity, tlp, dataClass));
+  record InvoiceNumber(String value) {}
+
+  record Last4(String digits) {}
+
+  record Account(String number, String email) {}
+
+  record Report(String text) {}
+
+  /** What an operation reading plaintext may look at: always the acting tenant's own data. */
+  private static java.util.function.Function<AccessContext, Billing> reading(
+      Integrity integrity, Tlp tlp, DataClass dataClass) {
+    return ctx -> Billing.ceilingFor(ctx, integrity, tlp, dataClass);
   }
+
+  /** The approval card's ceiling: a finance approver sees more than anyone else does. */
+  private static java.util.function.Function<AccessContext, Billing> approvalCardCeiling() {
+    return ctx ->
+        Billing.ceilingFor(
+            ctx,
+            Integrity.ENDORSED,
+            Tlp.AMBER,
+            ctx.has("clearance", "finance") ? DataClass.PII : DataClass.NONE);
+  }
+
+  /**
+   * The generic labelling function every inlet below is minted with: it reads the whole label, axis
+   * by axis, out of whatever context {@link #holdAs} put there. An inlet is still the only door a
+   * value can enter through, and its name is still a fixed property of the door -- but the four
+   * label axes themselves come from the access, the same way a tenant always did.
+   */
+  private static Billing labelFrom(AccessContext ctx) {
+    return Billing.of(
+        ctx.get("tenant").orElse(""),
+        Integrity.valueOf(ctx.get("integrity").orElse(Integrity.UNENDORSED.name())),
+        Tlp.valueOf(ctx.get("tlp").orElse(Tlp.CLEAR.name())),
+        DataClass.valueOf(ctx.get("dataClass").orElse(DataClass.NONE.name())));
+  }
+
+  private static final String CLAIMED_INVOICE = "DisputeClaim.invoiceNumber";
+  private static final String CARD_LAST4 = "Card.last4";
+  private static final String CARD_LAST4_PARTIAL = "Card.last4.dataClassOnly";
+  private static final String SUMMARISE = "notes.summarise";
+  private static final String SUMMARISE_FOR_RELEASE = "notes.summarise.forRelease";
+  private static final String DECLINES = "DisputeClaim.alwaysDeclines";
+  private static final String WISHFUL = "DisputeClaim.invoiceNumber.trustMe";
 
   private final Auditors.Recording audit = Auditors.recording();
 
@@ -145,37 +187,97 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final LochConfig<Billing> config =
-      new LochConfig<Billing>()
+  private final LochConfig<Billing, Object> config =
+      new LochConfig<Billing, Object>()
           .lattice(Billing.LATTICE)
           .auditor(audit)
-          .askingWhoIsAsking(edge::get)
-          // A vendor's model: nothing personal, nothing unendorsed.
-          .destination(tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-          // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
-          .destination(
-              tenantScoped(QUARANTINED_LLM, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          // The only place cardholder data may go, anywhere in the system.
-          .destination(
-              tenantScoped(PAYMENT_PROCESSOR, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-          // A person. What they may see depends on who they are.
-          .destination(
-              Destinations.varying(
-                  APPROVAL_CARD,
-                  ctx ->
-                      Billing.ceilingFor(
-                          ctx,
-                          Integrity.ENDORSED,
-                          Tlp.AMBER,
-                          ctx.has("clearance", "finance") ? DataClass.PII : DataClass.NONE)))
-          // The whole account never leaves the loch to answer one question about it.
-          .question(
-              Question.<Billing, Account, String>of(
-                      OWNED_BY,
-                      Account.class,
-                      (account, sender) -> account.email().equalsIgnoreCase(sender))
-                  .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
-                  .build());
+          .askingWhoIsAsking(edge::get);
+
+  // ---------------------------------------------------------------- doors in
+
+  private final Inlet<String> customerMail =
+      config.inlet("customer-mail", String.class, BillingScenarioTest::labelFrom);
+
+  private final Inlet<String> cardTokens =
+      config.inlet("card-tokens", String.class, BillingScenarioTest::labelFrom);
+
+  private final Inlet<String> notes =
+      config.inlet("notes", String.class, BillingScenarioTest::labelFrom);
+
+  private final Inlet<String> last4Digits =
+      config.inlet("last4-digits", String.class, BillingScenarioTest::labelFrom);
+
+  private final Inlet<DisputeClaim> disputeClaims =
+      config.inlet("dispute-claims", DisputeClaim.class, BillingScenarioTest::labelFrom);
+
+  private final Inlet<Account> accounts =
+      config.inlet("accounts", Account.class, BillingScenarioTest::labelFrom);
+
+  // ---------------------------------------------------------------- doors out: one per (door,
+  // type) pair. An outlet is narrowed by type as well as by label, so a door that used to admit
+  // whatever handle a caller presented is now one capability per shape of value it actually reads.
+  // Holding everything text-shaped as a plain String (rather than one wrapper record per door)
+  // keeps this down to one text outlet per destination instead of three.
+
+  // A vendor's model: nothing personal, nothing unendorsed.
+  private final Outlet<String> vendorLlmText =
+      config.outlet(
+          "vendor-llm",
+          String.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+
+  private final Outlet<Report> vendorLlmReports =
+      config.outlet(
+          "vendor-llm-reports",
+          Report.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+
+  private final Outlet<InvoiceNumber> vendorLlmInvoice =
+      config.outlet(
+          "vendor-llm-invoice",
+          InvoiceNumber.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+
+  // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
+  private final Outlet<String> quarantinedLlmText =
+      config.outlet(
+          "quarantined-llm",
+          String.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+
+  private final Outlet<Report> quarantinedLlmReports =
+      config.outlet(
+          "quarantined-llm-reports",
+          Report.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+
+  private final Outlet<InvoiceNumber> quarantinedLlmInvoice =
+      config.outlet(
+          "quarantined-llm-invoice",
+          InvoiceNumber.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+
+  // The only place cardholder data may go, anywhere in the system.
+  private final Outlet<String> paymentProcessorText =
+      config.outlet(
+          "payment-processor",
+          String.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+
+  private final Outlet<Report> paymentProcessorReports =
+      config.outlet(
+          "payment-processor-reports",
+          Report.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+
+  // A person. What they may see depends on who they are.
+  private final Outlet<String> approvalCardText =
+      config.outlet("approval-card", String.class, approvalCardCeiling());
+
+  private final Outlet<Last4> approvalCardLast4 =
+      config.outlet("approval-card-last4", Last4.class, approvalCardCeiling());
+
+  // ---------------------------------------------------------------- derivations and folds
 
   // A projection. Cannot weaken anything, so it needs no ceremony.
   private final Derivation<DisputeClaim, InvoiceNumber> claimedInvoice =
@@ -264,36 +366,18 @@ class BillingScenarioTest {
           .lowering(joined -> joined.withDataClass(DataClass.NONE))
           .mint();
 
+  // The whole account never leaves the loch to answer one question about it.
+  private final Query<Account, String> ownedBy =
+      config
+          .query(
+              "Account.ownedBy",
+              Account.class,
+              String.class,
+              (account, sender, ctx) -> account.email().equalsIgnoreCase(sender))
+          .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
+          .mint();
+
   private final Loch<Billing> loch = MemoryLoch.create(config);
-
-  record DisputeClaim(String invoiceNumber, String reason) {}
-
-  record InvoiceNumber(String value) {}
-
-  record Last4(String digits) {}
-
-  static final DerivationId CLAIMED_INVOICE = DerivationId.of("DisputeClaim.invoiceNumber");
-  static final DerivationId CARD_LAST4 = DerivationId.of("Card.last4");
-  static final DerivationId CARD_LAST4_PARTIAL = DerivationId.of("Card.last4.dataClassOnly");
-
-  record Account(String number, String email) {}
-
-  record Report(String text) {}
-
-  static final DerivationId SUMMARISE = DerivationId.of("notes.summarise");
-  static final DerivationId SUMMARISE_FOR_RELEASE = DerivationId.of("notes.summarise.forRelease");
-
-  static final QuestionId<Account, String> OWNED_BY = QuestionId.of("Account.ownedBy");
-
-  static final DerivationId DECLINES = DerivationId.of("DisputeClaim.alwaysDeclines");
-
-  static final DerivationId WISHFUL = DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
-
-  /** What an operation reading plaintext may look at: always the acting tenant's own data. */
-  private static java.util.function.Function<AccessContext, Billing> reading(
-      Integrity integrity, Tlp tlp, DataClass dataClass) {
-    return ctx -> Billing.ceilingFor(ctx, integrity, tlp, dataClass);
-  }
 
   /** Every access in this system is made on behalf of a tenant, established at the edge. */
   private AccessContext acme() {
@@ -306,13 +390,43 @@ class BillingScenarioTest {
     return AccessContext.empty();
   }
 
+  private AccessContext globex() {
+    edge.set(AccessContext.of("tenant", "globex"));
+    return AccessContext.empty();
+  }
+
+  /**
+   * Holds a value at exactly the label given, by encoding it into the ambient context an inlet's
+   * generic {@link #labelFrom} reads back out, then restoring whatever the edge held before.
+   *
+   * <p>This is the plumbing equivalent of the old {@code loch.hold(value, type, label)}: the label
+   * is still asserted by trusted code at a boundary, not computed, and still fixed before the value
+   * is stored. What changed is the mechanism -- there is no method left that takes a label as an
+   * argument, so the label has to travel through the one channel an inlet reads.
+   */
+  private <T> Handle<T> holdAs(Billing label, Inlet<T> inlet, T value) {
+    AccessContext previous = edge.get();
+    edge.set(
+        AccessContext.of(
+            java.util.Map.of(
+                "tenant", label.tenant().resolved().orElse(""),
+                "integrity", label.integrity().name(),
+                "tlp", label.tlp().name(),
+                "dataClass", label.dataClass().name())));
+    try {
+      return inlet.hold(value);
+    } finally {
+      edge.set(previous);
+    }
+  }
+
   // ---------------------------------------------------------------- the scenario
 
   private Handle<String> customerEmail() {
-    return loch.hold(
-        "I was charged twice for invoice INV-4471. My SSN is 123-45-6789 if that helps.",
-        String.class,
-        Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+    return holdAs(
+        Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+        customerMail,
+        "I was charged twice for invoice INV-4471. My SSN is 123-45-6789 if that helps.");
   }
 
   @Nested
@@ -324,7 +438,7 @@ class BillingScenarioTest {
     void never_reaches_a_vendors_model() {
       Handle<String> email = customerEmail();
 
-      Dereferenced<String> attempt = loch.dereference(email, VENDOR_LLM, acme());
+      Dereferenced<String> attempt = vendorLlmText.read(email, acme());
 
       assertThat(attempt.allowed()).isFalse();
       assertThat(attempt)
@@ -338,7 +452,7 @@ class BillingScenarioTest {
     void does_reach_the_quarantined_model() {
       Handle<String> email = customerEmail();
 
-      assertThat(loch.dereference(email, QUARANTINED_LLM, acme()).granted())
+      assertThat(quarantinedLlmText.read(email, acme()).granted())
           .hasValueSatisfying(text -> assertThat(text).contains("INV-4471"));
     }
 
@@ -356,17 +470,16 @@ class BillingScenarioTest {
   class TheCardToken {
 
     private Handle<String> token() {
-      return loch.hold(
-          "tok_1P9xyz",
-          String.class,
-          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+      return holdAs(
+          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+          cardTokens,
+          "tok_1P9xyz");
     }
 
     @Test
     @DisplayName("reaches the payment processor")
     void reaches_the_payment_processor() {
-      assertThat(loch.dereference(token(), PAYMENT_PROCESSOR, acme()).granted())
-          .contains("tok_1P9xyz");
+      assertThat(paymentProcessorText.read(token(), acme()).granted()).contains("tok_1P9xyz");
     }
 
     /** Not by policy anyone wrote. By arithmetic: every model sits below CARDHOLDER. */
@@ -375,10 +488,9 @@ class BillingScenarioTest {
     void cannot_reach_any_model_or_person() {
       Handle<String> token = token();
 
-      assertThat(loch.dereference(token, VENDOR_LLM, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(token, QUARANTINED_LLM, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(token, APPROVAL_CARD, acme("clearance", "finance")).allowed())
-          .isFalse();
+      assertThat(vendorLlmText.read(token, acme()).allowed()).isFalse();
+      assertThat(quarantinedLlmText.read(token, acme()).allowed()).isFalse();
+      assertThat(approvalCardText.read(token, acme("clearance", "finance")).allowed()).isFalse();
     }
   }
 
@@ -387,28 +499,27 @@ class BillingScenarioTest {
   class TheApprovalCard {
 
     private Handle<String> last4() {
-      return loch.hold(
-          "4821", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+      return holdAs(
+          Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII), last4Digits, "4821");
     }
 
     @Test
     @DisplayName("shows a finance approver the last four")
     void shows_a_finance_approver_the_last_four() {
-      assertThat(loch.dereference(last4(), APPROVAL_CARD, acme("clearance", "finance")).granted())
+      assertThat(approvalCardText.read(last4(), acme("clearance", "finance")).granted())
           .contains("4821");
     }
 
     @Test
     @DisplayName("shows anyone else a handle")
     void shows_anyone_else_a_handle() {
-      assertThat(loch.dereference(last4(), APPROVAL_CARD, acme("clearance", "support")).allowed())
-          .isFalse();
+      assertThat(approvalCardText.read(last4(), acme("clearance", "support")).allowed()).isFalse();
     }
 
     @Test
     @DisplayName("and with nobody named at all, shows nothing")
     void with_nobody_named_shows_nothing() {
-      assertThat(loch.dereference(last4(), APPROVAL_CARD, acme()).allowed()).isFalse();
+      assertThat(approvalCardText.read(last4(), acme()).allowed()).isFalse();
     }
   }
 
@@ -432,24 +543,23 @@ class BillingScenarioTest {
     @DisplayName("folding two tenants' data makes a report that can go nowhere at all")
     void folding_two_tenants_data_makes_a_report_that_can_go_nowhere() {
       Handle<String> acmeNote =
-          loch.hold(
-              "acme disputes INV-1",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "acme disputes INV-1");
       Handle<String> globexNote =
-          loch.hold(
-              "globex disputes INV-2",
-              String.class,
-              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "globex disputes INV-2");
 
       Handle<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
 
       assertThat(loch.label(report).tenant().conflicted()).isTrue();
-      assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(report, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(report, QUARANTINED_LLM, acme()).allowed()).isFalse();
-      assertThat(
-              loch.dereference(report, VENDOR_LLM, AccessContext.of("tenant", "globex")).allowed())
+      assertThat(vendorLlmReports.read(report, acme()).allowed()).isFalse();
+      assertThat(paymentProcessorReports.read(report, acme()).allowed()).isFalse();
+      assertThat(quarantinedLlmReports.read(report, acme()).allowed()).isFalse();
+      assertThat(vendorLlmReports.read(report, AccessContext.of("tenant", "globex")).allowed())
           .isFalse();
       // It exists, and it remembers where it came from.
       assertThat(loch.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
@@ -459,19 +569,19 @@ class BillingScenarioTest {
     @DisplayName("folding one tenant's own notes is perfectly usable")
     void folding_one_tenants_notes_is_usable() {
       Handle<String> first =
-          loch.hold(
-              "first note",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "first note");
       Handle<String> second =
-          loch.hold(
-              "second note",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "second note");
 
       Handle<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
 
-      assertThat(loch.dereference(report, VENDOR_LLM, acme()).granted())
+      assertThat(vendorLlmReports.read(report, acme()).granted())
           .contains(new Report("first note / second note"));
     }
 
@@ -480,21 +590,21 @@ class BillingScenarioTest {
     @DisplayName("one restricted parent constrains the whole result")
     void one_restricted_parent_constrains_the_whole_result() {
       Handle<String> ordinary =
-          loch.hold(
-              "nothing special",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "nothing special");
       Handle<String> personal =
-          loch.hold(
-              "and their home address",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+              notes,
+              "and their home address");
 
       Handle<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
 
       assertThat(loch.label(report).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
-      assertThat(loch.dereference(report, QUARANTINED_LLM, acme()).allowed()).isTrue();
+      assertThat(vendorLlmReports.read(report, acme()).allowed()).isFalse();
+      assertThat(quarantinedLlmReports.read(report, acme()).allowed()).isTrue();
     }
 
     @Test
@@ -509,25 +619,25 @@ class BillingScenarioTest {
     @Test
     @DisplayName("another tenant's data is refused, even though it is perfectly ordinary")
     void another_tenants_data_is_refused() {
-      Handle<String> globex =
-          loch.hold(
-              "globex's entirely unremarkable note",
-              String.class,
-              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+      Handle<String> globexNote =
+          holdAs(
+              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "globex's entirely unremarkable note");
 
-      assertThat(loch.dereference(globex, VENDOR_LLM, acme()).allowed()).isFalse();
+      assertThat(vendorLlmText.read(globexNote, acme()).allowed()).isFalse();
     }
 
     @Test
     @DisplayName("one tenant's ordinary data is fine")
     void one_tenants_ordinary_data_is_fine() {
       Handle<String> held =
-          loch.hold(
-              "nothing secret",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              notes,
+              "nothing secret");
 
-      assertThat(loch.dereference(held, VENDOR_LLM, acme()).allowed()).isTrue();
+      assertThat(vendorLlmText.read(held, acme()).allowed()).isTrue();
     }
   }
 
@@ -541,29 +651,37 @@ class BillingScenarioTest {
       Handle<String> invented =
           new Handle<>(new HandleId("loch_whatever-i-like"), TypeRef.of(String.class));
 
-      assertThat(loch.dereference(invented, QUARANTINED_LLM, acme()))
+      assertThat(quarantinedLlmText.read(invented, acme()))
           .isInstanceOfSatisfying(
               Dereferenced.Denied.class,
               denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.NO_SUCH_VALUE));
     }
 
+    /**
+     * This used to invent a destination name and assert the loch refused it. There is no longer a
+     * method that takes one: a door is reached by holding the outlet, and outlets are minted during
+     * configuration. What is worth asserting is that the door really is gone, because it is exactly
+     * the sort of thing that gets added back for a test fixture and left there.
+     */
     @Test
     @DisplayName("refuses a destination nobody registered")
     void refuses_a_destination_nobody_registered() {
-      assertThat(loch.dereference(customerEmail(), DestinationId.of("my-own-endpoint"), acme()))
-          .isInstanceOfSatisfying(
-              Dereferenced.Denied.class,
-              denied ->
-                  assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.NO_SUCH_DESTINATION));
+      assertThat(Loch.class.getMethods())
+          .isNotEmpty()
+          .noneSatisfy(method -> assertThat(method.getReturnType()).isEqualTo(Dereferenced.class));
     }
 
     @Test
     @DisplayName("refuses a handle whose claimed type is not what was stored")
     void refuses_a_handle_whose_type_is_wrong() {
-      Handle<String> email = customerEmail();
-      Handle<Integer> lying = new Handle<>(email.id(), TypeRef.of(Integer.class));
+      Handle<DisputeClaim> claim =
+          holdAs(
+              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              disputeClaims,
+              new DisputeClaim("INV-1", "x"));
+      Handle<String> lying = new Handle<>(claim.id(), TypeRef.of(String.class));
 
-      assertThat(loch.dereference(lying, QUARANTINED_LLM, acme()))
+      assertThat(quarantinedLlmText.read(lying, acme()))
           .isInstanceOfSatisfying(
               Dereferenced.Denied.class,
               denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.WRONG_TYPE));
@@ -572,7 +690,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("tells you the label and the ceiling when it refuses, without leaking the value")
     void explains_a_refusal_without_leaking() {
-      Dereferenced<String> denied = loch.dereference(customerEmail(), VENDOR_LLM, acme());
+      Dereferenced<String> denied = vendorLlmText.read(customerEmail(), acme());
 
       String detail = ((Dereferenced.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("123-45-6789");
@@ -584,10 +702,10 @@ class BillingScenarioTest {
   class Deriving {
 
     private Handle<DisputeClaim> claim() {
-      return loch.hold(
-          new DisputeClaim("INV-4471", "charged twice"),
-          DisputeClaim.class,
-          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+      return holdAs(
+          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+          disputeClaims,
+          new DisputeClaim("INV-4471", "charged twice"));
     }
 
     @Test
@@ -597,9 +715,9 @@ class BillingScenarioTest {
 
       assertThat(loch.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
-      assertThat(loch.dereference(number, QUARANTINED_LLM, acme()).granted())
+      assertThat(quarantinedLlmInvoice.read(number, acme()).granted())
           .contains(new InvoiceNumber("INV-4471"));
-      assertThat(loch.dereference(number, VENDOR_LLM, acme()).allowed()).isFalse();
+      assertThat(vendorLlmInvoice.read(number, acme()).allowed()).isFalse();
     }
 
     /** An invoice number a customer typed is a question, not an answer. */
@@ -619,7 +737,7 @@ class BillingScenarioTest {
       Handle<InvoiceNumber> number = claimedInvoice.derive(parent, acme()).orThrow();
 
       assertThat(loch.lineage(number).parents()).containsExactly(parent.id());
-      assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE.value());
+      assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE);
       assertThat(loch.lineage(parent).asserted()).isTrue();
     }
 
@@ -666,7 +784,7 @@ class BillingScenarioTest {
       Derivation<DisputeClaim, InvoiceNumber> invented =
           config
               .derivation(
-                  DerivationId.of("whatever-i-like"),
+                  "whatever-i-like",
                   DisputeClaim.class,
                   InvoiceNumber.class,
                   c -> new InvoiceNumber(c.invoiceNumber()))
@@ -685,10 +803,10 @@ class BillingScenarioTest {
   class Weakening {
 
     private Handle<String> token() {
-      return loch.hold(
-          "tok_1P9xyz4821",
-          String.class,
-          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+      return holdAs(
+          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+          cardTokens,
+          "tok_1P9xyz4821");
     }
 
     private AccessContext preparingApproval() {
@@ -701,7 +819,7 @@ class BillingScenarioTest {
       Handle<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(loch.dereference(last4, APPROVAL_CARD, acme("clearance", "finance")).granted())
+      assertThat(approvalCardLast4.read(last4, acme("clearance", "finance")).granted())
           .contains(new Last4("4821"));
     }
 
@@ -725,8 +843,7 @@ class BillingScenarioTest {
 
       assertThat(loch.label(partly).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.label(partly).tlp()).isEqualTo(Tlp.RED);
-      assertThat(loch.dereference(partly, APPROVAL_CARD, acme("clearance", "finance")).allowed())
-          .isFalse();
+      assertThat(approvalCardLast4.read(partly, acme("clearance", "finance")).allowed()).isFalse();
     }
 
     @Test
@@ -743,10 +860,10 @@ class BillingScenarioTest {
     @DisplayName("a relabel that does not actually lower is refused")
     void a_relabel_that_does_not_lower_is_refused() {
       Handle<DisputeClaim> endorsed =
-          loch.hold(
-              new DisputeClaim("INV-1", "x"),
-              DisputeClaim.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              disputeClaims,
+              new DisputeClaim("INV-1", "x"));
 
       assertThat(wishful.derive(endorsed, acme()))
           .isInstanceOfSatisfying(
@@ -775,8 +892,8 @@ class BillingScenarioTest {
     void including_ones_that_read_several_values() {
       assertThat(loch.manifest().weakening())
           .extracting(Manifest.Entry::name)
-          .contains(SUMMARISE_FOR_RELEASE.value())
-          .doesNotContain(SUMMARISE.value());
+          .contains(SUMMARISE_FOR_RELEASE)
+          .doesNotContain(SUMMARISE);
     }
 
     /** A document meant to be diffed between reviews cannot reorder itself every restart. */
@@ -807,10 +924,10 @@ class BillingScenarioTest {
   class Checks {
 
     private Handle<Account> account() {
-      return loch.hold(
-          new Account("ACC-1", "someone@acme.example"),
-          Account.class,
-          Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+      return holdAs(
+          Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+          accounts,
+          new Account("ACC-1", "someone@acme.example"));
     }
 
     @Test
@@ -818,18 +935,22 @@ class BillingScenarioTest {
     void answers_without_the_account_leaving() {
       Handle<Account> account = account();
 
-      assertThat(loch.ask(account, OWNED_BY, "someone@acme.example", acme()).isTrue()).isTrue();
-      assertThat(loch.ask(account, OWNED_BY, "attacker@elsewhere.example", acme()).isFalse())
-          .isTrue();
+      assertThat(ownedBy.ask(account, "someone@acme.example", acme()).isTrue()).isTrue();
+      assertThat(ownedBy.ask(account, "attacker@elsewhere.example", acme()).isFalse()).isTrue();
     }
 
-    /** A refusal is not a "no". Collapsing them is how a denied check reads as a failed one. */
+    /**
+     * An answer that never ran is not a false one. Code that treats a refusal as "no" would read a
+     * denial as an answer, which is how a gate becomes a leak.
+     */
     @Test
     @DisplayName("a refusal is neither true nor false")
     void a_refusal_is_neither_true_nor_false() {
-      QuestionId<Account, String> invented = QuestionId.of("whatever");
+      // Acme's account, asked about by globex: refused by the ceiling rather than by a name
+      // nobody registered, which is the only kind of refusal there is now.
+      Handle<Account> acmeAccount = account();
 
-      Answer answer = loch.ask(account(), invented, "x", acme());
+      Answer answer = ownedBy.ask(acmeAccount, "x", globex());
 
       assertThat(answer.isTrue()).isFalse();
       assertThat(answer.isFalse()).isFalse();
@@ -839,27 +960,22 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
-      Loch<Billing> choosy =
-          MemoryLoch.create(
-              c ->
-                  c.lattice(Billing.LATTICE)
-                      .withoutAudit()
-                      .askingWhoIsAsking(edge::get)
-                      .question(
-                          Question.<Billing, Account, String>of(
-                                  OWNED_BY, Account.class, (account, sender) -> true)
-                              .accepting(
-                                  ctx ->
-                                      Billing.ceilingFor(
-                                          ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-                              .build()));
-      Handle<Account> secret =
-          choosy.hold(
-              new Account("ACC-2", "x@y.example"),
+      LochConfig<Billing, Object> choosyConfig = new LochConfig<>();
+      choosyConfig.lattice(Billing.LATTICE).withoutAudit().askingWhoIsAsking(edge::get);
+      Inlet<Account> secretAccounts =
+          choosyConfig.inlet(
+              "secret-accounts",
               Account.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+      Query<Account, String> secretOwnedBy =
+          choosyConfig
+              .query("Account.ownedBy", Account.class, String.class, (account, sender, ctx) -> true)
+              .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
+              .mint();
+      Loch<Billing> choosy = MemoryLoch.create(choosyConfig);
+      Handle<Account> secret = secretAccounts.hold(new Account("ACC-2", "x@y.example"));
 
-      assertThat(choosy.ask(secret, OWNED_BY, "x@y.example", acme()))
+      assertThat(secretOwnedBy.ask(secret, "x@y.example", acme()))
           .isInstanceOfSatisfying(
               Answer.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Answer.Reason.ABOVE_CEILING));
@@ -873,7 +989,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an allowed result does not print the value it is carrying")
     void an_allowed_result_does_not_print_the_value() {
-      Dereferenced<String> allowed = loch.dereference(customerEmail(), QUARANTINED_LLM, acme());
+      Dereferenced<String> allowed = quarantinedLlmText.read(customerEmail(), acme());
 
       assertThat(allowed.allowed()).isTrue();
       assertThat(allowed.toString()).doesNotContain("123-45-6789");
@@ -882,7 +998,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a refusal names the destination but not the labels")
     void a_refusal_names_the_destination_but_not_the_labels() {
-      Dereferenced<String> denied = loch.dereference(customerEmail(), VENDOR_LLM, acme());
+      Dereferenced<String> denied = vendorLlmText.read(customerEmail(), acme());
 
       String detail = ((Dereferenced.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("acme").doesNotContain("PII");
@@ -891,22 +1007,25 @@ class BillingScenarioTest {
     @Test
     @DisplayName("unless the application asks for the explanation")
     void unless_the_application_asks_for_the_explanation() {
-      Loch<Billing> chatty =
-          MemoryLoch.create(
-              c ->
-                  c.lattice(Billing.LATTICE)
-                      .withoutAudit()
-                      .askingWhoIsAsking(edge::get)
-                      .explainRefusals()
-                      .destination(
-                          tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
-      Handle<String> held =
-          chatty.hold(
-              "x",
+      LochConfig<Billing, Object> chattyConfig = new LochConfig<>();
+      chattyConfig
+          .lattice(Billing.LATTICE)
+          .withoutAudit()
+          .askingWhoIsAsking(edge::get)
+          .explainRefusals();
+      Inlet<String> chattyMail =
+          chattyConfig.inlet("mail", String.class, BillingScenarioTest::labelFrom);
+      Outlet<String> chattyVendorLlm =
+          chattyConfig.outlet(
+              "vendor-llm",
               String.class,
-              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+      Loch<Billing> chatty = MemoryLoch.create(chattyConfig);
+      Handle<String> held =
+          holdAs(
+              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII), chattyMail, "x");
 
-      Dereferenced<String> denied = chatty.dereference(held, VENDOR_LLM, acme());
+      Dereferenced<String> denied = chattyVendorLlm.read(held, acme());
 
       assertThat(((Dereferenced.Denied<String>) denied).detail()).contains("PII");
     }
@@ -915,24 +1034,23 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
-      DestinationId broken = DestinationId.of("broken");
-      Loch<Billing> fragile =
-          MemoryLoch.create(
-              c ->
-                  c.lattice(Billing.LATTICE)
-                      .withoutAudit()
-                      .askingWhoIsAsking(edge::get)
-                      .destination(
-                          Destinations.varying(
-                              broken,
-                              ctx -> {
-                                throw new IllegalStateException("policy service is down");
-                              })));
+      LochConfig<Billing, Object> fragileConfig = new LochConfig<>();
+      fragileConfig.lattice(Billing.LATTICE).withoutAudit().askingWhoIsAsking(edge::get);
+      Inlet<String> fragileMail =
+          fragileConfig.inlet("mail", String.class, BillingScenarioTest::labelFrom);
+      Outlet<String> broken =
+          fragileConfig.outlet(
+              "broken",
+              String.class,
+              ctx -> {
+                throw new IllegalStateException("policy service is down");
+              });
+      Loch<Billing> fragile = MemoryLoch.create(fragileConfig);
       Handle<String> held =
-          fragile.hold(
-              "x", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), fragileMail, "x");
 
-      Dereferenced<String> result = fragile.dereference(held, broken, acme());
+      Dereferenced<String> result = broken.read(held, acme());
 
       assertThat(result.allowed()).isFalse();
     }
@@ -945,7 +1063,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("says who reached what, and never what the value was")
     void says_who_reached_what_and_never_the_value() {
-      loch.dereference(customerEmail(), QUARANTINED_LLM, acme());
+      quarantinedLlmText.read(customerEmail(), acme());
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED);
@@ -958,7 +1076,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records refusals as carefully as permissions")
     void records_refusals_as_carefully_as_permissions() {
-      loch.dereference(customerEmail(), VENDOR_LLM, acme());
+      vendorLlmText.read(customerEmail(), acme());
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -978,12 +1096,12 @@ class BillingScenarioTest {
     @DisplayName("records a check, with the answer but never the question")
     void records_a_check_with_the_answer_but_not_the_question() {
       Handle<Account> account =
-          loch.hold(
-              new Account("ACC-1", "someone@acme.example"),
-              Account.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+              accounts,
+              new Account("ACC-1", "someone@acme.example"));
 
-      loch.ask(account, OWNED_BY, "someone@acme.example", acme());
+      ownedBy.ask(account, "someone@acme.example", acme());
 
       AuditRecord entry = audit.of(AuditRecord.Operation.ASK).getLast();
       assertThat(entry.reason()).contains("answered true");
@@ -995,10 +1113,10 @@ class BillingScenarioTest {
     @DisplayName("says so when a derivation weakened a label")
     void says_so_when_a_derivation_weakened_a_label() {
       Handle<String> token =
-          loch.hold(
-              "tok_1P9xyz4821",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              cardTokens,
+              "tok_1P9xyz4821");
 
       cardLast4.derive(token, acme("tool", "prepare_approval"));
 
@@ -1011,10 +1129,10 @@ class BillingScenarioTest {
     @DisplayName("an ordinary derivation is recorded without that note")
     void an_ordinary_derivation_is_recorded_without_that_note() {
       Handle<DisputeClaim> claim =
-          loch.hold(
-              new DisputeClaim("INV-4471", "charged twice"),
-              DisputeClaim.class,
-              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+          holdAs(
+              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              disputeClaims,
+              new DisputeClaim("INV-4471", "charged twice"));
 
       claimedInvoice.derive(claim, acme());
 
@@ -1025,11 +1143,9 @@ class BillingScenarioTest {
     @DisplayName("but one made from several values says so, since it is more constrained than any")
     void one_made_from_several_says_so() {
       Handle<String> first =
-          loch.hold(
-              "a", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), notes, "a");
       Handle<String> second =
-          loch.hold(
-              "b", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+          holdAs(Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), notes, "b");
 
       summarise.fold(java.util.List.of(first, second), acme());
 
@@ -1046,34 +1162,36 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an access that cannot be audited does not happen, and stores nothing")
     void an_access_that_cannot_be_audited_does_not_happen() {
-      Loch<Billing> unloggable =
-          MemoryLoch.create(
-              c ->
-                  c.lattice(Billing.LATTICE)
-                      .askingWhoIsAsking(edge::get)
-                      .auditor(
-                          record -> {
-                            throw new IllegalStateException("the audit sink is down");
-                          })
-                      .destination(
-                          tenantScoped(
-                              QUARANTINED_LLM, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII)));
+      LochConfig<Billing, Object> unloggableConfig = new LochConfig<>();
+      unloggableConfig
+          .lattice(Billing.LATTICE)
+          .askingWhoIsAsking(edge::get)
+          .auditor(
+              record -> {
+                throw new IllegalStateException("the audit sink is down");
+              });
+      unloggableConfig.outlet(
+          "quarantined-llm",
+          String.class,
+          ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+      Loch<Billing> unloggable = MemoryLoch.create(unloggableConfig);
 
+      LochConfig<Billing, Object> watchedConfig =
+          configuredTo(
+              record -> {
+                throw new IllegalStateException("the audit sink is down");
+              });
+      Inlet<String> watchedMail =
+          watchedConfig.inlet("mail", String.class, BillingScenarioTest::labelFrom);
       MemoryStorage<Billing> storage = new MemoryStorage<>();
-      Loch<Billing> watched =
-          new DefaultLoch<>(
-              configuredTo(
-                  record -> {
-                    throw new IllegalStateException("the audit sink is down");
-                  }),
-              storage);
+      Loch<Billing> watched = new DefaultLoch<>(watchedConfig, storage);
 
       assertThatThrownBy(
               () ->
-                  watched.hold(
-                      "anything",
-                      String.class,
-                      Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)))
+                  holdAs(
+                      Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+                      watchedMail,
+                      "anything"))
           .isInstanceOf(IllegalStateException.class);
 
       // Nothing was written. The other order leaves a secret nobody can reach, read or erase.
@@ -1083,15 +1201,15 @@ class BillingScenarioTest {
     @Test
     @DisplayName("keeping no record is something you say, not something you omit")
     void keeping_no_record_is_something_you_say() {
-      assertThatThrownBy(() -> MemoryLoch.<Billing>create(c -> c.lattice(Billing.LATTICE)))
+      assertThatThrownBy(() -> MemoryLoch.<Billing, Object>create(c -> c.lattice(Billing.LATTICE)))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("withoutAudit");
     }
   }
 
   /** Builds the same policy this test uses, with a chosen auditor. */
-  private LochConfig<Billing> configuredTo(Auditor auditor) {
-    LochConfig<Billing> config = new LochConfig<>();
+  private LochConfig<Billing, Object> configuredTo(Auditor auditor) {
+    LochConfig<Billing, Object> config = new LochConfig<>();
     config.lattice(Billing.LATTICE).auditor(auditor).askingWhoIsAsking(edge::get);
     return config;
   }
@@ -1101,10 +1219,10 @@ class BillingScenarioTest {
   class RefusalsAreRecorded {
 
     private Handle<DisputeClaim> claim() {
-      return loch.hold(
-          new DisputeClaim("INV-4471", "charged twice"),
-          DisputeClaim.class,
-          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+      return holdAs(
+          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+          disputeClaims,
+          new DisputeClaim("INV-4471", "charged twice"));
     }
 
     /**
@@ -1127,7 +1245,7 @@ class BillingScenarioTest {
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
                 assertThat(entry.reason()).contains("DECLINED");
-                assertThat(entry.target()).contains(DECLINES.value());
+                assertThat(entry.target()).contains(DECLINES);
               });
     }
 
@@ -1136,10 +1254,10 @@ class BillingScenarioTest {
     @DisplayName("a derivation not offered here is recorded, and says nothing about the value")
     void a_derivation_not_offered_here_is_recorded() {
       Handle<String> token =
-          loch.hold(
-              "tok_1P9xyz4821",
-              String.class,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              cardTokens,
+              "tok_1P9xyz4821");
       audit.clear();
 
       cardLast4.derive(token, acme());
@@ -1162,19 +1280,28 @@ class BillingScenarioTest {
           .hasValueSatisfying(label -> assertThat(label).contains("UNENDORSED"));
     }
 
-    /** A check leaks a bit per call, so a thousand refused ones is the interesting event. */
+    /**
+     * A refusal reaches the record too, because a query reads plaintext in order to answer and a
+     * turned-away read is exactly what an auditor is looking for.
+     */
     @Test
     @DisplayName("a refused check is recorded")
     void a_refused_check_is_recorded() {
       audit.clear();
 
-      loch.ask(claim(), QuestionId.of("no-such-check"), "x", acme());
+      Handle<Account> acmeAccount =
+          holdAs(
+              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+              accounts,
+              new Account("ACC-1", "someone@acme.example"));
+      audit.clear();
+      ownedBy.ask(acmeAccount, "x", globex());
 
       assertThat(audit.of(AuditRecord.Operation.ASK))
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-                assertThat(entry.reason()).contains("NO_SUCH_QUESTION");
+                assertThat(entry.reason()).contains("ABOVE_CEILING");
               });
     }
 

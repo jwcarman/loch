@@ -35,7 +35,7 @@ import org.jwcarman.codec.spi.TypeRef;
  * @param inputTypes one per parent, positionally; for a fold, exactly one, applying to all of them
  */
 record DerivationSpec<A, O>(
-    DerivationId id,
+    String name,
     List<TypeRef<?>> inputTypes,
     TypeRef<O> outputType,
     BiFunction<List<Object>, AccessContext, Optional<O>> function,

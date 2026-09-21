@@ -30,7 +30,7 @@ package org.jwcarman.loch;
 public interface Destination<A> {
 
   /** The name this is registered and audited under. */
-  DestinationId id();
+  String name();
 
   /**
    * The most constrained label this will accept, for this particular access.

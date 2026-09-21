@@ -51,9 +51,6 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 public interface Outlet<T> {
 
-  /** What this door is called in the manifest and in the record. */
-  DestinationId id();
-
   /** What comes out of it. */
   TypeRef<T> type();
 

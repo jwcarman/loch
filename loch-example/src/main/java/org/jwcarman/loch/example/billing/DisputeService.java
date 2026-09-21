@@ -21,7 +21,7 @@ import org.jwcarman.loch.HandleId;
 import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Outlet;
-import org.springframework.stereotype.Service;
+import org.jwcarman.loch.Query;
 
 /**
  * What the support desk does.
@@ -30,7 +30,6 @@ import org.springframework.stereotype.Service;
  * value to another, no "is this safe to show" checks, and no mention of encryption. The methods
  * read like the business operations they are.
  */
-@Service
 public class DisputeService {
 
   private final Loch<BillingLabels> loch;
@@ -40,6 +39,7 @@ public class DisputeService {
   private final Outlet<Domain.Invoice> paymentProcessor;
   private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
+  private final Query<Domain.Mail, String> mailMentions;
 
   // What this class may do is this list. It was handed three outlets, so it can reach three
   // places; it was handed one inlet, so there is exactly one label it can create a value at.
@@ -50,7 +50,8 @@ public class DisputeService {
       Outlet<Domain.Last4> approvalDesk,
       Outlet<Domain.Invoice> paymentProcessor,
       Derivation<Domain.Mail, Domain.Invoice> confirmInvoice,
-      Derivation<Domain.Invoice, Domain.Last4> cardLast4) {
+      Derivation<Domain.Invoice, Domain.Last4> cardLast4,
+      Query<Domain.Mail, String> mailMentions) {
     this.loch = loch;
     this.customerMail = customerMail;
     this.supportUi = supportUi;
@@ -58,6 +59,7 @@ public class DisputeService {
     this.paymentProcessor = paymentProcessor;
     this.confirmInvoice = confirmInvoice;
     this.cardLast4 = cardLast4;
+    this.mailMentions = mailMentions;
   }
 
   /**
@@ -71,7 +73,7 @@ public class DisputeService {
 
   /** Does the message mention this? Answered without the message leaving the store. */
   public boolean mentions(HandleId mail, String text) {
-    return loch.ask(Handle.of(mail, Domain.Mail.class), Billing.MAIL_MENTIONS, text).isTrue();
+    return mailMentions.ask(Handle.of(mail, Domain.Mail.class), text).isTrue();
   }
 
   /**

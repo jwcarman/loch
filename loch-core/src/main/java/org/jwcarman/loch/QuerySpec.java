@@ -15,28 +15,20 @@
  */
 package org.jwcarman.loch;
 
-import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import org.jwcarman.codec.spi.TypeRef;
 
-/**
- * The name of a question that can be asked about a held value without the value being handed over.
- *
- * <p>Inert, like every reference here: the question's implementation lives in the registry.
- */
-public record QuestionId<I, Q>(String value) {
+/** Everything the engine needs to answer one question. Package-private, like every other spec. */
+record QuerySpec<A, I, Q>(
+    String name,
+    TypeRef<I> inputType,
+    Query.Asking<I, Q> asking,
+    Function<AccessContext, A> ceiling,
+    Predicate<AccessContext> availableTo) {
 
-  public QuestionId {
-    Objects.requireNonNull(value, "a check needs a name");
-    if (value.isBlank()) {
-      throw new IllegalArgumentException("a check's name cannot be blank");
-    }
-  }
-
-  public static <I, Q> QuestionId<I, Q> of(String value) {
-    return new QuestionId<>(value);
-  }
-
-  @Override
-  public String toString() {
-    return value;
+  Optional<A> ceilingFor(AccessContext context) {
+    return Optional.ofNullable(ceiling).map(f -> f.apply(context));
   }
 }

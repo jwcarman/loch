@@ -20,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
 
 /**
@@ -37,28 +36,36 @@ class AmbientContextTest {
     FINANCE
   }
 
-  static final DestinationId CARD = DestinationId.of("card");
-
   private final AtomicReference<String> currentUser = new AtomicReference<>("support");
 
-  private final Loch<Clearance> loch =
-      MemoryLoch.create(
-          c ->
-              c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
-                  .withoutAudit()
-                  // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- Loch does
-                  // not care where the answer lives.
-                  .askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
-                  .destination(
-                      Destinations.varying(
-                          CARD,
-                          ctx ->
-                              ctx.has("clearance", "finance")
-                                  ? Clearance.FINANCE
-                                  : Clearance.NONE)));
+  /**
+   * One loch, its source and its sink, built together.
+   *
+   * <p>Capabilities are attached when the loch is built, so they have to be minted first. A record
+   * keeps the three together without every test repeating the order.
+   */
+  record Wired(Loch<Clearance> loch, Inlet<String> cards, Outlet<String> card) {}
+
+  private static Wired wire(
+      java.util.function.Consumer<LochConfig<Clearance, Object>> settings,
+      java.util.function.Function<AccessContext, Clearance> ceiling) {
+    LochConfig<Clearance, Object> config = new LochConfig<>();
+    config.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE)).withoutAudit();
+    settings.accept(config);
+    Inlet<String> cards = config.inlet("cards", String.class, ctx -> Clearance.FINANCE);
+    Outlet<String> card = config.outlet("card", String.class, ceiling);
+    return new Wired(MemoryLoch.create(config), cards, card);
+  }
+
+  // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- Loch does not care
+  // where the answer lives.
+  private final Wired wired =
+      wire(
+          c -> c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get())),
+          ctx -> ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE);
 
   private Handle<String> last4() {
-    return loch.hold("4821", String.class, Clearance.FINANCE);
+    return wired.cards().hold("4821");
   }
 
   @Test
@@ -67,10 +74,10 @@ class AmbientContextTest {
     Handle<String> value = last4();
 
     currentUser.set("finance");
-    assertThat(loch.dereference(value, CARD).granted()).contains("4821");
+    assertThat(wired.card().read(value).granted()).contains("4821");
 
     currentUser.set("support");
-    assertThat(loch.dereference(value, CARD).allowed()).isFalse();
+    assertThat(wired.card().read(value).allowed()).isFalse();
   }
 
   @Test
@@ -78,23 +85,18 @@ class AmbientContextTest {
   void a_caller_adds_rather_than_replaces() {
     currentUser.set("finance");
     AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Loch<Clearance> watching =
-        MemoryLoch.create(
+    Wired watching =
+        wire(
             c ->
-                c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
-                    .withoutAudit()
-                    .askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
-                    .callerMayContribute("purpose")
-                    .destination(
-                        Destinations.varying(
-                            CARD,
-                            ctx -> {
-                              seen.set(ctx);
-                              return Clearance.FINANCE;
-                            })));
-    Handle<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
+                c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
+                    .callerMayContribute("purpose"),
+            ctx -> {
+              seen.set(ctx);
+              return Clearance.FINANCE;
+            });
+    Handle<String> value = watching.cards().hold("4821");
 
-    watching.dereference(value, CARD, AccessContext.of("purpose", "refund"));
+    watching.card().read(value, AccessContext.of("purpose", "refund"));
 
     assertThat(seen.get().attributes())
         .containsEntry("clearance", "finance")
@@ -107,25 +109,18 @@ class AmbientContextTest {
   void a_caller_cannot_promote_itself() {
     currentUser.set("support");
     AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Loch<Clearance> watching =
-        MemoryLoch.create(
+    Wired watching =
+        wire(
             c ->
-                c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
-                    .withoutAudit()
-                    .askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
-                    .callerMayContribute("purpose", "clearance")
-                    .destination(
-                        Destinations.varying(
-                            CARD,
-                            ctx -> {
-                              seen.set(ctx);
-                              return ctx.has("clearance", "finance")
-                                  ? Clearance.FINANCE
-                                  : Clearance.NONE;
-                            })));
-    Handle<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
+                c.askingWhoIsAsking(() -> AccessContext.of("clearance", currentUser.get()))
+                    .callerMayContribute("purpose", "clearance"),
+            ctx -> {
+              seen.set(ctx);
+              return ctx.has("clearance", "finance") ? Clearance.FINANCE : Clearance.NONE;
+            });
+    Handle<String> value = watching.cards().hold("4821");
 
-    var claimed = watching.dereference(value, CARD, AccessContext.of("clearance", "finance"));
+    var claimed = watching.card().read(value, AccessContext.of("clearance", "finance"));
 
     assertThat(seen.get().attributes()).containsEntry("clearance", "support");
     assertThat(claimed.allowed()).isFalse();
@@ -136,24 +131,15 @@ class AmbientContextTest {
   @DisplayName("a caller contributing an undeclared key is ignored")
   void an_undeclared_key_is_ignored() {
     AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Loch<Clearance> watching =
-        MemoryLoch.create(
-            c ->
-                c.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE))
-                    .withoutAudit()
-                    .askingWhoIsAsking(AccessContext::empty)
-                    .destination(
-                        Destinations.varying(
-                            CARD,
-                            ctx -> {
-                              seen.set(ctx);
-                              return Clearance.FINANCE;
-                            })));
+    Wired watching =
+        wire(
+            c -> c.askingWhoIsAsking(AccessContext::empty),
+            ctx -> {
+              seen.set(ctx);
+              return Clearance.FINANCE;
+            });
 
-    watching.dereference(
-        watching.hold("x", String.class, Clearance.NONE),
-        CARD,
-        AccessContext.of("tenant", "whatever-i-like"));
+    watching.card().read(watching.cards().hold("x"), AccessContext.of("tenant", "whatever-i-like"));
 
     assertThat(seen.get().attributes()).isEmpty();
   }
@@ -161,22 +147,16 @@ class AmbientContextTest {
   @Test
   @DisplayName("an application with no notion of identity says nothing and gets nothing")
   void no_identity_means_empty() {
-    Lattice<Clearance> lattice = Lattices.ladder(Clearance.NONE, Clearance.FINANCE);
     AtomicReference<AccessContext> seen = new AtomicReference<>();
-    Loch<Clearance> anonymous =
-        MemoryLoch.create(
-            c ->
-                c.lattice(lattice)
-                    .withoutAudit()
-                    .destination(
-                        Destinations.varying(
-                            CARD,
-                            ctx -> {
-                              seen.set(ctx);
-                              return Clearance.FINANCE;
-                            })));
+    Wired anonymous =
+        wire(
+            c -> {},
+            ctx -> {
+              seen.set(ctx);
+              return Clearance.FINANCE;
+            });
 
-    anonymous.dereference(anonymous.hold("x", String.class, Clearance.NONE), CARD);
+    anonymous.card().read(anonymous.cards().hold("x"));
 
     assertThat(seen.get().attributes()).isEmpty();
   }

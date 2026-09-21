@@ -37,11 +37,10 @@ import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.DerivationId;
-import org.jwcarman.loch.DestinationId;
-import org.jwcarman.loch.Destinations;
 import org.jwcarman.loch.Handle;
+import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
+import org.jwcarman.loch.Outlet;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -114,13 +113,17 @@ class JdbcLochTest {
 
   record Last4(String digits) {}
 
-  static final DestinationId VENDOR_LLM = DestinationId.of("vendor-llm");
-  static final DestinationId PAYMENT_PROCESSOR = DestinationId.of("payment-processor");
-  static final DerivationId CARD_LAST4 = DerivationId.of("Card.last4");
-
   private DataSource dataSource;
   private Loch<Billing> loch;
   private Derivation<Card, Last4> cardLast4;
+  private Inlet<Card> cards;
+  private Outlet<Card> vendorLlm;
+  private Outlet<Card> paymentProcessor;
+  private Outlet<Last4> last4Processor;
+  private Inlet<List<Card>> cardLists;
+  private Outlet<List<Card>> cardListProcessor;
+  private Outlet<List<Card>> cardListVendor;
+  private Outlet<List<Last4>> last4ListProcessor;
 
   /** Standing in for the edge. A caller is not allowed to say who it is. */
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
@@ -154,7 +157,7 @@ class JdbcLochTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    JdbcLochConfig<Billing> c = new JdbcLochConfig<>();
+    JdbcLochConfig<Billing, Object> c = new JdbcLochConfig<>();
     c.dataSource(dataSource)
         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
         // The application composes its own pipeline: squeeze, then seal.
@@ -171,17 +174,49 @@ class JdbcLochTest {
             (label, ctx) ->
                 ctx.has("role", "compliance")
                     && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
-        .auditor(Auditors.discarding())
-        .destination(
-            Destinations.varying(
-                VENDOR_LLM, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE)))
-        .destination(
-            Destinations.varying(
-                PAYMENT_PROCESSOR, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER)));
+        .auditor(Auditors.discarding());
+
+    // One source: everything this test holds is acme's cardholder data.
+    cards =
+        c.inlet("cards", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    vendorLlm =
+        c.outlet("vendor-llm", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
+    paymentProcessor =
+        c.outlet(
+            "payment-processor",
+            Card.class,
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    last4Processor =
+        c.outlet(
+            "payment-processor-last4",
+            Last4.class,
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+
+    // A generic container is its own type, so it needs its own source and its own sinks.
+    cardLists =
+        c.inlet(
+            "card-lists",
+            TypeRef.listOf(TypeRef.of(Card.class)),
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    cardListProcessor =
+        c.outlet(
+            "card-lists-to-processor",
+            TypeRef.listOf(TypeRef.of(Card.class)),
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    cardListVendor =
+        c.outlet(
+            "card-lists-to-vendor",
+            TypeRef.listOf(TypeRef.of(Card.class)),
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
+    last4ListProcessor =
+        c.outlet(
+            "last4-lists-to-processor",
+            TypeRef.listOf(TypeRef.of(Last4.class)),
+            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
 
     cardLast4 =
         c.derivation(
-                CARD_LAST4,
+                "Card.last4",
                 Card.class,
                 Last4.class,
                 card -> new Last4(card.number().substring(card.number().length() - 4)))
@@ -193,10 +228,8 @@ class JdbcLochTest {
   }
 
   private Handle<Card> card() {
-    return loch.hold(
-        new Card("4111111111114821", "J CARMAN"),
-        Card.class,
-        Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+    acme();
+    return cards.hold(new Card("4111111111114821", "J CARMAN"));
   }
 
   @Test
@@ -204,9 +237,9 @@ class JdbcLochTest {
   void keeps_a_value_and_gives_it_back() {
     Handle<Card> card = card();
 
-    assertThat(loch.dereference(card, PAYMENT_PROCESSOR, acme()).granted())
+    assertThat(paymentProcessor.read(card, acme()).granted())
         .contains(new Card("4111111111114821", "J CARMAN"));
-    assertThat(loch.dereference(card, VENDOR_LLM, acme()).allowed()).isFalse();
+    assertThat(vendorLlm.read(card, acme()).allowed()).isFalse();
   }
 
   /** The point of the whole module: what is on disk is not the value. */
@@ -318,7 +351,7 @@ class JdbcLochTest {
   /** A different tenant, established at the edge rather than claimed by the caller. */
   private boolean dereferenceAs(String tenant, Handle<Card> card) {
     edge.set(AccessContext.of("tenant", tenant));
-    return loch.dereference(card, PAYMENT_PROCESSOR).allowed();
+    return paymentProcessor.read(card).allowed();
   }
 
   private int rowCount(String table) throws SQLException {
@@ -349,11 +382,8 @@ class JdbcLochTest {
   @DisplayName("compresses a big repetitive value before encrypting it")
   void compresses_a_big_value_before_encrypting() throws SQLException {
     Handle<Card> small = card();
-    Handle<Card> repetitive =
-        loch.hold(
-            new Card("4111111111114821", "J CARMAN ".repeat(200)),
-            Card.class,
-            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+    acme();
+    Handle<Card> repetitive = cards.hold(new Card("4111111111114821", "J CARMAN ".repeat(200)));
 
     // 1800 characters of a repeated name, stored in nothing like 1800 bytes.
     assertThat(payloadLength(repetitive)).isLessThan(payloadLength(small) + 300);
@@ -403,43 +433,34 @@ class JdbcLochTest {
     List<Card> cards =
         List.of(new Card("4111111111114821", "A"), new Card("4111111111119999", "B"));
 
-    Handle<List<Card>> held =
-        loch.hold(
-            cards,
-            TypeRef.listOf(TypeRef.of(Card.class)),
-            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+    acme();
+    Handle<List<Card>> held = cardLists.hold(cards);
 
-    assertThat(loch.dereference(held, PAYMENT_PROCESSOR, acme()).granted())
+    assertThat(cardListProcessor.read(held, acme()).granted())
         .hasValueSatisfying(
             back -> {
               assertThat(back).hasSize(2);
               assertThat(back.getFirst().number()).isEqualTo("4111111111114821");
             });
-    assertThat(loch.dereference(held, VENDOR_LLM, acme()).allowed()).isFalse();
+    assertThat(cardListVendor.read(held, acme()).allowed()).isFalse();
   }
 
   @Test
   @DisplayName("a handle claiming the wrong element type is refused")
   void a_handle_claiming_the_wrong_element_type_is_refused() {
-    Handle<List<Card>> cards =
-        loch.hold(
-            List.of(new Card("4111111111114821", "A")),
-            TypeRef.listOf(TypeRef.of(Card.class)),
-            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+    acme();
+    Handle<List<Card>> cards = cardLists.hold(List.of(new Card("4111111111114821", "A")));
     Handle<List<Last4>> lying = new Handle<>(cards.id(), TypeRef.listOf(TypeRef.of(Last4.class)));
 
-    assertThat(loch.dereference(lying, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
+    assertThat(last4ListProcessor.read(lying, acme()).allowed()).isFalse();
   }
 
   /** Reading a label should not decrypt a payload. */
   @Test
   @DisplayName("asking what a value is labelled does not decode the value")
   void asking_for_a_label_does_not_decode_the_value() {
-    Handle<List<Card>> cards =
-        loch.hold(
-            List.of(new Card("4111111111114821", "A")),
-            TypeRef.listOf(TypeRef.of(Card.class)),
-            Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
+    acme();
+    Handle<List<Card>> cards = cardLists.hold(List.of(new Card("4111111111114821", "A")));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
     assertThat(loch.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);

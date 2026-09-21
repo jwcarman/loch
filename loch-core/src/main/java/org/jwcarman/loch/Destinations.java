@@ -26,13 +26,13 @@ public final class Destinations {
   private Destinations() {}
 
   /** A destination that accepts the same thing regardless of who is asking: nearly all of them. */
-  public static <A> Destination<A> fixed(DestinationId id, A ceiling) {
-    Objects.requireNonNull(id, "a destination needs a name");
+  public static <A> Destination<A> fixed(String name, A ceiling) {
+    Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
     return new Destination<>() {
       @Override
-      public DestinationId id() {
-        return id;
+      public String name() {
+        return name;
       }
 
       @Override
@@ -48,13 +48,13 @@ public final class Destinations {
    * <p>For people. An approval card may show a finance approver more than it shows anyone else, and
    * that is a decision only the application can make, from context only the application supplied.
    */
-  public static <A> Destination<A> varying(DestinationId id, Function<AccessContext, A> ceiling) {
-    Objects.requireNonNull(id, "a destination needs a name");
+  public static <A> Destination<A> varying(String name, Function<AccessContext, A> ceiling) {
+    Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
     return new Destination<>() {
       @Override
-      public DestinationId id() {
-        return id;
+      public String name() {
+        return name;
       }
 
       @Override

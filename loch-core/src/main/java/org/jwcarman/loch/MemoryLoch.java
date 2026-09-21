@@ -33,8 +33,8 @@ public final class MemoryLoch {
   private MemoryLoch() {}
 
   /** Builds one. The customizer is where the lattice, destinations and auditor are declared. */
-  public static <A> Loch<A> create(Consumer<LochConfig<A>> customizer) {
-    LochConfig<A> config = new LochConfig<>();
+  public static <A, D> Loch<A> create(Consumer<LochConfig<A, D>> customizer) {
+    LochConfig<A, D> config = new LochConfig<>();
     customizer.accept(config);
     return create(config);
   }
@@ -46,13 +46,13 @@ public final class MemoryLoch {
    * local: configure, mint into plain final variables, then build.
    *
    * <pre>{@code
-   * LochConfig<Billing> c = new LochConfig<>();
+   * LochConfig<Billing, BillingValue> c = new LochConfig<>();
    * c.lattice(Billing.LATTICE).auditor(auditor);
    * Inlet<Mail> mail = c.inlet(CUSTOMER_MAIL, Mail.class, ctx -> ...);
    * Loch<Billing> loch = MemoryLoch.create(c);
    * }</pre>
    */
-  public static <A> Loch<A> create(LochConfig<A> config) {
+  public static <A, D> Loch<A> create(LochConfig<A, D> config) {
     return new DefaultLoch<>(config, new MemoryStorage<>());
   }
 }

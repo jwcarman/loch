@@ -31,9 +31,6 @@ package org.jwcarman.loch;
  */
 public interface Derivation<I, O> {
 
-  /** What this is called in the manifest and in the record. */
-  DerivationId id();
-
   /** Makes the new value, or refuses. */
   Derived<O> derive(Handle<I> parent);
 

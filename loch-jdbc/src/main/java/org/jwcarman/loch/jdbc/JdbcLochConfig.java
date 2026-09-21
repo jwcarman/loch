@@ -22,9 +22,7 @@ import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Destination;
-import org.jwcarman.loch.DestinationId;
 import org.jwcarman.loch.LochConfig;
-import org.jwcarman.loch.Question;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
@@ -34,7 +32,7 @@ import org.jwcarman.loch.lattice.Lattice;
  * <p>The fluent methods it inherits are re-declared so they answer with this type and a single
  * chain can mix both kinds of setting.
  */
-public final class JdbcLochConfig<A> extends LochConfig<A> {
+public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
 
   private DataSource dataSource;
   private CodecFactory codecs;
@@ -42,13 +40,13 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
   private boolean migrate = true;
 
   /** Where the tables are. */
-  public JdbcLochConfig<A> dataSource(DataSource dataSource) {
+  public JdbcLochConfig<A, D> dataSource(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "a durable loch needs a data source");
     return this;
   }
 
   /** How values become bytes. Any {@link CodecFactory}: Jackson, fory, protobuf, your own. */
-  public JdbcLochConfig<A> codecs(CodecFactory codecs) {
+  public JdbcLochConfig<A, D> codecs(CodecFactory codecs) {
     this.codecs = Objects.requireNonNull(codecs, "a durable loch needs codecs");
     return this;
   }
@@ -66,13 +64,13 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
    *         .andThen(EnvelopeCodec.builder(keys).build())))
    * }</pre>
    */
-  public JdbcLochConfig<A> storedThrough(StorageCodec storageCodec) {
+  public JdbcLochConfig<A, D> storedThrough(StorageCodec storageCodec) {
     this.storageCodec = Objects.requireNonNull(storageCodec, "a storage codec must not be null");
     return this;
   }
 
   /** Stores bytes exactly as serialised. For a throwaway database, never for real data. */
-  public JdbcLochConfig<A> storedPlainly() {
+  public JdbcLochConfig<A, D> storedPlainly() {
     return storedThrough(
         StorageCodec.of(
             new Codec<byte[]>() {
@@ -89,62 +87,51 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
   }
 
   /** Leaves the schema alone; something else owns it. */
-  public JdbcLochConfig<A> withoutMigration() {
+  public JdbcLochConfig<A, D> withoutMigration() {
     this.migrate = false;
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A> lattice(Lattice<A> lattice) {
+  public JdbcLochConfig<A, D> lattice(Lattice<A> lattice) {
     super.lattice(lattice);
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A> auditor(Auditor auditor) {
+  public JdbcLochConfig<A, D> auditor(Auditor auditor) {
     super.auditor(auditor);
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A> withoutAudit() {
+  public JdbcLochConfig<A, D> withoutAudit() {
     super.withoutAudit();
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A> explainRefusals() {
+  public JdbcLochConfig<A, D> explainRefusals() {
     super.explainRefusals();
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A> destination(Destination<A> destination) {
+  public JdbcLochConfig<A, D> destination(Destination<A> destination) {
     super.destination(destination);
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A> destination(DestinationId id, A ceiling) {
-    super.destination(id, ceiling);
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A> question(Question<A, ?, ?> question) {
-    super.question(question);
     return this;
   }
 
   /** Re-declared because this config does not inherit the fluent return type. */
   @Override
-  public JdbcLochConfig<A> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
+  public JdbcLochConfig<A, D> askingWhoIsAsking(
+      java.util.function.Supplier<AccessContext> ambient) {
     super.askingWhoIsAsking(ambient);
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A> callerMayContribute(String... keys) {
+  public JdbcLochConfig<A, D> callerMayContribute(String... keys) {
     super.callerMayContribute(keys);
     return this;
   }

@@ -36,49 +36,41 @@ import org.jwcarman.loch.lattice.Lattice;
 public final class DefaultLoch<A> implements Loch<A> {
 
   private final Lattice<A> lattice;
-  private final Map<DestinationId, Destination<A>> destinations;
+  private final Map<String, Destination<A>> destinations;
   private final List<DerivationSpec<A, ?>> derivations;
-  private final Map<String, Question<A, ?, ?>> questions;
+  private final List<QuerySpec<A, ?, ?>> queries;
   private final boolean explainRefusals;
   private final Auditor auditor;
   private final java.util.function.Supplier<AccessContext> ambient;
   private final java.util.Set<String> callerMayContribute;
   private final java.util.function.BiPredicate<A, AccessContext> mayErase;
-  private final java.util.function.BiPredicate<A, AccessContext> mayHold;
   private final Storage<A> storage;
 
-  public DefaultLoch(LochConfig<A> config, Storage<A> storage) {
+  public DefaultLoch(LochConfig<A, ?> config, Storage<A> storage) {
     this.storage = storage;
     this.lattice = config.lattice();
-    Map<DestinationId, Destination<A>> byId = new LinkedHashMap<>();
+    Map<String, Destination<A>> byId = new LinkedHashMap<>();
     for (Destination<A> destination : config.destinations()) {
-      if (byId.put(destination.id(), destination) != null) {
+      if (byId.put(destination.name(), destination) != null) {
         throw new IllegalStateException(
-            "two destinations are registered as '" + destination.id() + "'");
+            "two destinations are registered as '" + destination.name() + "'");
       }
     }
     this.destinations = Collections.unmodifiableMap(byId);
     Map<String, DerivationSpec<A, ?>> byName = new LinkedHashMap<>();
     for (DerivationSpec<A, ?> derivation : config.derivations()) {
-      if (byName.put(derivation.id().value(), derivation) != null) {
+      if (byName.put(derivation.name(), derivation) != null) {
         throw new IllegalStateException(
-            "two derivations are registered as '" + derivation.id() + "'");
+            "two derivations are registered as '" + derivation.name() + "'");
       }
     }
     this.derivations = List.copyOf(config.derivations());
-    Map<String, Question<A, ?, ?>> byQuestion = new LinkedHashMap<>();
-    for (Question<A, ?, ?> question : config.questions()) {
-      if (byQuestion.put(question.id().value(), question) != null) {
-        throw new IllegalStateException("two questions are registered as '" + question.id() + "'");
-      }
-    }
-    this.questions = Collections.unmodifiableMap(byQuestion);
+    this.queries = List.copyOf(config.queries());
     this.explainRefusals = config.explainsRefusals();
     this.auditor = config.auditor();
     this.ambient = config.ambient();
     this.callerMayContribute = config.callerMayContribute();
     this.mayErase = config.mayErase();
-    this.mayHold = config.mayHold();
     // Last, and only once everything above succeeded: capabilities minted during configuration
     // reach this loch through the config, and one that half-built must not be reachable at all.
     config.bind(this);
@@ -92,7 +84,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    * configuration, and the caller contributes nothing to it.
    */
   <T> Handle<T> holdVia(
-      InletId inlet,
+      String inlet,
       TypeRef<T> type,
       java.util.function.Function<AccessContext, A> labelling,
       T value) {
@@ -110,7 +102,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       audit(
           AuditRecord.Operation.HOLD,
           HandleId.fresh(),
-          inlet.value(),
+          inlet,
           AuditRecord.Outcome.REFUSED,
           "the inlet could not say how to label this",
           null,
@@ -121,14 +113,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     HandleId id = HandleId.fresh();
     // Recorded before it is stored, for the reason given in hold(...): an auditor that throws must
     // leave nothing behind. The inlet is named, so the record says which door this came in through.
-    audit(
-        AuditRecord.Operation.HOLD,
-        id,
-        inlet.value(),
-        AuditRecord.Outcome.ALLOWED,
-        null,
-        label,
-        asking);
+    audit(AuditRecord.Operation.HOLD, id, inlet, AuditRecord.Outcome.ALLOWED, null, label, asking);
     storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
     return new Handle<>(id, type);
   }
@@ -254,38 +239,6 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public <T> Handle<T> hold(T value, TypeRef<T> type, A label) {
-    if (value == null) {
-      throw new IllegalArgumentException("a loch holds values, not nulls");
-    }
-    if (label == null) {
-      throw new IllegalArgumentException(
-          "a held value needs an label; use the lattice's bottom to say 'nothing in"
-              + " particular'");
-    }
-    AccessContext asking = asking(AccessContext.empty());
-    if (!mayHold.test(label, asking)) {
-      audit(
-          AuditRecord.Operation.HOLD,
-          HandleId.fresh(),
-          null,
-          AuditRecord.Outcome.REFUSED,
-          "not permitted to hold at that label",
-          label,
-          asking);
-      throw new AccessDeniedException(
-          "MAY_NOT_HOLD", "this access may not create a value labelled that way");
-    }
-    HandleId id = HandleId.fresh();
-    // Recorded before it is stored, not after. An auditor that throws must leave nothing behind;
-    // the other order commits a value durably under an id the caller never receives, which is a
-    // secret nothing can reach, read or erase.
-    audit(AuditRecord.Operation.HOLD, id, null, AuditRecord.Outcome.ALLOWED, null, label, asking);
-    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
-    return new Handle<>(id, type);
-  }
-
-  @Override
   public A label(HandleId id) {
     return metadataOf(id).label();
   }
@@ -338,16 +291,15 @@ public final class DefaultLoch<A> implements Loch<A> {
     return removed;
   }
 
-  @Override
-  public <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> id, Q against, AccessContext context) {
-    AccessContext asking = asking(context);
+  <I, Q> Answer askVia(QuerySpec<A, I, Q> spec, Handle<I> about, Q against, AccessContext given) {
+    AccessContext asking = asking(given);
     AtomicReference<A> label = new AtomicReference<>();
-    Answer answer = answering(held, id, against, asking, label);
+    Answer answer = answering(spec, about, against, asking, label);
     if (answer instanceof Answer.Refused refused) {
       audit(
           AuditRecord.Operation.ASK,
-          held.id(),
-          id.value(),
+          about.id(),
+          spec.name(),
           AuditRecord.Outcome.REFUSED,
           refused.reason().name(),
           label.get(),
@@ -356,21 +308,16 @@ public final class DefaultLoch<A> implements Loch<A> {
     return answer;
   }
 
-  @SuppressWarnings("unchecked")
   private <I, Q> Answer answering(
+      QuerySpec<A, I, Q> spec,
       Handle<I> held,
-      QuestionId<I, Q> id,
       Q against,
       AccessContext context,
       AtomicReference<A> refused) {
-    Question<A, I, Q> asked = (Question<A, I, Q>) questions.get(id.value());
-    if (asked == null) {
+    String name = spec.name();
+    if (!offeredHere(() -> spec.availableTo().test(context))) {
       return new Answer.Refused(
-          Answer.Reason.NO_SUCH_QUESTION, "no question is registered as '" + id + "'");
-    }
-    if (!offeredHere(() -> asked.availableTo(context))) {
-      return new Answer.Refused(
-          Answer.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
+          Answer.Reason.NOT_AVAILABLE_HERE, "'" + name + "' is not offered here");
     }
     StoredMetadata<A> entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
@@ -378,38 +325,45 @@ public final class DefaultLoch<A> implements Loch<A> {
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
     refused.set(entry.label());
-    if (!entry.typeName().equals(nameOf(asked.inputType()))) {
+    if (!entry.typeName().equals(nameOf(spec.inputType()))) {
       return new Answer.Refused(
           Answer.Reason.WRONG_TYPE,
           "'%s' asks about a %s, but %s is a %s"
-              .formatted(id, nameOf(asked.inputType()), held.id(), entry.typeName()));
+              .formatted(name, nameOf(spec.inputType()), held.id(), entry.typeName()));
     }
-    Optional<A> ceiling = ceilingOf(() -> asked.ceiling(context));
+    Optional<A> ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
-          "'" + id + "' could not say what it accepts, so it does not accept this");
+          "'" + name + "' could not say what it accepts, so it does not accept this");
     }
     if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
           held.id()
               + " may not be looked at by '"
-              + id
+              + name
               + "'"
               + explain(entry.label(), ceiling.get()));
     }
-    I subject = storage.value(held.id(), asked.inputType()).orElse(null);
+    I subject = storage.value(held.id(), spec.inputType()).orElse(null);
     if (subject == null) {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
-    boolean answer = asked.test(subject, against, context);
+    boolean answer;
+    try {
+      answer = spec.asking().test(subject, against, context);
+    } catch (RuntimeException e) {
+      // It has already read the plaintext, so this refusal is recorded like any other.
+      return new Answer.Refused(
+          Answer.Reason.NOT_AVAILABLE_HERE, "'" + name + "' failed while reading the value");
+    }
     // The answer, never what was asked: the argument can itself be sensitive.
     audit(
         AuditRecord.Operation.ASK,
         held.id(),
-        id.value(),
+        name,
         AuditRecord.Outcome.ALLOWED,
         "answered " + answer,
         entry.label(),
@@ -430,7 +384,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           A ceiling = ceilingOf(destination, AccessContext.empty());
           theDestinations.add(
               new Manifest.Entry(
-                  id.value(),
+                  id,
                   "accepts up to "
                       + (ceiling == null ? "(its ceiling could not be evaluated)" : ceiling),
                   false));
@@ -440,19 +394,12 @@ public final class DefaultLoch<A> implements Loch<A> {
         derivation ->
             theDerivations.add(
                 new Manifest.Entry(
-                    derivation.id().value(),
+                    derivation.name(),
                     "%s -> %s"
                         .formatted(
                             reads(derivation), derivation.outputType().rawClass().getSimpleName()),
                     derivation.privileged())));
     List<Manifest.Entry> theQuestions = new ArrayList<>();
-    questions.forEach(
-        (name, question) ->
-            theQuestions.add(
-                new Manifest.Entry(
-                    name,
-                    "asks about a " + question.inputType().rawClass().getSimpleName(),
-                    false)));
     return new Manifest(
         String.valueOf(lattice.bottom()), theDestinations, theDerivations, theQuestions);
   }
@@ -474,7 +421,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       audit(
           AuditRecord.Operation.DERIVE,
           parents.isEmpty() ? HandleId.fresh() : parents.getFirst().id(),
-          spec.id().value(),
+          spec.name(),
           AuditRecord.Outcome.REFUSED,
           refused.reason().name(),
           label.get(),
@@ -488,7 +435,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       List<Handle<?>> parents,
       AccessContext context,
       AtomicReference<A> refused) {
-    DerivationId id = spec.id();
+    String id = spec.name();
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
           Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
@@ -579,7 +526,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     audit(
         AuditRecord.Operation.DERIVE,
         newId,
-        id.value(),
+        id,
         AuditRecord.Outcome.ALLOWED,
         reasonFor(spec, joined, parentIds.size()),
         label,
@@ -587,12 +534,11 @@ public final class DefaultLoch<A> implements Loch<A> {
     storage.put(
         newId,
         new StoredValue<>(
-            produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
+            produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)));
     return new Derived.Made<>(new Handle<>(newId, spec.outputType()));
   }
 
-  @Override
-  public <T> Dereferenced<T> dereference(Handle<T> held, DestinationId to, AccessContext context) {
+  <T> Dereferenced<T> dereference(Handle<T> held, String to, AccessContext context) {
     context = asking(context);
     Destination<A> destination = destinations.get(to);
     if (destination == null) {
@@ -600,7 +546,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           Dereferenced.Reason.NO_SUCH_DESTINATION,
           "no destination is registered as '" + to + "'",
           held.id(),
-          to.value(),
+          to,
           null,
           context);
     }
@@ -610,7 +556,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           Dereferenced.Reason.NO_SUCH_VALUE,
           "this loch is not holding " + held.id(),
           held.id(),
-          to.value(),
+          to,
           null,
           context);
     }
@@ -619,7 +565,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           Dereferenced.Reason.WRONG_TYPE,
           held.id() + " is a " + entry.typeName() + ", not a " + nameOf(held.type()),
           held.id(),
-          to.value(),
+          to,
           entry.label(),
           context);
     }
@@ -629,7 +575,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           Dereferenced.Reason.ABOVE_CEILING,
           "'" + to + "' could not say what it accepts, so it does not accept this",
           held.id(),
-          to.value(),
+          to,
           entry.label(),
           context);
     }
@@ -638,14 +584,14 @@ public final class DefaultLoch<A> implements Loch<A> {
           Dereferenced.Reason.ABOVE_CEILING,
           held.id() + " may not reach '" + to + "'" + explain(entry.label(), ceiling),
           held.id(),
-          to.value(),
+          to,
           entry.label(),
           context);
     }
     audit(
         AuditRecord.Operation.DEREFERENCE,
         held.id(),
-        to.value(),
+        to,
         AuditRecord.Outcome.ALLOWED,
         null,
         entry.label(),

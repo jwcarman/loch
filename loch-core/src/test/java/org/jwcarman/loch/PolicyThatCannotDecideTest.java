@@ -38,58 +38,52 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A policy that cannot decide")
 class PolicyThatCannotDecideTest {
 
-  private static final DestinationId ANYWHERE = DestinationId.of("anywhere");
-  private static final QuestionId<String, String> CEILING_THROWS =
-      QuestionId.of("question-whose-ceiling-throws");
-  private static final QuestionId<String, String> GATE_THROWS =
-      QuestionId.of("question-whose-gate-throws");
-  private static final DerivationId DERIVATION_CEILING_THROWS =
-      DerivationId.of("derivation-whose-ceiling-throws");
-  private static final DerivationId LOWERING_THROWS =
-      DerivationId.of("derivation-whose-lowering-throws");
-  private static final DerivationId FUNCTION_THROWS =
-      DerivationId.of("derivation-that-fails-midway");
-
   private final List<AuditRecord> audit = new ArrayList<>();
 
-  private final LochConfig<Exact<String>> config =
-      new LochConfig<Exact<String>>()
-          .lattice(Lattices.exact())
-          .auditor(audit::add)
-          .destination(Destinations.varying(ANYWHERE, ctx -> boom()))
-          .question(
-              Question.<Exact<String>, String, String>of(
-                      CEILING_THROWS, String.class, String::equals)
-                  .accepting(ctx -> boom())
-                  .build())
-          .question(
-              Question.<Exact<String>, String, String>of(GATE_THROWS, String.class, String::equals)
-                  .acceptingAnything()
-                  .availableTo(ctx -> boom())
-                  .build());
+  private final LochConfig<Exact<String>, Object> config =
+      new LochConfig<Exact<String>, Object>().lattice(Lattices.exact()).auditor(audit::add);
 
-  private final Derivation<String, String> ceilingThrows =
+  private final Inlet<String> source =
+      config.inlet("source", String.class, ctx -> Exact.of("acme"));
+
+  private final Outlet<String> sinkWhoseCeilingThrows =
+      config.outlet("anywhere", String.class, ctx -> boom());
+
+  private final Query<String, String> queryWhoseCeilingThrows =
       config
-          .derivation(DERIVATION_CEILING_THROWS, String.class, String.class, String::toUpperCase)
+          .query("query-ceiling", String.class, String.class, (v, q, ctx) -> v.equals(q))
+          .accepting(ctx -> boom())
+          .mint();
+
+  private final Query<String, String> queryWhoseGateThrows =
+      config
+          .query("query-gate", String.class, String.class, (v, q, ctx) -> v.equals(q))
+          .acceptingAnything()
+          .availableTo(ctx -> boom())
+          .mint();
+
+  private final Derivation<String, String> derivationWhoseCeilingThrows =
+      config
+          .derivation("derivation-ceiling", String.class, String.class, String::toUpperCase)
           .accepting(ctx -> boom())
           .mint();
 
   private final Derivation<String, String> loweringThrows =
       config
-          .derivation(LOWERING_THROWS, String.class, String.class, String::toUpperCase)
+          .derivation("lowering", String.class, String.class, String::toUpperCase)
           .acceptingAnything()
           .lowering(joined -> boom())
           .mint();
 
   private final Derivation<String, String> functionThrows =
       config
-          .derivation(FUNCTION_THROWS, String.class, String.class, value -> boom())
+          .derivation("function", String.class, String.class, value -> boom())
           .acceptingAnything()
           .mint();
 
   private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
-  private final Handle<String> held = loch.hold("secret", String.class, Exact.of("acme"));
+  private final Handle<String> held = source.hold("secret");
 
   /** Whatever a real one would be: the point is only that it is unchecked and unhandled. */
   private static <T> T boom() {
@@ -97,27 +91,24 @@ class PolicyThatCannotDecideTest {
   }
 
   @Test
-  @DisplayName("is not a destination that accepts the value")
-  void is_not_a_destination_that_accepts_the_value() {
-    Dereferenced<String> result = loch.dereference(held, ANYWHERE, AccessContext.empty());
-
-    assertThat(result.allowed()).isFalse();
-    assertThat(result).isInstanceOf(Dereferenced.Denied.class);
+  @DisplayName("is not a sink that accepts the value")
+  void is_not_a_sink_that_accepts_the_value() {
+    assertThat(sinkWhoseCeilingThrows.read(held).allowed()).isFalse();
   }
 
   @Test
-  @DisplayName("is not a question that may read the value")
-  void is_not_a_question_that_may_read_the_value() {
-    Answer result = loch.ask(held, CEILING_THROWS, "secret", AccessContext.empty());
+  @DisplayName("is not a query that may read the value")
+  void is_not_a_query_that_may_read_the_value() {
+    Answer result = queryWhoseCeilingThrows.ask(held, "secret");
 
     assertThat(result).isInstanceOf(Answer.Refused.class);
     assertThat(((Answer.Refused) result).reason()).isEqualTo(Answer.Reason.ABOVE_CEILING);
   }
 
   @Test
-  @DisplayName("is not a question that is offered here")
-  void is_not_a_question_that_is_offered_here() {
-    Answer result = loch.ask(held, GATE_THROWS, "secret", AccessContext.empty());
+  @DisplayName("is not a query that is offered here")
+  void is_not_a_query_that_is_offered_here() {
+    Answer result = queryWhoseGateThrows.ask(held, "secret");
 
     assertThat(result).isInstanceOf(Answer.Refused.class);
     assertThat(((Answer.Refused) result).reason()).isEqualTo(Answer.Reason.NOT_AVAILABLE_HERE);
@@ -126,7 +117,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is not a derivation that may read the value")
   void is_not_a_derivation_that_may_read_the_value() {
-    Derived<String> result = ceilingThrows.derive(held, AccessContext.empty());
+    Derived<String> result = derivationWhoseCeilingThrows.derive(held);
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.ABOVE_CEILING);
@@ -135,7 +126,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is not a lowering that lowered anything")
   void is_not_a_lowering_that_lowered_anything() {
-    Derived<String> result = loweringThrows.derive(held, AccessContext.empty());
+    Derived<String> result = loweringThrows.derive(held);
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason())
@@ -154,7 +145,7 @@ class PolicyThatCannotDecideTest {
   void that_fails_after_reading_still_leaves_a_line() {
     audit.clear();
 
-    Derived<String> result = functionThrows.derive(held, AccessContext.empty());
+    Derived<String> result = functionThrows.derive(held);
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.DECLINED);
@@ -169,11 +160,11 @@ class PolicyThatCannotDecideTest {
   void is_recorded_as_a_refusal() {
     audit.clear();
 
-    loch.dereference(held, ANYWHERE, AccessContext.empty());
-    loch.ask(held, CEILING_THROWS, "secret", AccessContext.empty());
-    loch.ask(held, GATE_THROWS, "secret", AccessContext.empty());
-    ceilingThrows.derive(held, AccessContext.empty());
-    loweringThrows.derive(held, AccessContext.empty());
+    sinkWhoseCeilingThrows.read(held);
+    queryWhoseCeilingThrows.ask(held, "secret");
+    queryWhoseGateThrows.ask(held, "secret");
+    derivationWhoseCeilingThrows.derive(held);
+    loweringThrows.derive(held);
 
     assertThat(audit).hasSize(5);
     assertThat(audit)

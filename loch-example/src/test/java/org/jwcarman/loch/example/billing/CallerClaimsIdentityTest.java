@@ -44,26 +44,53 @@ class CallerClaimsIdentityTest {
 
   @Autowired Loch<BillingLabels> loch;
 
+  @Autowired org.springframework.context.ApplicationContext context;
+
   /**
    * The gate is only worth anything if identity comes from somewhere a caller does not control.
    *
-   * <p>This service establishes it from the request. Code holding the loch directly, with no
-   * request in scope, has no identity -- and saying it is acme does not make it so.
-   *
-   * <p>It cannot even create the value any more, which is a stronger statement than the one this
-   * test was originally written to make. Writing at a label is its own question, and with nobody
-   * acting there is no label this code may write at.
+   * <p>This test used to fabricate a value at acme's label and assert the loch refused it. It
+   * cannot be written any more: nothing on {@link Loch} takes a label, so there is no way to say
+   * what a value should be labelled except by holding the source that decides. What is left worth
+   * asserting is that the door really is gone, because it is the sort of thing that gets added back
+   * for a test fixture and never removed.
    */
   @Test
-  @DisplayName("cannot even create the value, let alone read one")
-  void cannot_even_create_the_value() {
-    BillingLabels asAcme =
-        BillingLabels.of(
-            "acme", BillingLabels.Integrity.ENDORSED, BillingLabels.Sensitivity.CARDHOLDER);
+  @DisplayName("cannot create a value through the loch, because nothing there creates values")
+  void cannot_create_a_value_through_the_loch() {
+    assertThat(Loch.class.getMethods())
+        .isNotEmpty()
+        .noneSatisfy(
+            method -> assertThat(method.getReturnType()).isEqualTo(org.jwcarman.loch.Handle.class));
+  }
 
-    assertThat(
-            org.assertj.core.api.Assertions.catchThrowable(
-                () -> loch.hold("tok_live_secret", String.class, asAcme)))
-        .isInstanceOf(org.jwcarman.loch.AccessDeniedException.class);
+  /**
+   * Spring's container is a lookup-by-type service, so publishing a portal as a bean would hand one
+   * to any class willing to name the type in its constructor. That is obtaining authority by naming
+   * it, which is the thing this design removed. Portals are private fields of the services entitled
+   * to them, and nothing can ask the context for one.
+   */
+  /**
+   * The mint is the one thing more dangerous than a portal.
+   *
+   * <p>A portal is one pre-declared authority. The configuration that makes portals can make any of
+   * them, at any label and any ceiling. It is a local variable in one constructor and it never
+   * enters the container, which is also why minting after the loch was built cannot be expressed
+   * here: there is nothing to mint from.
+   */
+  @Test
+  @DisplayName("cannot obtain the mint from the application context")
+  void cannot_obtain_the_mint_from_the_context() {
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.LochConfig.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.jdbc.JdbcLochConfig.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("cannot obtain a portal from the application context")
+  void cannot_obtain_a_portal_from_the_context() {
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Inlet.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Outlet.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Derivation.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Query.class)).isEmpty();
   }
 }

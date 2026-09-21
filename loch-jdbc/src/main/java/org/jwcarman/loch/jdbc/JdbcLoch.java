@@ -48,8 +48,9 @@ public final class JdbcLoch {
    * @param labelType the application's label record, which has to be serialised like any other
    *     value because labels are stored encrypted too
    */
-  public static <A> Loch<A> create(Class<A> labelType, Consumer<JdbcLochConfig<A>> customizer) {
-    JdbcLochConfig<A> config = new JdbcLochConfig<>();
+  public static <A, D> Loch<A> create(
+      Class<A> labelType, Consumer<JdbcLochConfig<A, D>> customizer) {
+    JdbcLochConfig<A, D> config = new JdbcLochConfig<>();
     customizer.accept(config);
     return create(labelType, config);
   }
@@ -63,7 +64,7 @@ public final class JdbcLoch {
    * @param labelType the application's label record, which has to be serialised like any other
    *     value because labels are stored encrypted too
    */
-  public static <A> Loch<A> create(Class<A> labelType, JdbcLochConfig<A> config) {
+  public static <A, D> Loch<A> create(Class<A> labelType, JdbcLochConfig<A, D> config) {
     JdbcStorage<A> storage =
         new JdbcStorage<>(
             config.dataSourceOrFail(),

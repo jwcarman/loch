@@ -32,7 +32,7 @@ import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Outlet;
-import org.jwcarman.loch.Question;
+import org.jwcarman.loch.Query;
 import org.jwcarman.loch.jdbc.JdbcLoch;
 import org.jwcarman.loch.jdbc.JdbcLochConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
@@ -45,16 +45,27 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import tools.jackson.databind.json.JsonMapper;
 
-/** This application's entire information-flow policy, in one file. */
+/**
+ * Everything this application is allowed to do, decided once, in one constructor.
+ *
+ * <p><b>Ordering is guaranteed because this is a constructor, not a bean graph.</b> Capabilities
+ * are attached to a loch when that loch is built, so every one of them has to be minted first. A
+ * constructor body runs top to bottom, so the compiler and the language settle the ordering and
+ * Spring is never asked to. The {@code @Bean} methods below hand out what was already made; they do
+ * not make anything.
+ *
+ * <p>Minting inside a {@code @Bean} method instead would mint <i>after</i> this class was built,
+ * and quite possibly after the loch was. That capability would be attached to nothing and would
+ * throw on first use rather than failing quietly, but the place to not do it is here.
+ *
+ * <p>The infrastructure it depends on lives in {@link StorageConfiguration}, because a
+ * configuration class cannot both declare a bean and take it as a constructor parameter.
+ */
 @Configuration
 public class LochConfiguration {
 
   private static final Logger log = LoggerFactory.getLogger(LochConfiguration.class);
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
-
-  // Minted once, in a constructor, and handed out below. Nothing can obtain one any other way:
-  // there is no method that trades an id for the capability it names, which is the only reason
-  // holding one of these means anything.
 
   private final Loch<BillingLabels> loch;
   private final Inlet<Domain.Mail> customerMail;
@@ -63,52 +74,44 @@ public class LochConfiguration {
   private final Outlet<Domain.Invoice> paymentProcessor;
   private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
+  private final Query<Domain.Mail, String> mailMentions;
 
   public LochConfiguration(
       DataSource dataSource, StorageCodec storageCodec, Auditor auditor, Invoices invoices) {
 
-    JdbcLochConfig<BillingLabels> c = new JdbcLochConfig<>();
+    // The domain bound is the second parameter. Source<String> would not compile.
+    JdbcLochConfig<BillingLabels, Domain.BillingValue> c = new JdbcLochConfig<>();
     c.dataSource(dataSource)
         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
         .storedThrough(storageCodec)
         .lattice(BillingLabels.LATTICE)
         .auditor(auditor)
-        .askingWhoIsAsking(CurrentAccess::get)
-        // A stopgap, and only that. Inlets make a blind write up unsayable -- no method on one
-        // takes a label -- but Loch.hold still exists and still takes a label, so the old door
-        // needs its old lock until that door is gone. Deleting this line while hold(...) remains
-        // leaves the application strictly less safe than before inlets existed.
-        .mayHold(
-            (label, ctx) ->
-                label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
+        .askingWhoIsAsking(CurrentAccess::get);
 
-    // ---- how values get in ----------------------------------------------------
-    // The tenant is read from the access, never passed by the caller. A blind write up is not
-    // refused here so much as unsayable: no method on an inlet takes a label.
+    // ---- how values get in -----------------------------------------------------
+    // The tenant is read from the access, never passed by the caller. Writing at another
+    // tenant's label is not refused here so much as unsayable: nothing takes a label.
     this.customerMail =
-        c.inlet(Billing.CUSTOMER_MAIL, Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
+        c.inlet("customer-mail", Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
-    // ---- how values get out ---------------------------------------------------
+    // ---- how values get out ----------------------------------------------------
     this.supportUi =
-        c.outlet(Billing.SUPPORT_UI, Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
+        c.outlet("support-ui", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
     this.approvalDesk =
         c.outlet(
-            Billing.APPROVAL_DESK,
+            "approval-desk",
             Domain.Last4.class,
             ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
     this.paymentProcessor =
         c.outlet(
-            Billing.PAYMENT_PROCESSOR,
-            Domain.Invoice.class,
-            ctx -> label(ctx, ENDORSED, CARDHOLDER));
+            "payment-processor", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
-    // ---- one value from another -----------------------------------------------
+    // ---- one value from another ------------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
-    // claimed to the mailbox their message came from. Reads untrusted personal mail, and
-    // only this tenant's.
+    // claimed to the mailbox their message came from.
     this.confirmInvoice =
         c.checking(
-                Billing.CONFIRMED_INVOICE,
+                "mail.confirmedInvoice",
                 Domain.Mail.class,
                 Domain.Invoice.class,
                 (mail, ctx) -> confirm(invoices, mail, ctx))
@@ -119,7 +122,7 @@ public class LochConfiguration {
     // Truncating a card is a declassification, which is what a PCI reviewer asks about.
     this.cardLast4 =
         c.derivation(
-                Billing.CARD_LAST4,
+                "invoice.card.last4",
                 Domain.Invoice.class,
                 Domain.Last4.class,
                 invoice -> new Domain.Last4(last4(invoice.cardToken())))
@@ -128,15 +131,17 @@ public class LochConfiguration {
             .availableTo(ctx -> ctx.has("role", "approver"))
             .mint();
 
-    // ---- questions answered without handing the value over --------------------
-    c.question(
-        Question.<BillingLabels, Domain.Mail, String>of(
-                Billing.MAIL_MENTIONS,
+    // ---- one bit, without the value leaving ------------------------------------
+    this.mailMentions =
+        c.query(
+                "mail.mentions",
                 Domain.Mail.class,
-                (mail, text) -> mail.body().toLowerCase().contains(text.toLowerCase()))
+                String.class,
+                (mail, text, ctx) -> mail.body().toLowerCase().contains(text.toLowerCase()))
             .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
-            .build());
+            .mint();
 
+    // Last, and only now: everything above is attached to this.
     this.loch = JdbcLoch.create(BillingLabels.class, c);
   }
 
@@ -145,34 +150,26 @@ public class LochConfiguration {
     return loch;
   }
 
+  /**
+   * Hands the portals to the one class entitled to them.
+   *
+   * <p><b>The portals are not beans, and that is the point.</b> Spring's container is a
+   * lookup-by-type service: publish an {@code Outlet<Invoice>} and any class anywhere can ask for
+   * one in its constructor and be given it. That is obtaining authority by naming it, which is what
+   * deleting the id types was for. Authority is handed over here, in code somebody has to write and
+   * a reviewer can read, or it is not handed over at all.
+   */
   @Bean
-  public Inlet<Domain.Mail> customerMail() {
-    return customerMail;
-  }
-
-  @Bean
-  public Outlet<Domain.Invoice> supportUi() {
-    return supportUi;
-  }
-
-  @Bean
-  public Outlet<Domain.Last4> approvalDesk() {
-    return approvalDesk;
-  }
-
-  @Bean
-  public Outlet<Domain.Invoice> paymentProcessor() {
-    return paymentProcessor;
-  }
-
-  @Bean
-  public Derivation<Domain.Mail, Domain.Invoice> confirmInvoice() {
-    return confirmInvoice;
-  }
-
-  @Bean
-  public Derivation<Domain.Invoice, Domain.Last4> cardLast4() {
-    return cardLast4;
+  public DisputeService disputeService() {
+    return new DisputeService(
+        loch,
+        customerMail,
+        supportUi,
+        approvalDesk,
+        paymentProcessor,
+        confirmInvoice,
+        cardLast4,
+        mailMentions);
   }
 
   /** Printed once at startup, so what this service will allow is in the log. */
@@ -181,12 +178,7 @@ public class LochConfiguration {
     log.info("\n{}", event.getApplicationContext().getBean(Loch.class).manifest());
   }
 
-  /**
-   * An access is always on behalf of one tenant, and a ceiling says so.
-   *
-   * <p>Naming nobody gives a ceiling of "no tenant", which admits only unattributed values: the
-   * fail-closed answer, and deliberate.
-   */
+  /** A label for this access: the tenant comes from the request, never from the caller. */
   private static BillingLabels label(
       AccessContext ctx, BillingLabels.Integrity integrity, BillingLabels.Sensitivity sensitivity) {
     return new BillingLabels(
@@ -195,14 +187,7 @@ public class LochConfiguration {
         sensitivity);
   }
 
-  /**
-   * An endorsement is only as strong as what it bound: here, the sender's own mailbox.
-   *
-   * <p>There used to be a {@code ctx.has("tenant", ...)} filter here too. It is gone because the
-   * derivation now declares a ceiling, so it cannot be handed another tenant's mail in the first
-   * place. Hand-written filtering inside a function that reads plaintext is exactly what a ceiling
-   * is for, and writing both meant the safety depended on the weaker one.
-   */
+  /** Trust is earned by matching the claim against the mailbox it arrived from. */
   private static Optional<Domain.Invoice> confirm(
       Invoices invoices, Domain.Mail mail, AccessContext ctx) {
     Matcher matcher = INVOICE.matcher(mail.body());

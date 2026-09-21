@@ -18,6 +18,7 @@ package org.jwcarman.loch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.loch.lattice.Exact;
@@ -26,15 +27,14 @@ import org.jwcarman.loch.lattice.Lattices;
 /**
  * A capability minted after its loch was built is attached to nothing.
  *
- * <p>This is the property that makes holding a capability mean anything. Without it the whole
- * arrangement is theatre, because the configuration is the mint: anyone still holding it could
- * manufacture an inlet at any label or a derivation reading anything, long after startup decided
- * what the application was allowed to do.
+ * <p>This is what makes holding a capability mean anything. The configuration is the mint, so
+ * anyone still holding it could otherwise manufacture a source at any label, or a derivation
+ * reading anything, long after startup decided what the application was allowed to do.
  *
- * <p>All three were measured doing exactly that before capabilities were bound individually. An
- * inlet minted after startup planted a value at another tenant's label; a derivation minted after
- * startup read a cardholder token. The outlet failed, but only by accident -- the engine happened
- * to have snapshotted its destinations -- and an accident is not a control.
+ * <p>All of these were measured doing exactly that before capabilities were bound individually. A
+ * source minted after startup planted a value at another tenant's label; a derivation minted after
+ * startup read a cardholder token. The outlet failed, but only because the engine happened to have
+ * snapshotted its destinations, and an accident is not a control.
  *
  * <p>There is no policy here to misconfigure and no check to switch off. A capability reaches its
  * loch through a binding attached when that loch is built, so one minted afterwards has nothing to
@@ -43,15 +43,19 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A capability minted after the loch was built")
 class MintedAfterwardsTest {
 
-  private final LochConfig<Exact<String>> config =
-      new LochConfig<Exact<String>>().lattice(Lattices.exact()).withoutAudit();
+  interface Value {}
 
-  private final Inlet<String> acmeMail =
-      config.inlet(InletId.of("acme-mail"), String.class, ctx -> Exact.of("acme"));
+  record Token(String value) implements Value {}
+
+  private final LochConfig<Exact<String>, Value> config =
+      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact()).withoutAudit();
+
+  private final Inlet<Token> acmeTokens =
+      config.inlet("acme-tokens", Token.class, ctx -> Exact.of("acme"));
 
   private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
-  private final Handle<String> secret = acmeMail.hold("acme's cardholder token");
+  private final Handle<Token> secret = acmeTokens.hold(new Token("acme's cardholder token"));
 
   @Test
   @DisplayName("proves the loch itself still works, so the refusals below mean something")
@@ -60,24 +64,21 @@ class MintedAfterwardsTest {
   }
 
   @Test
-  @DisplayName("cannot be an inlet planting a value at somebody else's label")
-  void cannot_be_an_inlet() {
-    Inlet<String> forged =
-        config.inlet(InletId.of("forged"), String.class, ctx -> Exact.of("globex"));
+  @DisplayName("cannot be a source planting a value at somebody else's label")
+  void cannot_be_a_source() {
+    Inlet<Token> forged = config.inlet("forged", Token.class, ctx -> Exact.of("globex"));
 
-    assertThatThrownBy(() -> forged.hold("globex owes us 1,000,000"))
+    assertThatThrownBy(() -> forged.hold(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("attached to no loch");
-
-    assertThat(loch.manifest().toString()).doesNotContain("forged");
   }
 
   @Test
   @DisplayName("cannot be a derivation reading what it was never entitled to")
   void cannot_be_a_derivation() {
-    Derivation<String, String> forged =
+    Derivation<Token, Token> forged =
         config
-            .derivation(DerivationId.of("forged"), String.class, String.class, String::toUpperCase)
+            .derivation("forged", Token.class, Token.class, t -> new Token(t.value()))
             .acceptingAnything()
             .mint();
 
@@ -87,10 +88,9 @@ class MintedAfterwardsTest {
   }
 
   @Test
-  @DisplayName("cannot be an outlet with a ceiling of its own choosing")
-  void cannot_be_an_outlet() {
-    Outlet<String> forged =
-        config.outlet(DestinationId.of("forged"), String.class, ctx -> Exact.conflict());
+  @DisplayName("cannot be a sink with a ceiling of its own choosing")
+  void cannot_be_a_sink() {
+    Outlet<Token> forged = config.outlet("forged", Token.class, ctx -> Exact.conflict());
 
     assertThatThrownBy(() -> forged.read(secret))
         .isInstanceOf(IllegalStateException.class)
@@ -100,14 +100,31 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a fold either")
   void cannot_be_a_fold() {
-    Fold<String, String> forged =
+    Fold<Token, Token> forged =
         config
-            .fold(
-                DerivationId.of("forged-fold"), String.class, String.class, v -> String.join("", v))
+            .fold("forged-fold", Token.class, Token.class, all -> all.getFirst())
             .acceptingAnything()
             .mint();
 
-    assertThatThrownBy(() -> forged.fold(java.util.List.of(secret)))
+    assertThatThrownBy(() -> forged.fold(List.of(secret)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("attached to no loch");
+  }
+
+  @Test
+  @DisplayName("cannot be a query either")
+  void cannot_be_a_query() {
+    Query<Token, String> forged =
+        config
+            .query(
+                "forged-query",
+                Token.class,
+                String.class,
+                (token, against, ctx) -> token.value().contains(against))
+            .accepting(ctx -> Exact.conflict())
+            .mint();
+
+    assertThatThrownBy(() -> forged.ask(secret, "cardholder"))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("attached to no loch");
   }

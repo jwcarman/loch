@@ -15,8 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import org.jwcarman.codec.spi.TypeRef;
-
 /**
  * A governed claim check.
  *
@@ -25,10 +23,10 @@ import org.jwcarman.codec.spi.TypeRef;
  * Here redemption is decided -- against the label the value carries, the ceiling of wherever it is
  * going, and an identity the holder of the check does not control.
  *
- * <p>Put a value in with {@link #hold} and you get a {@link Handle} handle. The handle goes
- * wherever you like -- an event stream, a prompt, a message to another service -- because
- * possession of a handle is not permission to read it. Getting the value back out is the one
- * checked operation, and it always names where the value is going.
+ * <p>Values go in through a source, which hands back a {@link Handle}. The handle goes wherever you
+ * like -- an event stream, a prompt, a message to another service -- because possession of a handle
+ * is not permission to read it. Getting the value back out is the one checked operation, and it
+ * always names where the value is going.
  *
  * <p><b>There is no way to read a value without naming a destination.</b> No overload omits it. You
  * cannot obtain plaintext "in general", only plaintext for somewhere, and that somewhere is what
@@ -37,33 +35,6 @@ import org.jwcarman.codec.spi.TypeRef;
  * @param <A> the application's label type: one record holding whatever labels it cares about
  */
 public interface Loch<A> {
-
-  /**
-   * Takes custody of a value, under the labels the caller asserts.
-   *
-   * <p><b>Say what the value is.</b> {@code List.of(a, b).getClass()} is {@code
-   * ImmutableCollections$List12}, which nothing can deserialise into, so a loch cannot infer a type
-   * from an object and be right. The caller declares it, and {@link TypeRef#listOf} and friends are
-   * there for the generic cases.
-   *
-   * <p><b>Hold immutable values.</b> A loch stores what it is given. If the caller keeps a
-   * reference to a mutable object and changes it afterwards, the stored value changes underneath a
-   * label that was chosen for what it used to be -- and every check and derivation since was
-   * answering about different content. Records and strings are safe; a mutable bean is not. A
-   * durable loch serialises on the way in and is immune to this, which makes it a hazard of the
-   * in-memory one specifically, and therefore of tests rather than production.
-   *
-   * <p>The caller is trusted application code at a boundary -- a mail listener, a tool that has
-   * just queried a system of record -- so it is entitled to say what it is bringing in. This is the
-   * only place labels are asserted rather than computed; everywhere else they are derived, and
-   * derivation can only make them more constrained.
-   */
-  <T> Handle<T> hold(T value, TypeRef<T> type, A label);
-
-  /** For a value whose class is its type, which is most of them. */
-  default <T> Handle<T> hold(T value, Class<T> type, A label) {
-    return hold(value, TypeRef.of(type), label);
-  }
 
   /**
    * What a value is labelled, for rendering and for reporting.
@@ -114,21 +85,6 @@ public interface Loch<A> {
     return holds(handle.id());
   }
 
-  /**
-   * Asks a registered question about a held value, without the value being handed over.
-   *
-   * <p>The way to avoid dereferencing. A check runs inside the store, sees the plaintext, and
-   * returns a boolean, so the caller learns the one bit it needed and the value never enters code
-   * that could keep it. Prefer this to {@link #dereference} wherever a question is what you
-   * actually have.
-   */
-  <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> question, Q against, AccessContext context);
-
-  /** Using whatever the loch was told about who is asking. */
-  default <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> question, Q against) {
-    return ask(held, question, against, AccessContext.empty());
-  }
-
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */
   Lineage lineage(HandleId id);
 
@@ -146,18 +102,4 @@ public interface Loch<A> {
    * label.
    */
   Manifest manifest();
-
-  /**
-   * The gate: the value, if this destination may receive it.
-   *
-   * <p>Four things are checked, and none of them is taken from the handle: that the value exists,
-   * that the destination is one that was registered, that the stored value really is the type the
-   * handle claims, and that the label is at or below the destination's ceiling.
-   */
-  <T> Dereferenced<T> dereference(Handle<T> held, DestinationId to, AccessContext context);
-
-  /** Using whatever the loch was told about who is asking. */
-  default <T> Dereferenced<T> dereference(Handle<T> held, DestinationId to) {
-    return dereference(held, to, AccessContext.empty());
-  }
 }
