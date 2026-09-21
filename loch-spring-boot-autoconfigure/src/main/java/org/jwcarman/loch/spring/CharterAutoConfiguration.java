@@ -17,7 +17,13 @@ package org.jwcarman.loch.spring;
 
 import org.jwcarman.loch.AccessContextProvider;
 import org.jwcarman.loch.Charter;
+import org.jwcarman.loch.DefaultCharter;
+import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.lattice.Axes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -36,6 +42,9 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 @EnableConfigurationProperties(CharterProperties.class)
 public class CharterAutoConfiguration {
+
+  private static final Logger log = LoggerFactory.getLogger(CharterAutoConfiguration.class);
+
   /**
    * The charter itself, constructed here rather than by the application.
    *
@@ -47,14 +56,55 @@ public class CharterAutoConfiguration {
    * <p>Conditional on the application having said what it asks about every value. Guessing a
    * vocabulary would be the worst thing this could do.
    */
+  /**
+   * The one reference able to seal, kept by the thing that made it.
+   *
+   * <p>Not published. The bean below hands out {@link Charter}, which cannot seal and cannot erase,
+   * so no application bean can reach either by naming a type in its constructor. This field is how
+   * the sealer finds the instance again without the container being able to hand it to anyone else.
+   */
+  private DefaultCharter constituted;
+
   @Bean
   @ConditionalOnBean(Axes.class)
   @ConditionalOnMissingBean
   public Charter charter(Axes axes, java.util.Optional<AccessContextProvider> access) {
-    Charter charter = new Charter(axes);
+    DefaultCharter charter = new DefaultCharter(axes);
+    this.constituted = charter;
     // Identity is where an access comes from, not what this application allows, so it belongs with
     // the wiring rather than in the charter the application writes.
     access.ifPresent(charter::currentAccess);
     return charter;
+  }
+
+  /**
+   * Seals it, last.
+   *
+   * <p>{@link SmartInitializingSingleton} runs once the context has finished creating singletons,
+   * which is the first moment every portal has been declared and the last moment a charter can be
+   * brought into force before one is used.
+   */
+  @Bean
+  public SmartInitializingSingleton charterSealer(
+      ObjectProvider<Storage> storage, CharterProperties properties) {
+    // ObjectProvider rather than Storage: storage is contributed by whichever module is on the
+    // classpath, and that auto-configuration runs after this one. A direct dependency would be
+    // evaluated before it exists and this bean would silently never match -- which it did, and the
+    // symptom was every portal refusing at request time because nothing had sealed them.
+    return () -> {
+      if (constituted == null) {
+        return;
+      }
+      Storage sealTo = storage.getIfAvailable();
+      if (sealTo == null) {
+        throw new IllegalStateException(
+            "this application declared a charter but nothing supplies storage for it: add a"
+                + " storage module, or contribute a Storage bean");
+      }
+      constituted.seal(sealTo);
+      if (properties.isLogManifest()) {
+        log.info("\n{}", constituted.manifest());
+      }
+    };
   }
 }

@@ -53,7 +53,7 @@ class TypeNamesTest {
   private static final Axis<String> TENANT = Axis.matching("tenant");
 
   private Charter config() {
-    return new Charter(TENANT);
+    return new DefaultCharter(TENANT);
   }
 
   @Test

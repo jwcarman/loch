@@ -44,7 +44,7 @@ class PolicyThatCannotDecideTest {
 
   private final MemoryStorage storage = new MemoryStorage();
 
-  private final Charter config = new Charter(TENANT);
+  private final DefaultCharter config = new DefaultCharter(TENANT);
 
   private final Conceal<String> source =
       config.source("source", STRING_TYPE, ctx -> Label.of(TENANT, "acme"));

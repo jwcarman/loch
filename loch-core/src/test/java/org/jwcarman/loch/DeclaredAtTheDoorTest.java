@@ -53,7 +53,7 @@ class DeclaredAtTheDoorTest {
 
   record SessionToken(String token) implements Value {}
 
-  private final Charter config = new Charter(TENANT);
+  private final DefaultCharter config = new DefaultCharter(TENANT);
 
   // Declared once, named by the strategy: card, last4, session-token.
   private final SurrogateType<Card> cardType = SurrogateType.of(Card.class);

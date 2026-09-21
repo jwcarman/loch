@@ -171,8 +171,8 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final Charter config =
-      new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
+  private final DefaultCharter config =
+      new DefaultCharter(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -1017,7 +1017,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
-      Charter choosyConfig = new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS);
+      DefaultCharter choosyConfig = new DefaultCharter(TENANT, INTEGRITY, TLP, DATA_CLASS);
       choosyConfig.currentAccess(edge::get);
       Conceal<Account> secretAccounts =
           choosyConfig.source(
@@ -1098,7 +1098,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
-      Charter fragileConfig = new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS);
+      DefaultCharter fragileConfig = new DefaultCharter(TENANT, INTEGRITY, TLP, DATA_CLASS);
       fragileConfig.currentAccess(edge::get);
       Conceal<String> fragileMail =
           fragileConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
@@ -1246,7 +1246,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
     void an_access_that_cannot_be_recorded_does_not_happen() {
-      Charter watchedConfig = new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS);
+      DefaultCharter watchedConfig = new DefaultCharter(TENANT, INTEGRITY, TLP, DATA_CLASS);
       watchedConfig.currentAccess(edge::get);
       Conceal<String> watchedMail =
           watchedConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);

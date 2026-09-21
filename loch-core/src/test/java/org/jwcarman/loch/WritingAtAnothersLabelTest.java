@@ -58,7 +58,8 @@ class WritingAtAnothersLabelTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final Charter config = new Charter(TENANT, INTEGRITY).currentAccess(edge::get);
+  private final DefaultCharter config =
+      new DefaultCharter(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final Conceal<Note> notes =

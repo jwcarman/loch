@@ -19,12 +19,12 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.Charter;
+import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.jdbc.JdbcStorage;
 import org.jwcarman.loch.jdbc.JdbcStorageConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -65,44 +65,26 @@ public class JdbcCharterAutoConfiguration {
   }
 
   /**
-   * Seals it, last.
+   * Durable storage for whatever charter this application declared.
    *
-   * <p>{@link SmartInitializingSingleton} runs once the context has finished creating singletons,
-   * which is the first moment every portal has been declared and the last moment a store can be
-   * built before one is used.
-   *
-   * <p>Sealing is deliberately not on the application's path. The charter it declares on is
-   * constructed by {@link CharterAutoConfiguration}, so the only reference able to bring one into
-   * force is the one this module holds.
+   * <p>This module's whole job. It supplies somewhere to keep values and lines; it does not
+   * construct a charter and it does not bring one into force, so nothing here decides what an
+   * application is allowed to do.
    */
   @Bean
   @ConditionalOnBean({Charter.class, StorageCodec.class})
-  public SmartInitializingSingleton charterSealer(
+  @ConditionalOnMissingBean(Storage.class)
+  public JdbcStorage jdbcStorage(
       Charter charter,
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
       CharterProperties properties) {
-    return () -> build(charter, dataSource, codecs, storageCodec, properties);
-  }
-
-  /** Seals the charter the application wrote to the storage this module supplies. */
-  private static void build(
-      Charter charter,
-      DataSource dataSource,
-      CodecFactory codecs,
-      StorageCodec storageCodec,
-      CharterProperties properties) {
-    // The application said what it allows; this says where it goes. Neither knows the other.
     JdbcStorageConfig jdbc =
         new JdbcStorageConfig().dataSource(dataSource).codecs(codecs).storedThrough(storageCodec);
     if (!properties.isMigrate()) {
       jdbc.withoutMigration();
     }
-    // One transition, and every portal the application is already holding comes into force.
-    charter.seal(jdbc.storage(charter.axes()));
-    if (properties.isLogManifest()) {
-      log.info("\n{}", charter.manifest());
-    }
+    return jdbc.storage(charter.axes());
   }
 }

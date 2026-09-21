@@ -55,7 +55,8 @@ class LabellingWhatArrivesTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final Charter config = new Charter(TENANT, INTEGRITY).currentAccess(edge::get);
+  private final DefaultCharter config =
+      new DefaultCharter(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final Conceal<Mail> mail =

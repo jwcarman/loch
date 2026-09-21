@@ -57,7 +57,7 @@ class AmbientContextTest {
   private static Wired wire(
       java.util.function.Consumer<Charter> settings,
       java.util.function.Function<AccessContext, Clearance> ceiling) {
-    Charter config = new Charter(CLEARANCE);
+    DefaultCharter config = new DefaultCharter(CLEARANCE);
     settings.accept(config);
     Conceal<String> cards =
         config.source("cards", STRING_TYPE, ctx -> Label.of(CLEARANCE, Clearance.FINANCE));

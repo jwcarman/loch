@@ -57,7 +57,7 @@ class WhatACharterPermitsTest {
     return Ceiling.of(TENANT, Constraint.any()).with(SENSITIVITY, Constraint.atMost(sensitivity));
   }
 
-  private final Charter charter = new Charter(TENANT, SENSITIVITY);
+  private final DefaultCharter charter = new DefaultCharter(TENANT, SENSITIVITY);
 
   private final Conceal<Card> cards =
       charter.source(

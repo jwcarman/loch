@@ -44,7 +44,7 @@ class ArityTest {
 
   private static final Axis<String> TENANT = Axis.matching("tenant");
 
-  private final Charter config = new Charter(TENANT);
+  private final DefaultCharter config = new DefaultCharter(TENANT);
 
   private final Conceal<Note> notes = config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
 

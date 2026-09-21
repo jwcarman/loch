@@ -35,8 +35,8 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.Conceal;
+import org.jwcarman.loch.DefaultCharter;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Surrogate;
@@ -101,7 +101,7 @@ class JdbcCharterTest {
   private static final SurrogateType<Last4> LAST4 = SurrogateType.of(Last4.class);
 
   private DataSource dataSource;
-  private Charter store;
+  private DefaultCharter store;
   private Derivation<Card, Last4> cardLast4;
   private Conceal<Card> cards;
   private Reveal<Card> vendorLlm;
@@ -157,7 +157,7 @@ class JdbcCharterTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    Charter c = new Charter(TENANT, INTEGRITY, DATA);
+    DefaultCharter c = new DefaultCharter(TENANT, INTEGRITY, DATA);
     // Containers have to be named: their raw type is java.util.List, which is not ours to
     // annotate and would collide with every other list.
     SurrogateType<List<Card>> cardList =

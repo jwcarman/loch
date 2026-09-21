@@ -45,7 +45,7 @@ final class Engine {
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
 
-  Engine(Axes axes, Charter.Configuration config, Storage storage) {
+  Engine(Axes axes, DefaultCharter.Configuration config, Storage storage) {
     this.storage = storage;
     this.axes = axes;
     Map<String, DestinationSpec> byId = new LinkedHashMap<>();
