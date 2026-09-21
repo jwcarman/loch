@@ -96,7 +96,7 @@ final class Engine {
           freshId(),
           source,
           AuditRecord.Outcome.REFUSED,
-          "the source could not say how to label this",
+          Why.of("the source could not say how to label this"),
           null,
           asking);
       throw new AccessDeniedException(
@@ -110,7 +110,7 @@ final class Engine {
           freshId(),
           source,
           AuditRecord.Outcome.REFUSED,
-          "the label leaves a required axis unsaid",
+          Why.of("the label leaves a required axis unsaid"),
           label,
           asking);
       throw new AccessDeniedException(
@@ -129,7 +129,7 @@ final class Engine {
             id,
             source,
             AuditRecord.Outcome.ALLOWED,
-            null,
+            Why.nothing(),
             label,
             asking);
     storage.put(id, new StoredValue(value, type, label, Lineage.held()), entry);
@@ -207,10 +207,10 @@ final class Engine {
       String value,
       String target,
       AuditRecord.Outcome outcome,
-      String reason,
+      Why why,
       Label label,
       AccessContext context) {
-    storage.record(entry(operation, value, target, outcome, reason, label, context));
+    storage.record(entry(operation, value, target, outcome, why, label, context));
   }
 
   private AuditRecord entry(
@@ -218,7 +218,7 @@ final class Engine {
       String value,
       String target,
       AuditRecord.Outcome outcome,
-      String reason,
+      Why why,
       Label label,
       AccessContext context) {
     return new AuditRecord(
@@ -227,7 +227,8 @@ final class Engine {
         value,
         Optional.ofNullable(target),
         outcome,
-        Optional.ofNullable(reason),
+        Optional.ofNullable(why.code()),
+        Optional.ofNullable(why.detail()),
         Optional.ofNullable(label).map(Object::toString),
         context.attributes());
   }
@@ -245,7 +246,7 @@ final class Engine {
         value,
         target,
         AuditRecord.Outcome.REFUSED,
-        recorded(reason.name(), because),
+        Why.of(reason.name(), because),
         label,
         context);
     return new Revealed.Denied<>(reason, detail);
@@ -277,11 +278,6 @@ final class Engine {
    */
   private static String because(Label label, Object ceiling) {
     return "labelled " + label + "; accepts " + ceiling;
-  }
-
-  /** A reason code for the record, with whatever detail the decision produced. */
-  private static String recorded(String reason, String because) {
-    return because == null || because.isEmpty() ? reason : reason + ": " + because;
   }
 
   public Label label(String id) {
@@ -322,7 +318,7 @@ final class Engine {
           root.id(),
           null,
           AuditRecord.Outcome.REFUSED,
-          "not permitted to erase",
+          Why.of("not permitted to erase"),
           null,
           asking);
       throw new AccessDeniedException(
@@ -335,7 +331,7 @@ final class Engine {
         root.id(),
         null,
         AuditRecord.Outcome.ALLOWED,
-        removed + " values removed",
+        Why.of(removed + " values removed"),
         null,
         asking);
     return removed;
@@ -352,7 +348,7 @@ final class Engine {
           about.id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
-          recorded(refused.reason().name(), because.get()),
+          Why.of(refused.reason().name(), because.get()),
           label.get(),
           asking);
     }
@@ -413,7 +409,7 @@ final class Engine {
         held.id(),
         name,
         AuditRecord.Outcome.ALLOWED,
-        "answered " + answer,
+        Why.of("answered " + answer),
         entry.label(),
         context);
     return new Answer.Answered(answer);
@@ -443,7 +439,7 @@ final class Engine {
           parents.isEmpty() ? freshId() : parents.getFirst().id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
-          recorded(refused.reason().name(), because.get()),
+          Why.of(refused.reason().name(), because.get()),
           label.get(),
           asking);
     }
@@ -550,7 +546,7 @@ final class Engine {
             newId,
             id,
             AuditRecord.Outcome.ALLOWED,
-            reasonFor(spec, joined, parentIds.size()),
+            Why.of(reasonFor(spec, joined, parentIds.size())),
             label,
             context);
     storage.put(
@@ -621,7 +617,7 @@ final class Engine {
         held.id(),
         to,
         AuditRecord.Outcome.ALLOWED,
-        null,
+        Why.nothing(),
         entry.label(),
         context);
     // The type was confirmed against what the store wrote, so this decodes a verified fact.

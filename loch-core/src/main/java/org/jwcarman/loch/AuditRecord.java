@@ -35,6 +35,13 @@ import java.util.Optional;
  * value is the interesting event, and a log that only records successes cannot show it.
  *
  * @param target what was on the other side: a destination, a derivation, a check
+ * @param reason the coarse code, in the clear: it names a rule, not a value, so it stays queryable
+ *     -- "how many refusals above a ceiling this hour" is a question a trail should answer without
+ *     decrypting anything
+ * @param detail what the reason leaves out: which label, against which ceiling. Label-shaped, so it
+ *     is protected exactly like {@code label} is. Splitting it from {@code reason} is what keeps
+ *     the trail both queryable and closed -- putting the explanation in {@code reason} would have
+ *     described every value in the system to anyone who could read the table
  * @param context whatever the application contributed about who was asking
  */
 public record AuditRecord(
@@ -44,6 +51,7 @@ public record AuditRecord(
     Optional<String> target,
     Outcome outcome,
     Optional<String> reason,
+    Optional<String> detail,
     Optional<String> label,
     Map<String, String> context) {
 

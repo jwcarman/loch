@@ -1086,9 +1086,11 @@ class BillingScenarioTest {
           .anySatisfy(
               record -> {
                 assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-                assertThat(record.reason())
-                    .hasValueSatisfying(
-                        why -> assertThat(why).contains("ABOVE_CEILING").contains("PII"));
+                // The code stays in the clear, so the trail can be queried on it.
+                assertThat(record.reason()).contains("ABOVE_CEILING");
+                // The part that names a label does not, and is protected like a label.
+                assertThat(record.detail())
+                    .hasValueSatisfying(why -> assertThat(why).contains("PII"));
               });
     }
 

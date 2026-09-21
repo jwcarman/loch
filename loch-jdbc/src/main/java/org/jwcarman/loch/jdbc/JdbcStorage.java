@@ -78,8 +78,8 @@ public final class JdbcStorage implements Storage {
 
   private static final String INSERT_AUDIT =
       """
-      INSERT INTO loch_audit (at, operation, value_id, target, outcome, reason, label, who)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO loch_audit (at, operation, value_id, target, outcome, reason, detail, label, who)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
   private static final String INSERT_VALUE =
@@ -203,11 +203,16 @@ public final class JdbcStorage implements Storage {
       statement.setString(4, entry.target().orElse(null));
       statement.setString(5, entry.outcome().name());
       statement.setString(6, entry.reason().orElse(null));
-      statement.setBytes(
-          7, entry.label().map(label -> storageCodec.encode(label.getBytes(UTF_8))).orElse(null));
-      statement.setString(8, entry.context().toString());
+      statement.setBytes(7, protected_(entry.detail()));
+      statement.setBytes(8, protected_(entry.label()));
+      statement.setString(9, entry.context().toString());
       statement.executeUpdate();
     }
+  }
+
+  /** Label-shaped, so it goes to disk the way a label does and never in the clear. */
+  private byte[] protected_(java.util.Optional<String> value) {
+    return value.map(text -> storageCodec.encode(text.getBytes(UTF_8))).orElse(null);
   }
 
   private void insertValue(Connection connection, String id, StoredValue value)

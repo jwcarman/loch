@@ -45,9 +45,13 @@ CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
 --
 -- Most of this is in the clear, unlike loch_value. An audit trail nobody can query is a tape
 -- backup: answering "who touched this value", "what did this user do", "how many refusals in the
--- last hour" needs indexes on real columns. The label is the exception and is encrypted like the
--- one on loch_value, for the same reason -- a label names a tenant, and the label column would
--- otherwise describe every value in the system to anyone who could read this table.
+-- last hour" needs indexes on real columns. So `reason` holds the code alone -- it names a rule,
+-- not a value, and stays queryable.
+--
+-- `detail` and `label` are the exceptions and are encrypted like the label on loch_value, for the
+-- same reason: they name a tenant, and in the clear they would describe every value in the system
+-- to anyone who could read this table. `detail` is where a refusal says which label it turned away
+-- and against which ceiling, which is exactly the thing a refusal must never tell its caller.
 CREATE TABLE IF NOT EXISTS loch_audit (
   entry_id    BIGSERIAL PRIMARY KEY,
   at          TIMESTAMPTZ NOT NULL,
@@ -56,6 +60,7 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   target      TEXT,
   outcome     TEXT        NOT NULL,
   reason      TEXT,
+  detail      BYTEA,
   label       BYTEA,
   who         TEXT        NOT NULL
 );

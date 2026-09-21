@@ -272,6 +272,36 @@ class JdbcCharterTest {
     }
   }
 
+  /**
+   * The trail is queryable and closed at the same time.
+   *
+   * <p>A refusal's code names a rule, so it stays in the clear and "how many refusals above a
+   * ceiling this hour" needs no key. What the refusal <i>would have said</i> -- which label, which
+   * ceiling -- names a tenant and its data class, so it goes to disk the way a label does. In the
+   * clear it would describe every value in the system to anyone who could read this table, which is
+   * the same disclosure the caller is refused.
+   */
+  @Test
+  @DisplayName("records why it refused without putting the explanation in the clear")
+  void records_why_without_disclosing_it() throws SQLException {
+    Surrogate<Card> card = card();
+    edge.set(AccessContext.of("tenant", "acme"));
+
+    assertThat(vendorLlm.reveal(card).allowed()).isFalse();
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT reason, detail FROM loch_audit WHERE outcome = 'REFUSED'")) {
+      try (ResultSet rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+        assertThat(rows.getString("reason")).isEqualTo("ABOVE_CEILING");
+        String detail = new String(rows.getBytes("detail"));
+        assertThat(detail).doesNotContain("acme").doesNotContain("CARDHOLDER");
+      }
+    }
+  }
+
   @Test
   @DisplayName("a fresh store over the same database reads what the last one wrote")
   void survives_a_restart() {
