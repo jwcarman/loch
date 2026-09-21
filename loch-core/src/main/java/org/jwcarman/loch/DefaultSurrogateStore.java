@@ -40,7 +40,6 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   private final Map<String, DestinationSpec> destinations;
   private final List<DerivationSpec<?>> derivations;
   private final List<QuerySpec<?, ?>> queries;
-  private final boolean explainRefusals;
   private final AccessContextProvider ambient;
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
@@ -65,7 +64,6 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     }
     this.derivations = List.copyOf(config.derivations());
     this.queries = List.copyOf(config.queries());
-    this.explainRefusals = config.explainsRefusals();
     this.ambient = config.ambient();
     this.mayErase = config.mayErase();
     // Last, and only once everything above succeeded: capabilities minted during configuration
@@ -240,6 +238,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   private <T> Revealed<T> denied(
       Revealed.Reason reason,
       String detail,
+      String because,
       String value,
       String target,
       Label label,
@@ -249,7 +248,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
         value,
         target,
         AuditRecord.Outcome.REFUSED,
-        reason.name(),
+        recorded(reason.name(), because),
         label,
         context);
     return new Revealed.Denied<>(reason, detail);
@@ -279,8 +278,21 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   }
 
   /** What a refusal is allowed to say about labels, which by default is nothing. */
-  private String explain(Label label, Object ceiling) {
-    return explainRefusals ? " (labelled " + label + "; accepts " + ceiling + ")" : "";
+  /**
+   * What the record says about a refusal, and what the caller never hears.
+   *
+   * <p>A refusal message that explains itself is an oracle: code that may not read a value could
+   * still learn its classification by asking often enough and reading the answers. So the label and
+   * the ceiling go to the audit, where they are protected like any other label, and the caller
+   * learns which door said no and a coarse reason.
+   */
+  private static String because(Label label, Object ceiling) {
+    return "labelled " + label + "; accepts " + ceiling;
+  }
+
+  /** A reason code for the record, with whatever detail the decision produced. */
+  private static String recorded(String reason, String because) {
+    return because == null || because.isEmpty() ? reason : reason + ": " + because;
   }
 
   @Override
@@ -346,14 +358,15 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   <I, Q> Answer askVia(QuerySpec<I, Q> spec, Surrogate<I> about, Q against) {
     AccessContext asking = asking();
     AtomicReference<Label> label = new AtomicReference<>();
-    Answer answer = answering(spec, about, against, asking, label);
+    AtomicReference<String> because = new AtomicReference<>();
+    Answer answer = answering(spec, about, against, asking, label, because);
     if (answer instanceof Answer.Refused refused) {
       audit(
           AuditRecord.Operation.ASK,
           about.id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
-          refused.reason().name(),
+          recorded(refused.reason().name(), because.get()),
           label.get(),
           asking);
     }
@@ -365,7 +378,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
       Surrogate<I> held,
       Q against,
       AccessContext context,
-      AtomicReference<Label> refused) {
+      AtomicReference<Label> refused,
+      AtomicReference<String> because) {
     String name = spec.name();
     if (!offeredHere(() -> spec.availableTo().test(context))) {
       return new Answer.Refused(
@@ -390,13 +404,9 @@ public final class DefaultSurrogateStore implements SurrogateStore {
           "'" + name + "' could not say what it accepts, so it does not accept this");
     }
     if (ceiling.isPresent() && !ceiling.get().permits(entry.label())) {
+      because.set(because(entry.label(), ceiling.get()));
       return new Answer.Refused(
-          Answer.Reason.ABOVE_CEILING,
-          held.id()
-              + " may not be looked at by '"
-              + name
-              + "'"
-              + explain(entry.label(), ceiling.get()));
+          Answer.Reason.ABOVE_CEILING, held.id() + " may not be looked at by '" + name + "'");
     }
     I subject = storage.value(held.id(), spec.inputType().type()).orElse(null);
     if (subject == null) {
@@ -466,14 +476,15 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   <O> Derived<O> deriveVia(DerivationSpec<O> spec, List<Surrogate<?>> parents) {
     AccessContext asking = asking();
     AtomicReference<Label> label = new AtomicReference<>();
-    Derived<O> result = deriving(spec, parents, asking, label);
+    AtomicReference<String> because = new AtomicReference<>();
+    Derived<O> result = deriving(spec, parents, asking, label, because);
     if (result instanceof Derived.Refused<O> refused) {
       audit(
           AuditRecord.Operation.DERIVE,
           parents.isEmpty() ? freshId() : parents.getFirst().id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
-          refused.reason().name(),
+          recorded(refused.reason().name(), because.get()),
           label.get(),
           asking);
     }
@@ -484,7 +495,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
       DerivationSpec<O> spec,
       List<Surrogate<?>> parents,
       AccessContext context,
-      AtomicReference<Label> refused) {
+      AtomicReference<Label> refused,
+      AtomicReference<String> because) {
     String id = spec.name();
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
@@ -528,9 +540,9 @@ public final class DefaultSurrogateStore implements SurrogateStore {
                 .formatted(id, expected.name(), position + 1, parent.id(), entry.typeName()));
       }
       if (ceiling.isPresent() && !ceiling.get().permits(entry.label())) {
+        because.set(because(entry.label(), ceiling.get()));
         return new Derived.Refused<>(
-            Derived.Reason.ABOVE_CEILING,
-            parent.id() + " may not reach '" + id + "'" + explain(entry.label(), ceiling.get()));
+            Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
       }
       Object input = storage.value(parent.id(), expected.type()).orElse(null);
       if (input == null) {
@@ -565,10 +577,10 @@ public final class DefaultSurrogateStore implements SurrogateStore {
             Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
       }
       if (!label.atOrBelow(joined)) {
+        because.set(because(label, joined));
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING,
-            "'%s' relabelled a value as something not below it".formatted(id)
-                + explain(label, joined));
+            "'%s' relabelled a value as something not below it".formatted(id));
       }
     }
 
@@ -597,6 +609,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
       return denied(
           Revealed.Reason.NO_SUCH_DESTINATION,
           "no destination is registered as '" + to + "'",
+          null,
           held.id(),
           to,
           null,
@@ -607,6 +620,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
       return denied(
           Revealed.Reason.NO_SUCH_VALUE,
           "this store is not holding " + held.id(),
+          null,
           held.id(),
           to,
           null,
@@ -616,6 +630,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
       return denied(
           Revealed.Reason.WRONG_TYPE,
           held.id() + " is a " + entry.typeName() + ", not a " + expected.name(),
+          null,
           held.id(),
           to,
           entry.label(),
@@ -626,6 +641,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
       return denied(
           Revealed.Reason.ABOVE_CEILING,
           "'" + to + "' could not say what it accepts, so it does not accept this",
+          null,
           held.id(),
           to,
           entry.label(),
@@ -634,7 +650,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     if (!ceiling.permits(entry.label())) {
       return denied(
           Revealed.Reason.ABOVE_CEILING,
-          held.id() + " may not reach '" + to + "'" + explain(entry.label(), ceiling),
+          held.id() + " may not reach '" + to + "'",
+          because(entry.label(), ceiling),
           held.id(),
           to,
           entry.label(),

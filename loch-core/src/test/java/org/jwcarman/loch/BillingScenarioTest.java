@@ -1067,31 +1067,32 @@ class BillingScenarioTest {
       assertThat(detail).contains("vendor-llm").doesNotContain("acme").doesNotContain("PII");
     }
 
+    /**
+     * The other half of the rule, and the reason the caller can be told so little.
+     *
+     * <p>A refusal is recorded in full and explained to nobody. If the message said what the value
+     * was labelled, code that may not read it could still learn its classification by asking often
+     * enough -- so the label and the ceiling go to the record, where they are protected like any
+     * other label.
+     */
     @Test
-    @DisplayName("unless the application asks for the explanation")
-    void unless_the_application_asks_for_the_explanation() {
-      SurrogateStoreConfig<Object> chattyConfig = new SurrogateStoreConfig<>();
-      chattyConfig
-          .axes(TENANT, INTEGRITY, TLP, DATA_CLASS)
-          .currentAccess(edge::get)
-          .explainRefusals();
-      Conceal<String> chattyMail =
-          chattyConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
-      Reveal<String> chattyVendorLlm =
-          chattyConfig
-              .destination(
-                  "vendor-llm",
-                  ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
-                  STRING_TYPE)
-              .reading(STRING_TYPE);
-      SurrogateStore chatty = MemorySurrogateStore.create(chattyConfig);
-      Surrogate<String> held =
-          holdAs("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII, chattyMail, "x");
-
+    @DisplayName("and the explanation the caller never sees is in the record")
+    void the_explanation_the_caller_never_sees_is_in_the_record() {
+      Surrogate<String> email = customerEmail();
+      storage.clearAudit();
       acme();
-      Revealed<String> denied = chattyVendorLlm.reveal(held);
 
-      assertThat(((Revealed.Denied<String>) denied).detail()).contains("PII");
+      vendorLlmText.reveal(email);
+
+      assertThat(storage.audit()).isNotEmpty();
+      assertThat(storage.audit())
+          .anySatisfy(
+              record -> {
+                assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+                assertThat(record.reason())
+                    .hasValueSatisfying(
+                        why -> assertThat(why).contains("ABOVE_CEILING").contains("PII"));
+              });
     }
 
     /** A policy that cannot be evaluated has not said yes. */
@@ -1148,7 +1149,8 @@ class BillingScenarioTest {
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-      assertThat(entry.reason()).contains("ABOVE_CEILING");
+      assertThat(entry.reason())
+          .hasValueSatisfying(why -> assertThat(why).startsWith("ABOVE_CEILING"));
     }
 
     @Test
@@ -1349,7 +1351,8 @@ class BillingScenarioTest {
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-                assertThat(entry.reason()).contains("DECLINED");
+                assertThat(entry.reason())
+                    .hasValueSatisfying(why -> assertThat(why).startsWith("DECLINED"));
                 assertThat(entry.target()).contains(DECLINES);
               });
     }
@@ -1373,7 +1376,8 @@ class BillingScenarioTest {
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-      assertThat(entry.reason()).contains("NOT_AVAILABLE_HERE");
+      assertThat(entry.reason())
+          .hasValueSatisfying(why -> assertThat(why).startsWith("NOT_AVAILABLE_HERE"));
       assertThat(entry.label()).isEmpty();
     }
 
@@ -1415,7 +1419,8 @@ class BillingScenarioTest {
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-                assertThat(entry.reason()).contains("ABOVE_CEILING");
+                assertThat(entry.reason())
+                    .hasValueSatisfying(why -> assertThat(why).startsWith("ABOVE_CEILING"));
               });
     }
 
@@ -1431,7 +1436,8 @@ class BillingScenarioTest {
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-                assertThat(entry.reason()).contains("NO_PARENTS");
+                assertThat(entry.reason())
+                    .hasValueSatisfying(why -> assertThat(why).startsWith("NO_PARENTS"));
               });
     }
 

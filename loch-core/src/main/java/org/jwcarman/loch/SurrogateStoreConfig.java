@@ -35,7 +35,6 @@ import org.jwcarman.loch.lattice.Label;
 public class SurrogateStoreConfig<D> {
 
   private List<Axis<?>> axes = List.of();
-  private boolean explainRefusals;
   private AccessContextProvider ambient = AccessContextProvider.none();
   private java.util.function.BiPredicate<Label, AccessContext> mayErase = (label, context) -> false;
   private final List<DestinationSpec> destinations = new ArrayList<>();
@@ -539,22 +538,6 @@ public class SurrogateStoreConfig<D> {
 
   List<DerivationSpec<?>> derivations() {
     return List.copyOf(derivations);
-  }
-
-  /**
-   * Includes labels and ceilings in refusal messages.
-   *
-   * <p>Off by default, because a label can itself be sensitive -- a tenant's name in a refusal
-   * shown to a different tenant is a leak, and refusal text has a way of reaching places the value
-   * never would. On for development, where the alternative is guessing.
-   */
-  public SurrogateStoreConfig<D> explainRefusals() {
-    this.explainRefusals = true;
-    return this;
-  }
-
-  boolean explainsRefusals() {
-    return explainRefusals;
   }
 
   /**
