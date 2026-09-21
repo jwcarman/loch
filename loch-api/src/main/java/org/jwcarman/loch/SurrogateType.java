@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch;
 
+import static java.util.Optional.ofNullable;
+
 import java.util.Objects;
 import org.jwcarman.codec.spi.TypeRef;
 
@@ -79,9 +81,11 @@ public record SurrogateType<T>(String name, TypeRef<T> type) {
    */
   public static <T> SurrogateType<T> of(Class<T> type) {
     Objects.requireNonNull(type, "a type must not be null");
-    SurrogateName declared = type.getAnnotation(SurrogateName.class);
-    return new SurrogateType<>(
-        declared != null ? declared.value() : kebab(type.getSimpleName()), TypeRef.of(type));
+    var typeName =
+        ofNullable(type.getAnnotation(SurrogateName.class))
+            .map(SurrogateName::value)
+            .orElseGet(() -> kebab(type.getSimpleName()));
+    return new SurrogateType<>(typeName, TypeRef.of(type));
   }
 
   /** Splits where a reader would, including at the end of an acronym. */

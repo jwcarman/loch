@@ -59,6 +59,8 @@
     <module>loch-api</module>
     <module>loch-core</module>
     <module>loch-jdbc</module>
+    <module>loch-spring-boot-autoconfigure</module>
+    <module>loch-spring-boot-starter</module>
     <module>loch-example</module>
   </modules>
 

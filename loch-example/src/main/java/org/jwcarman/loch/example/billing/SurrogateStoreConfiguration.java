@@ -24,90 +24,80 @@ import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.PERSON
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.sql.DataSource;
-import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Query;
 import org.jwcarman.loch.SurrogateSink;
 import org.jwcarman.loch.SurrogateSource;
-import org.jwcarman.loch.SurrogateStore;
-import org.jwcarman.loch.jdbc.JdbcSurrogateStore;
-import org.jwcarman.loch.jdbc.JdbcSurrogateStoreConfig;
-import org.jwcarman.loch.jdbc.StorageCodec;
+import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.lattice.Exact;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.event.EventListener;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Everything this application is allowed to do, decided once, in one constructor.
+ * Everything this application is allowed to do, and nothing about how it is wired.
  *
- * <p><b>Ordering is guaranteed because this is a constructor, not a bean graph.</b> Capabilities
- * are attached to a store when that store is built, so every one of them has to be minted first. A
- * constructor body runs top to bottom, so the compiler and the language settle the ordering and
- * Spring is never asked to. The {@code @Bean} methods below hand out what was already made; they do
- * not make anything.
+ * <p>The data source, the codecs and the moment the store is built are the starter's business. What
+ * is left here is policy: which labels exist, what may be written where, what may be read where,
+ * and who gets handed which of it.
  *
- * <p>Minting inside a {@code @Bean} method instead would mint <i>after</i> this class was built,
- * and quite possibly after the store was. That capability would be attached to nothing and would
- * throw on first use rather than failing quietly, but the place to not do it is here.
- *
- * <p>The infrastructure it depends on lives in {@link StorageConfiguration}, because a
- * configuration class cannot both declare a bean and take it as a constructor parameter.
+ * <p><b>Taking the configuration as a parameter is what declares a portal</b>, and it is root
+ * authority: whatever holds it can declare one at any label and any ceiling. That is how portals
+ * come into being, so it cannot be otherwise -- but a class taking one in its constructor is a
+ * class worth a second look in review. Services take portals, not this.
  */
 @Configuration
 public class SurrogateStoreConfiguration {
 
-  private static final Logger log = LoggerFactory.getLogger(SurrogateStoreConfiguration.class);
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
 
-  private final SurrogateStore<BillingLabels> store;
-  private final SurrogateSource<Domain.Mail> customerMail;
-  private final SurrogateSink<Domain.Invoice> supportUi;
-  private final SurrogateSink<Domain.Last4> approvalDesk;
-  private final SurrogateSink<Domain.Invoice> paymentProcessor;
-  private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
-  private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
-  private final Query<Domain.Mail, String> mailMentions;
-
-  public SurrogateStoreConfiguration(
-      DataSource dataSource, StorageCodec storageCodec, Invoices invoices) {
-
-    // The domain bound is the second parameter. Source<String> would not compile.
-    JdbcSurrogateStoreConfig<BillingLabels, Domain.BillingValue> c =
-        new JdbcSurrogateStoreConfig<>();
-    c.dataSource(dataSource)
-        .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-        .storedThrough(storageCodec)
+  /**
+   * The labels, and where identity comes from. Nothing about where any of it is kept.
+   *
+   * <p>This says nothing about databases. The starter supplies the data source, the serialisation
+   * and the sealing, and builds the store once every portal has been declared -- so moving this
+   * application onto a different backing store changes no line in this file.
+   */
+  @Bean
+  public SurrogateStoreConfig<BillingLabels, Domain.BillingValue> surrogateStoreConfig() {
+    // The domain bound is the second parameter. A source over String would not compile.
+    return new SurrogateStoreConfig<BillingLabels, Domain.BillingValue>()
+        .labelType(BillingLabels.class)
         .lattice(BillingLabels.LATTICE)
         .askingWhoIsAsking(CurrentAccess::get);
+  }
+
+  /**
+   * The portals the dispute desk needs, and the service that holds them.
+   *
+   * <p>Nothing here knows when the store is built, and nothing has to: a capability is attached
+   * when it is, and none of these is used before the context is ready.
+   */
+  @Bean
+  public DisputeService disputeService(
+      SurrogateStoreConfig<BillingLabels, Domain.BillingValue> c, Invoices invoices) {
 
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another
-    // tenant's label is not refused here so much as unsayable: nothing takes a label.
-    this.customerMail =
+    // tenant's label is not refused so much as unsayable: nothing takes a label.
+    SurrogateSource<Domain.Mail> customerMail =
         c.source("customer-mail", Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ----------------------------------------------------
-    this.supportUi =
+    SurrogateSink<Domain.Invoice> supportUi =
         c.sink("support-ui", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
-    this.approvalDesk =
+    SurrogateSink<Domain.Last4> approvalDesk =
         c.sink(
             "approval-desk",
             Domain.Last4.class,
             ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
-    this.paymentProcessor =
+    SurrogateSink<Domain.Invoice> paymentProcessor =
         c.sink("payment-processor", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
     // ---- one value from another ------------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
     // claimed to the mailbox their message came from.
-    this.confirmInvoice =
+    Derivation<Domain.Mail, Domain.Invoice> confirmInvoice =
         c.checking(
                 "mail.confirmedInvoice",
                 Domain.Mail.class,
@@ -118,7 +108,7 @@ public class SurrogateStoreConfiguration {
             .mint();
 
     // Truncating a card is a declassification, which is what a PCI reviewer asks about.
-    this.cardLast4 =
+    Derivation<Domain.Invoice, Domain.Last4> cardLast4 =
         c.derivation(
                 "invoice.card.last4",
                 Domain.Invoice.class,
@@ -130,7 +120,7 @@ public class SurrogateStoreConfiguration {
             .mint();
 
     // ---- one bit, without the value leaving ------------------------------------
-    this.mailMentions =
+    Query<Domain.Mail, String> mailMentions =
         c.query(
                 "mail.mentions",
                 Domain.Mail.class,
@@ -139,26 +129,6 @@ public class SurrogateStoreConfiguration {
             .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
             .mint();
 
-    // Last, and only now: everything above is attached to this.
-    this.store = JdbcSurrogateStore.create(BillingLabels.class, c);
-  }
-
-  @Bean
-  public SurrogateStore<BillingLabels> store() {
-    return store;
-  }
-
-  /**
-   * Hands the portals to the one class entitled to them.
-   *
-   * <p><b>The portals are not beans, and that is the point.</b> Spring's container is a
-   * lookup-by-type service: publish an {@code SurrogateSink<Invoice>} and any class anywhere can
-   * ask for one in its constructor and be given it. That is obtaining authority by naming it, which
-   * is what deleting the id types was for. Authority is handed over here, in code somebody has to
-   * write and a reviewer can read, or it is not handed over at all.
-   */
-  @Bean
-  public DisputeService disputeService() {
     return new DisputeService(
         customerMail,
         supportUi,
@@ -167,12 +137,6 @@ public class SurrogateStoreConfiguration {
         confirmInvoice,
         cardLast4,
         mailMentions);
-  }
-
-  /** Printed once at startup, so what this service will allow is in the log. */
-  @EventListener(ApplicationReadyEvent.class)
-  public void announce(ApplicationReadyEvent event) {
-    log.info("\n{}", event.getApplicationContext().getBean(SurrogateStore.class).manifest());
   }
 
   /**

@@ -17,20 +17,20 @@ package org.jwcarman.loch.jdbc;
 
 import java.util.Objects;
 import javax.sql.DataSource;
-import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
-import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.SurrogateStoreConfig;
-import org.jwcarman.loch.lattice.Lattice;
 
 /**
- * How a durable store is built: everything a store needs, plus where it keeps things and how it
- * protects them.
+ * What a database-backed store needs that has nothing to do with policy.
  *
- * <p>The fluent methods it inherits are re-declared so they answer with this type and a single
- * chain can mix both kinds of setting.
+ * <p>Deliberately not a kind of {@link org.jwcarman.loch.SurrogateStoreConfig}. An application
+ * declares what it allows -- the labels, the doors, who may reach them -- without knowing or caring
+ * where the values end up, and the code declaring portals should compile against the generic thing.
+ * This is the other half: where the tables are, how bytes are serialised, and how they are sealed.
+ * Both are handed to {@link JdbcSurrogateStore#create} and it builds itself.
+ *
+ * @param <A> the application's label type, which is stored encrypted like any other value
  */
-public final class JdbcSurrogateStoreConfig<A, D> extends SurrogateStoreConfig<A, D> {
+public final class JdbcSurrogateStoreConfig<A> {
 
   private DataSource dataSource;
   private CodecFactory codecs;
@@ -38,109 +38,77 @@ public final class JdbcSurrogateStoreConfig<A, D> extends SurrogateStoreConfig<A
   private boolean migrate = true;
 
   /** Where the tables are. */
-  public JdbcSurrogateStoreConfig<A, D> dataSource(DataSource dataSource) {
+  public JdbcSurrogateStoreConfig<A> dataSource(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "a durable store needs a data source");
     return this;
   }
 
-  /** How values become bytes. Any {@link CodecFactory}: Jackson, fory, protobuf, your own. */
-  public JdbcSurrogateStoreConfig<A, D> codecs(CodecFactory codecs) {
+  /** How values become bytes. */
+  public JdbcSurrogateStoreConfig<A> codecs(CodecFactory codecs) {
     this.codecs = Objects.requireNonNull(codecs, "a durable store needs codecs");
     return this;
   }
 
-  /**
-   * What happens to those bytes on the way to the table: compression, encryption, both.
-   *
-   * <p>Required, or say {@link #storedPlainly()}. <b>This is where encryption goes</b>, and there
-   * is no default for the same reason there is no default auditor: a store that silently keeps
-   * plaintext still looks like a vault.
-   *
-   * <pre>{@code
-   * .storedThrough(StorageCodec.of(
-   *     Compression.whenItHelps(new GzipCodec())
-   *         .andThen(EnvelopeCodec.builder(keys).build())))
-   * }</pre>
-   */
-  public JdbcSurrogateStoreConfig<A, D> storedThrough(StorageCodec storageCodec) {
+  /** What happens to those bytes before they are written: compression, encryption, both. */
+  public JdbcSurrogateStoreConfig<A> storedThrough(StorageCodec storageCodec) {
     this.storageCodec = Objects.requireNonNull(storageCodec, "a storage codec must not be null");
     return this;
   }
 
-  /** Stores bytes exactly as serialised. For a throwaway database, never for real data. */
-  public JdbcSurrogateStoreConfig<A, D> storedPlainly() {
-    return storedThrough(
+  /**
+   * Writes bytes as they are.
+   *
+   * <p>Said out loud rather than fallen into. Everything this keeps is something somebody decided
+   * was worth keeping behind a door, so storing it in the clear is a decision.
+   */
+  public JdbcSurrogateStoreConfig<A> storedPlainly() {
+    this.storageCodec =
         StorageCodec.of(
-            new Codec<byte[]>() {
+            new StorageCodec() {
               @Override
-              public byte[] encode(byte[] value) {
-                return value;
+              public byte[] encode(byte[] bytes) {
+                return bytes;
               }
 
               @Override
-              public byte[] decode(byte[] value) {
-                return value;
+              public byte[] decode(byte[] bytes) {
+                return bytes;
               }
-            }));
+            });
+    return this;
   }
 
-  /** Leaves the schema alone; something else owns it. */
-  public JdbcSurrogateStoreConfig<A, D> withoutMigration() {
+  /** Leaves the tables alone, for somewhere that manages its own schema. */
+  public JdbcSurrogateStoreConfig<A> withoutMigration() {
     this.migrate = false;
     return this;
   }
 
-  @Override
-  public JdbcSurrogateStoreConfig<A, D> lattice(Lattice<A> lattice) {
-    super.lattice(lattice);
-    return this;
-  }
-
-  @Override
-  public JdbcSurrogateStoreConfig<A, D> explainRefusals() {
-    super.explainRefusals();
-    return this;
-  }
-
-  /** Re-declared because this config does not inherit the fluent return type. */
-  @Override
-  public JdbcSurrogateStoreConfig<A, D> askingWhoIsAsking(
-      java.util.function.Supplier<AccessContext> ambient) {
-    super.askingWhoIsAsking(ambient);
-    return this;
-  }
-
-  @Override
-  public JdbcSurrogateStoreConfig<A, D> callerMayContribute(String... keys) {
-    super.callerMayContribute(keys);
-    return this;
-  }
-
   DataSource dataSourceOrFail() {
-    if (dataSource == null) {
-      throw new IllegalStateException("a durable store needs a data source");
-    }
-    return dataSource;
+    return require(dataSource, "a durable store needs a data source: call dataSource(...)");
   }
 
   CodecFactory codecsOrFail() {
-    if (codecs == null) {
-      throw new IllegalStateException(
-          "a durable store needs codecs: give it a CodecFactory that can serialise your values");
-    }
-    return codecs;
+    return require(
+        codecs, "a durable store needs codecs: give it a CodecFactory that can serialise values");
   }
 
   StorageCodec storageCodecOrFail() {
-    if (storageCodec == null) {
-      throw new IllegalStateException(
-          "a durable store needs a storage codec: call storedThrough(...) with your compression and"
-              + " encryption, or storedPlainly() if this database holds nothing that matters");
-    }
-    return storageCodec;
+    return require(
+        storageCodec,
+        "a durable store needs to say what happens to bytes on the way to disk: call"
+            + " storedThrough(...) with your compression and encryption, or storedPlainly() if you"
+            + " really mean to write them as they are");
   }
 
   boolean migrates() {
     return migrate;
+  }
+
+  private static <T> T require(T value, String said) {
+    if (value == null) {
+      throw new IllegalStateException(said);
+    }
+    return value;
   }
 }

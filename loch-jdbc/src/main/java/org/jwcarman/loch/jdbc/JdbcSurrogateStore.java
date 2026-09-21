@@ -15,9 +15,9 @@
  */
 package org.jwcarman.loch.jdbc;
 
-import java.util.function.Consumer;
 import org.jwcarman.loch.DefaultSurrogateStore;
 import org.jwcarman.loch.SurrogateStore;
+import org.jwcarman.loch.SurrogateStoreConfig;
 
 /**
  * A store that keeps its values in a database, encrypted.
@@ -43,36 +43,24 @@ public final class JdbcSurrogateStore {
   private JdbcSurrogateStore() {}
 
   /**
-   * Builds one.
+   * Builds one from what the application allows and where it is being kept.
    *
-   * @param labelType the application's label record, which has to be serialised like any other
-   *     value because labels are stored encrypted too
+   * <p>Two halves, deliberately. {@code config} is policy -- the labels, the doors, who may reach
+   * them -- and the code declaring portals compiles against it without knowing where anything ends
+   * up. {@code jdbc} is the other half: the tables, the serialisation, the sealing.
+   *
+   * <p>This call is also the moment the access space is fixed. Every capability declared on the
+   * configuration before now is attached; anything declared afterwards reaches nothing.
    */
   public static <A, D> SurrogateStore<A> create(
-      Class<A> labelType, Consumer<JdbcSurrogateStoreConfig<A, D>> customizer) {
-    JdbcSurrogateStoreConfig<A, D> config = new JdbcSurrogateStoreConfig<>();
-    customizer.accept(config);
-    return create(labelType, config);
-  }
-
-  /**
-   * Builds one from a config that has already been filled in.
-   *
-   * <p>The form to use when capabilities are being minted, because a lambda cannot assign to a
-   * local: configure, mint into plain final variables, then build.
-   *
-   * @param labelType the application's label record, which has to be serialised like any other
-   *     value because labels are stored encrypted too
-   */
-  public static <A, D> SurrogateStore<A> create(
-      Class<A> labelType, JdbcSurrogateStoreConfig<A, D> config) {
+      SurrogateStoreConfig<A, D> config, JdbcSurrogateStoreConfig<A> jdbc) {
     JdbcStorage<A> storage =
         new JdbcStorage<>(
-            config.dataSourceOrFail(),
-            config.codecsOrFail(),
-            config.storageCodecOrFail(),
-            labelType);
-    if (config.migrates()) {
+            jdbc.dataSourceOrFail(),
+            jdbc.codecsOrFail(),
+            jdbc.storageCodecOrFail(),
+            config.labelType());
+    if (jdbc.migrates()) {
       storage.migrate();
     }
     return new DefaultSurrogateStore<>(config, storage);

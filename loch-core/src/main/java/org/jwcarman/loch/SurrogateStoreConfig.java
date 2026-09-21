@@ -34,6 +34,7 @@ import org.jwcarman.loch.lattice.Lattice;
 public class SurrogateStoreConfig<A, D> {
 
   private Lattice<A> lattice;
+  private Class<A> labelType;
   private boolean explainRefusals;
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
@@ -45,6 +46,27 @@ public class SurrogateStoreConfig<A, D> {
   private DefaultSurrogateStore<A> bound;
   private final List<Binding<A>> bindings = new ArrayList<>();
   private final java.util.Map<String, SurrogateType<?>> types = new LinkedHashMap<>();
+
+  /**
+   * The record this application's labels are, which a durable store has to serialise.
+   *
+   * <p>Here rather than with the storage settings because it is a property of the store and not of
+   * where it is kept: a label goes to disk encrypted like any other value, whatever the disk is.
+   */
+  public SurrogateStoreConfig<A, D> labelType(Class<A> labelType) {
+    this.labelType = Objects.requireNonNull(labelType, "a label type must not be null");
+    return this;
+  }
+
+  /** What the labels are, for a backing store that has to write them down. */
+  public Class<A> labelType() {
+    if (labelType == null) {
+      throw new IllegalStateException(
+          "this store needs to know its label type: call labelType(...) with the record your"
+              + " labels are, because labels are written down like any other value");
+    }
+    return labelType;
+  }
 
   /** The order over this application's labels. Required. */
   public SurrogateStoreConfig<A, D> lattice(Lattice<A> lattice) {

@@ -1,0 +1,2 @@
+org.jwcarman.loch.spring.SurrogateStoreAutoConfiguration
+org.jwcarman.loch.spring.JdbcSurrogateStoreAutoConfiguration

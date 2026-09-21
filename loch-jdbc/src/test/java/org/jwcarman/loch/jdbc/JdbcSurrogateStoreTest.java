@@ -40,6 +40,7 @@ import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateSink;
 import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.SurrogateStore;
+import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.SurrogateType;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
@@ -158,7 +159,8 @@ class JdbcSurrogateStoreTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    JdbcSurrogateStoreConfig<Billing, Object> c = new JdbcSurrogateStoreConfig<>();
+    SurrogateStoreConfig<Billing, Object> c =
+        new SurrogateStoreConfig<Billing, Object>().labelType(Billing.class);
     // Containers have to be named: their raw type is java.util.List, which is not ours to
     // annotate and would collide with every other list.
     SurrogateType<List<Card>> cardList =
@@ -167,16 +169,19 @@ class JdbcSurrogateStoreTest {
         c.type("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
     SurrogateType<Card> cardType = c.type(Card.class);
     SurrogateType<Last4> last4Type = c.type(Last4.class);
-    c.dataSource(dataSource)
-        .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-        // The application composes its own pipeline: squeeze, then seal.
-        .storedThrough(
-            StorageCodec.of(
-                Compression.whenItHelps(new GzipCodec())
-                    .andThen(
-                        EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
-                            .build())))
-        .lattice(Billing.LATTICE)
+    // The application composes its own pipeline: squeeze, then seal.
+    JdbcSurrogateStoreConfig<Billing> jdbc =
+        new JdbcSurrogateStoreConfig<Billing>()
+            .dataSource(dataSource)
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedThrough(
+                StorageCodec.of(
+                    Compression.whenItHelps(new GzipCodec())
+                        .andThen(
+                            EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
+                                .build())));
+
+    c.lattice(Billing.LATTICE)
         .askingWhoIsAsking(edge::get)
         // Erasure is the one operation a label cannot decide, so it is named here.
         .mayErase(
@@ -230,7 +235,7 @@ class JdbcSurrogateStoreTest {
             .lowering(joined -> new Billing(joined.tenant(), joined.integrity(), DataClass.PII))
             .mint();
 
-    store = JdbcSurrogateStore.create(Billing.class, c);
+    store = JdbcSurrogateStore.create(c, jdbc);
   }
 
   private Surrogate<Card> card() {
@@ -344,11 +349,12 @@ class JdbcSurrogateStoreTest {
             org.assertj.core.api.Assertions.catchThrowable(
                 () ->
                     JdbcSurrogateStore.create(
-                        Billing.class,
-                        c ->
-                            c.dataSource(dataSource)
-                                .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-                                .lattice(Billing.LATTICE))))
+                        new SurrogateStoreConfig<Billing, Object>()
+                            .labelType(Billing.class)
+                            .lattice(Billing.LATTICE),
+                        new JdbcSurrogateStoreConfig<Billing>()
+                            .dataSource(dataSource)
+                            .codecs(new JacksonCodecFactory(JsonMapper.builder().build())))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("storedPlainly");
   }

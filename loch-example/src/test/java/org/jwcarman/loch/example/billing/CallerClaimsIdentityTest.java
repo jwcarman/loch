@@ -42,8 +42,6 @@ class CallerClaimsIdentityTest {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired SurrogateStore<BillingLabels> store;
-
   @Autowired org.springframework.context.ApplicationContext context;
 
   /**
@@ -72,19 +70,22 @@ class CallerClaimsIdentityTest {
    * to them, and nothing can ask the context for one.
    */
   /**
-   * The mint is the one thing more dangerous than a portal.
+   * The configuration, unlike everything else, <b>is</b> published -- and that is the one
+   * deliberate concession in the arrangement.
    *
-   * <p>A portal is one pre-declared authority. The configuration that makes portals can make any of
-   * them, at any label and any ceiling. It is a local variable in one constructor and it never
-   * enters the container, which is also why minting after the store was built cannot be expressed
-   * here: there is nothing to mint from.
+   * <p>Declaring a portal means holding the configuration, so it has to be reachable by whatever
+   * declares one. It is root authority: anything holding it can declare a portal at any label and
+   * any ceiling. What that buys is that the application never orchestrates the lifecycle, and what
+   * it costs is that "who can grant authority" is a grep for this type rather than one file.
+   *
+   * <p>The narrowing that survives is the one that matters: holding the mint lets you declare a
+   * door, and holding a door lets you use it. Nothing lets you do both by accident.
    */
   @Test
-  @DisplayName("cannot obtain the mint from the application context")
-  void cannot_obtain_the_mint_from_the_context() {
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.SurrogateStoreConfig.class)).isEmpty();
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.jdbc.JdbcSurrogateStoreConfig.class))
-        .isEmpty();
+  @DisplayName("can obtain the configuration, because declaring a portal is what it is for")
+  void can_obtain_the_configuration() {
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.SurrogateStoreConfig.class))
+        .containsExactly("surrogateStoreConfig");
   }
 
   @Test
