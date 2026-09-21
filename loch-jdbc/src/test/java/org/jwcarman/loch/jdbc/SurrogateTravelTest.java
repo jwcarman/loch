@@ -34,7 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("A reference in an event")
 class SurrogateTravelTest {
 
-  /** An ordinary application event. Nothing here knows about Loch except the id. */
+  /** An ordinary application event. Nothing here knows about SurrogateStore except the id. */
   record InboundMail(String from, String body) {}
 
   record Card(String number) {}
@@ -43,7 +43,7 @@ class SurrogateTravelTest {
   @DisplayName("survives a round trip through JSON with nothing taught to any serialiser")
   void survives_a_round_trip_through_json() {
     JsonMapper mapper = JsonMapper.builder().build();
-    String id = "loch_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
+    String id = "sur_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
 
     String json = mapper.writeValueAsString(new InboundMail("x@y.example", id));
     InboundMail back = mapper.readValue(json, InboundMail.class);
@@ -55,7 +55,7 @@ class SurrogateTravelTest {
   @Test
   @DisplayName("becomes a typed view again where it is used")
   void becomes_a_typed_view_again_where_it_is_used() {
-    String id = "loch_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
+    String id = "sur_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
 
     Surrogate<Card> held = Surrogate.of(id);
 
@@ -71,7 +71,7 @@ class SurrogateTravelTest {
   @Test
   @DisplayName("prints as its id and nothing else")
   void prints_as_its_id_and_nothing_else() {
-    String id = "loch_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
+    String id = "sur_5d5a1f0e-4c71-4a2e-9f0a-2b1c3d4e5f60";
 
     assertThat(Surrogate.of(id).toString()).isEqualTo(id).doesNotContain("Card");
   }

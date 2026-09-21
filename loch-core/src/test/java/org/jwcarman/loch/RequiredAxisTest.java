@@ -58,8 +58,10 @@ class RequiredAxisTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final LochConfig<Labels, Object> config =
-      new LochConfig<Labels, Object>().lattice(Labels.LATTICE).askingWhoIsAsking(edge::get);
+  private final SurrogateStoreConfig<Labels, Object> config =
+      new SurrogateStoreConfig<Labels, Object>()
+          .lattice(Labels.LATTICE)
+          .askingWhoIsAsking(edge::get);
 
   /** Exactly what an application would naturally write, including the part that was the leak. */
   private final SurrogateSource<Note> notes =
@@ -80,7 +82,7 @@ class RequiredAxisTest {
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
                   Level.HIGH));
 
-  private final Loch<Labels> loch = MemoryLoch.create(config);
+  private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
 
   @Test
   @DisplayName("is written when it was said")
@@ -89,7 +91,7 @@ class RequiredAxisTest {
 
     Surrogate<Note> note = notes.exchange(new Note("ours"));
 
-    assertThat(loch.label(note.id()).tenant()).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(note.id()).tenant()).isEqualTo(Exact.of("acme"));
   }
 
   /** The whole point: a value nobody can attribute is a value everybody can read. */
@@ -107,8 +109,10 @@ class RequiredAxisTest {
   @Test
   @DisplayName("and says so in the record")
   void and_says_so_in_the_record() {
-    LochConfig<Labels, Object> own =
-        new LochConfig<Labels, Object>().lattice(Labels.LATTICE).askingWhoIsAsking(edge::get);
+    SurrogateStoreConfig<Labels, Object> own =
+        new SurrogateStoreConfig<Labels, Object>()
+            .lattice(Labels.LATTICE)
+            .askingWhoIsAsking(edge::get);
     SurrogateSource<Note> watched =
         own.source(
             "notes",
@@ -118,7 +122,7 @@ class RequiredAxisTest {
                     ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
                     Level.HIGH));
     MemoryStorage<Labels> storage = new MemoryStorage<>();
-    Loch<Labels> unused = new DefaultLoch<>(own, storage);
+    SurrogateStore<Labels> unused = new DefaultSurrogateStore<>(own, storage);
     edge.set(AccessContext.empty());
 
     assertThatThrownBy(() -> watched.exchange(new Note("orphan")))
@@ -136,10 +140,11 @@ class RequiredAxisTest {
   @DisplayName("does not constrain an axis whose bottom means something")
   void does_not_constrain_an_axis_whose_bottom_means_something() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
-    LochConfig<Labels, Object> own = new LochConfig<Labels, Object>().lattice(Labels.LATTICE);
+    SurrogateStoreConfig<Labels, Object> own =
+        new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE);
     SurrogateSource<Note> low =
         own.source("low", Note.class, ctx -> new Labels(Exact.of("acme"), Level.LOW));
-    Loch<Labels> other = MemoryLoch.create(own);
+    SurrogateStore<Labels> other = MemorySurrogateStore.create(own);
 
     assertThat(other.label(low.exchange(new Note("fine")).id()).level()).isEqualTo(Level.LOW);
   }
@@ -153,7 +158,6 @@ class RequiredAxisTest {
         .isInstanceOf(AccessDeniedException.class);
 
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
-    assertThat(reporting.exchange(Surrogate.<Note>of("loch_nothing-like-this")).allowed())
-        .isFalse();
+    assertThat(reporting.exchange(Surrogate.<Note>of("sur_nothing-like-this")).allowed()).isFalse();
   }
 }

@@ -31,8 +31,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * feature becomes the most annoying thing in a codebase.
  *
  * <p>Headers here because the example has no identity provider. A real service would read {@code
- * SecurityContextHolder}; Loch never learns the difference, because it is handed a supplier and
- * asks it.
+ * SecurityContextHolder}; SurrogateStore never learns the difference, because it is handed a
+ * supplier and asks it.
  */
 public final class CurrentAccess {
 

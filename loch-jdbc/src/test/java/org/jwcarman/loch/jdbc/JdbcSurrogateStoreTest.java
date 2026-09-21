@@ -36,10 +36,10 @@ import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateSink;
 import org.jwcarman.loch.SurrogateSource;
+import org.jwcarman.loch.SurrogateStore;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
 import org.jwcarman.loch.lattice.Lattices;
@@ -57,16 +57,16 @@ import tools.jackson.databind.json.JsonMapper;
  * exactly the places a compatibility mode diverges quietly.
  */
 @Testcontainers
-@DisplayName("A loch in a database")
-class JdbcLochTest {
+@DisplayName("A store in a database")
+class JdbcSurrogateStoreTest {
 
   @Container
   @SuppressWarnings("resource")
   static final PostgreSQLContainer POSTGRES =
       new PostgreSQLContainer("postgres:17-alpine")
-          .withDatabaseName("loch")
-          .withUsername("loch")
-          .withPassword("loch");
+          .withDatabaseName("store")
+          .withUsername("store")
+          .withPassword("store");
 
   enum Integrity {
     ENDORSED,
@@ -113,7 +113,7 @@ class JdbcLochTest {
   record Last4(String digits) {}
 
   private DataSource dataSource;
-  private Loch<Billing> loch;
+  private SurrogateStore<Billing> store;
   private Derivation<Card, Last4> cardLast4;
   private SurrogateSource<Card> cards;
   private SurrogateSink<Card> vendorLlm;
@@ -157,7 +157,7 @@ class JdbcLochTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    JdbcLochConfig<Billing, Object> c = new JdbcLochConfig<>();
+    JdbcSurrogateStoreConfig<Billing, Object> c = new JdbcSurrogateStoreConfig<>();
     c.dataSource(dataSource)
         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
         // The application composes its own pipeline: squeeze, then seal.
@@ -223,7 +223,7 @@ class JdbcLochTest {
             .lowering(joined -> new Billing(joined.tenant(), joined.integrity(), DataClass.PII))
             .mint();
 
-    loch = JdbcLoch.create(Billing.class, c);
+    store = JdbcSurrogateStore.create(Billing.class, c);
   }
 
   private Surrogate<Card> card() {
@@ -263,12 +263,12 @@ class JdbcLochTest {
   }
 
   @Test
-  @DisplayName("a fresh loch over the same database reads what the last one wrote")
+  @DisplayName("a fresh store over the same database reads what the last one wrote")
   void survives_a_restart() {
     Surrogate<Card> card = card();
 
-    assertThat(loch.holds(card)).isTrue();
-    assertThat(loch.label(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(store.holds(card)).isTrue();
+    assertThat(store.label(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
   }
 
   @Test
@@ -278,9 +278,9 @@ class JdbcLochTest {
 
     Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
-    assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
-    assertThat(loch.lineage(last4).parents()).containsExactly(card.id());
-    assertThat(loch.lineage(last4).derivation()).contains("Card.last4");
+    assertThat(store.label(last4).dataClass()).isEqualTo(DataClass.PII);
+    assertThat(store.lineage(last4).parents()).containsExactly(card.id());
+    assertThat(store.lineage(last4).derivation()).contains("Card.last4");
   }
 
   @Test
@@ -303,11 +303,11 @@ class JdbcLochTest {
     Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
-    int removed = loch.erase(card);
+    int removed = store.erase(card);
 
     assertThat(removed).isEqualTo(2);
-    assertThat(loch.holds(card)).isFalse();
-    assertThat(loch.holds(last4)).isFalse();
+    assertThat(store.holds(card)).isFalse();
+    assertThat(store.holds(last4)).isFalse();
     assertThat(rowCount("loch_lineage_closure")).isZero();
   }
 
@@ -318,8 +318,8 @@ class JdbcLochTest {
     Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
-    assertThat(loch.erase(last4)).isEqualTo(1);
-    assertThat(loch.holds(card)).isTrue();
+    assertThat(store.erase(last4)).isEqualTo(1);
+    assertThat(store.holds(card)).isTrue();
   }
 
   @Test
@@ -336,7 +336,7 @@ class JdbcLochTest {
     assertThat(
             org.assertj.core.api.Assertions.catchThrowable(
                 () ->
-                    JdbcLoch.create(
+                    JdbcSurrogateStore.create(
                         Billing.class,
                         c ->
                             c.dataSource(dataSource)
@@ -382,7 +382,7 @@ class JdbcLochTest {
     int before = rowCount("loch_audit");
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
-    loch.erase(card);
+    store.erase(card);
 
     assertThat(rowCount("loch_value")).isZero();
     assertThat(rowCount("loch_audit")).isGreaterThanOrEqualTo(before);
@@ -422,8 +422,8 @@ class JdbcLochTest {
   @Test
   @DisplayName("lineage of a held value says it was asserted, not computed")
   void lineage_of_a_held_value_says_asserted() {
-    assertThat(loch.lineage(card()).asserted()).isTrue();
-    assertThat(List.of(loch.lineage(card()).parents())).isNotEmpty();
+    assertThat(store.lineage(card()).asserted()).isTrue();
+    assertThat(List.of(store.lineage(card()).parents())).isNotEmpty();
   }
 
   /** Serialise, squeeze, seal. Reversing the last two would cost the same and save nothing. */
@@ -441,7 +441,7 @@ class JdbcLochTest {
 
   /**
    * The measured reason compression is conditional: a card record gzips to more than it started as,
-   * so applying it unconditionally would cost space on nearly everything a loch holds.
+   * so applying it unconditionally would cost space on nearly everything a store holds.
    */
   @Test
   @DisplayName("does not make a small value bigger by compressing it")
@@ -474,7 +474,7 @@ class JdbcLochTest {
 
   /**
    * A value's class is not its type. {@code List.of(a, b).getClass()} is {@code
-   * ImmutableCollections$List12}, which nothing can deserialise into, so a loch that guessed from
+   * ImmutableCollections$List12}, which nothing can deserialise into, so a store that guessed from
    * the object would write a handle it could never honour. The caller says what it is.
    */
   @Test
@@ -513,8 +513,8 @@ class JdbcLochTest {
     Surrogate<List<Card>> cards = cardLists.exchange(List.of(new Card("4111111111114821", "A")));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
-    assertThat(loch.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
-    assertThat(loch.lineage(cards).asserted()).isTrue();
+    assertThat(store.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(store.lineage(cards).asserted()).isTrue();
   }
 
   /** A label governs disclosure, not destruction, so erasure is named separately or not granted. */
@@ -524,8 +524,8 @@ class JdbcLochTest {
     Surrogate<Card> card = card();
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "agent")));
 
-    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> loch.erase(card)))
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> store.erase(card)))
         .isInstanceOf(org.jwcarman.loch.AccessDeniedException.class);
-    assertThat(loch.holds(card)).isTrue();
+    assertThat(store.holds(card)).isTrue();
   }
 }

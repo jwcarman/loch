@@ -16,7 +16,7 @@
 package org.jwcarman.loch;
 
 /**
- * A loch refused.
+ * A store refused.
  *
  * <p>One exception for every gate, so a caller that wants to turn refusals into a 403 writes one
  * handler rather than discovering the second type in production. There were two of these, and the

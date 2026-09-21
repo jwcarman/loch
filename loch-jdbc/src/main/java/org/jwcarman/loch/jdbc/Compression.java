@@ -21,7 +21,7 @@ import org.jwcarman.codec.spi.Codec;
 /**
  * Compression that cannot make things worse.
  *
- * <p><b>Measured, not assumed.</b> Most of what a loch holds is small -- a card number, an account
+ * <p><b>Measured, not assumed.</b> Most of what a store holds is small -- a card number, an account
  * record, an email address -- and a compressor's framing costs more than a short payload saves:
  *
  * <pre>

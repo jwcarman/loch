@@ -24,13 +24,13 @@ import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
- * How a loch is built: the lattice its labels live in, and the destinations values may reach.
+ * How a store is built: the lattice its labels live in, and the destinations values may reach.
  *
  * <p>Both are wiring-time decisions on purpose. A lattice supplied later could reorder what is
  * permitted underneath values already stored, and a destination supplied at a call site would let
  * any code invent its own permission.
  */
-public class LochConfig<A, D> {
+public class SurrogateStoreConfig<A, D> {
 
   private Lattice<A> lattice;
   private boolean explainRefusals;
@@ -41,17 +41,17 @@ public class LochConfig<A, D> {
   private final List<DerivationSpec<A, ?>> derivations = new ArrayList<>();
   final List<QuerySpec<A, ?, ?>> queries = new ArrayList<>();
   private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
-  private DefaultLoch<A> bound;
+  private DefaultSurrogateStore<A> bound;
   private final List<Binding<A>> bindings = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
-  public LochConfig<A, D> lattice(Lattice<A> lattice) {
-    this.lattice = Objects.requireNonNull(lattice, "a loch needs a lattice");
+  public SurrogateStoreConfig<A, D> lattice(Lattice<A> lattice) {
+    this.lattice = Objects.requireNonNull(lattice, "a store needs a lattice");
     return this;
   }
 
   /** Somewhere values may go. Registered once; referenced by name forever after. */
-  public LochConfig<A, D> destination(DestinationSpec<A> destination) {
+  public SurrogateStoreConfig<A, D> destination(DestinationSpec<A> destination) {
     destinations.add(Objects.requireNonNull(destination, "a destination must not be null"));
     return this;
   }
@@ -59,7 +59,7 @@ public class LochConfig<A, D> {
   // ------------------------------------------------------------------ minting capabilities
 
   /**
-   * Mints the authority to put values into this loch at one label. Configuration time only.
+   * Mints the authority to put values into this store at one label. Configuration time only.
    *
    * <p>Returns the {@link SurrogateSource} rather than this config, so the fluent chain stops here
    * and the caller has to capture what it was given. That is the point: there is no way to ask for
@@ -138,13 +138,13 @@ public class LochConfig<A, D> {
   /** A destination being declared: its ceiling is set, its types are being listed. */
   public static final class Declaring<A, D> {
 
-    private final LochConfig<A, ?> config;
+    private final SurrogateStoreConfig<A, ?> config;
     private final String name;
     private final java.util.function.Function<AccessContext, A> ceiling;
     private final java.util.Set<String> reads = new java.util.LinkedHashSet<>();
 
     private Declaring(
-        LochConfig<A, ?> config,
+        SurrogateStoreConfig<A, ?> config,
         String name,
         java.util.function.Function<AccessContext, A> ceiling) {
       this.config = config;
@@ -365,7 +365,7 @@ public class LochConfig<A, D> {
    */
   public static final class Minting<A, O, C> {
 
-    private final LochConfig<A, ?> config;
+    private final SurrogateStoreConfig<A, ?> config;
     private final String name;
     private final List<TypeRef<?>> inputTypes;
     private final TypeRef<O> outputType;
@@ -378,7 +378,7 @@ public class LochConfig<A, D> {
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Minting(
-        LochConfig<A, ?> config,
+        SurrogateStoreConfig<A, ?> config,
         String name,
         List<TypeRef<?>> inputTypes,
         TypeRef<O> outputType,
@@ -447,22 +447,22 @@ public class LochConfig<A, D> {
   }
 
   /**
-   * Handed to every capability minted here, once the loch they belong to exists.
+   * Handed to every capability minted here, once the store they belong to exists.
    *
    * <p>A capability is minted while the configuration lambda is still running, which is before
-   * there is anything for it to act on. So it holds this config and reaches the loch through it,
-   * and until the loch has been built there is nothing to reach. Refusing loudly matters more than
+   * there is anything for it to act on. So it holds this config and reaches the store through it,
+   * and until the store has been built there is nothing to reach. Refusing loudly matters more than
    * it looks: the failure mode this replaces is a capability that silently does nothing, which
    * every happy-path test would pass.
    */
-  void bind(DefaultLoch<A> loch) {
+  void bind(DefaultSurrogateStore<A> store) {
     if (this.bound != null) {
       throw new IllegalStateException(
-          "this configuration has already built a loch; build a second one from a fresh config, or"
+          "this configuration has already built a store; build a second one from a fresh config, or"
               + " its capabilities would write into the first");
     }
-    this.bound = loch;
-    bindings.forEach(binding -> binding.attach(loch));
+    this.bound = store;
+    bindings.forEach(binding -> binding.attach(store));
   }
 
   /**
@@ -488,7 +488,7 @@ public class LochConfig<A, D> {
   /** What a query still needs said about it before it becomes a capability. */
   public static final class Querying<A, I, Q> {
 
-    private final LochConfig<A, ?> config;
+    private final SurrogateStoreConfig<A, ?> config;
     private final String name;
     private final TypeRef<I> inputType;
     private final Query.Asking<I, Q> asking;
@@ -497,7 +497,10 @@ public class LochConfig<A, D> {
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Querying(
-        LochConfig<A, ?> config, String name, TypeRef<I> inputType, Query.Asking<I, Q> asking) {
+        SurrogateStoreConfig<A, ?> config,
+        String name,
+        TypeRef<I> inputType,
+        Query.Asking<I, Q> asking) {
       this.config = config;
       this.name = name;
       this.inputType = inputType;
@@ -565,10 +568,10 @@ public class LochConfig<A, D> {
   }
 
   /**
-   * The loch a capability reaches through, attached when that loch is built.
+   * The store a capability reaches through, attached when that store is built.
    *
    * <p>Per capability, not per config, and that distinction is the whole safety property. If a
-   * capability reached the loch through the config, one minted <i>after</i> the loch was built
+   * capability reached the store through the config, one minted <i>after</i> the store was built
    * would find it already there and work perfectly -- measured doing exactly that: an source minted
    * after startup planted a value at another tenant's label, and a derivation minted after startup
    * read a cardholder token. Binding each capability at construction means a late one is attached
@@ -577,25 +580,25 @@ public class LochConfig<A, D> {
   static final class Binding<A> {
 
     private final String what;
-    private DefaultLoch<A> loch;
+    private DefaultSurrogateStore<A> store;
 
     private Binding(String what) {
       this.what = what;
     }
 
-    private void attach(DefaultLoch<A> loch) {
-      this.loch = loch;
+    private void attach(DefaultSurrogateStore<A> store) {
+      this.store = store;
     }
 
-    DefaultLoch<A> engine() {
-      if (loch == null) {
+    DefaultSurrogateStore<A> engine() {
+      if (store == null) {
         throw new IllegalStateException(
             what
-                + " is attached to no loch. Capabilities are minted while a loch is being"
+                + " is attached to no store. Capabilities are minted while a store is being"
                 + " configured and are attached when it is built; this one was minted afterwards,"
                 + " so there is nothing for it to act on.");
       }
-      return loch;
+      return store;
     }
   }
 
@@ -616,7 +619,7 @@ public class LochConfig<A, D> {
    * shown to a different tenant is a leak, and refusal text has a way of reaching places the value
    * never would. On for development, where the alternative is guessing.
    */
-  public LochConfig<A, D> explainRefusals() {
+  public SurrogateStoreConfig<A, D> explainRefusals() {
     this.explainRefusals = true;
     return this;
   }
@@ -626,7 +629,7 @@ public class LochConfig<A, D> {
   }
 
   /**
-   * Where a loch finds out who is asking, when a caller has not said.
+   * Where a store finds out who is asking, when a caller has not said.
    *
    * <p>Identity is known at the edge -- a request, a message, a session -- and needed at the gate,
    * which may be many layers down. Threading an {@code AccessContext} parameter through all of them
@@ -634,8 +637,8 @@ public class LochConfig<A, D> {
    * features get routed around.
    *
    * <p>So the application says once where the answer lives. A {@code ThreadLocal}, a {@code
-   * ScopedValue}, Spring's {@code SecurityContextHolder} -- Loch does not care, and has no opinion
-   * about how a request scope works.
+   * ScopedValue}, Spring's {@code SecurityContextHolder} -- SurrogateStore does not care, and has
+   * no opinion about how a request scope works.
    *
    * <pre>{@code
    * .askingWhoIsAsking(() -> AccessContext.of(Map.of(
@@ -645,7 +648,8 @@ public class LochConfig<A, D> {
    *
    * <p>An application with no notion of identity says nothing and every context is empty.
    */
-  public LochConfig<A, D> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
+  public SurrogateStoreConfig<A, D> askingWhoIsAsking(
+      java.util.function.Supplier<AccessContext> ambient) {
     this.ambient = Objects.requireNonNull(ambient, "an ambient context source must not be null");
     return this;
   }
@@ -654,13 +658,13 @@ public class LochConfig<A, D> {
    * The context keys a call site may contribute, on top of what the edge established.
    *
    * <p>Empty by default, deliberately. Anything a caller says about who it is would otherwise be
-   * taken at its word, and code holding a loch could name itself whichever tenant or role it
+   * taken at its word, and code holding a store could name itself whichever tenant or role it
    * pleased. Identity comes from {@link #askingWhoIsAsking}; a caller contributes only what the
    * edge could not know, such as the purpose of an operation.
    *
    * <p>Never list an identity key here.
    */
-  public LochConfig<A, D> callerMayContribute(String... keys) {
+  public SurrogateStoreConfig<A, D> callerMayContribute(String... keys) {
     this.callerMayContribute = java.util.Set.of(keys);
     return this;
   }
@@ -689,13 +693,14 @@ public class LochConfig<A, D> {
    * does not govern on its own. Every other gate asks whether a value may be <i>disclosed</i>
    * somewhere; a label has nothing to say about whether it may be <i>destroyed</i>, and "possession
    * is not authority" is a rule about reading. An application that never erases says nothing and
-   * keeps a loch that cannot.
+   * keeps a store that cannot.
    *
    * <p><b>Descendants go regardless.</b> The check is against the root, and everything derived from
    * it is removed whether or not it is labelled more constrained -- which is what erasure means. A
    * value derived from two customers dies with either of them.
    */
-  public LochConfig<A, D> mayErase(java.util.function.BiPredicate<A, AccessContext> mayErase) {
+  public SurrogateStoreConfig<A, D> mayErase(
+      java.util.function.BiPredicate<A, AccessContext> mayErase) {
     this.mayErase = Objects.requireNonNull(mayErase, "an erasure policy must not be null");
     return this;
   }
@@ -707,7 +712,7 @@ public class LochConfig<A, D> {
   Lattice<A> lattice() {
     if (lattice == null) {
       throw new IllegalStateException(
-          "a loch needs a lattice: call lattice(...) with the order over your label type");
+          "a store needs a lattice: call lattice(...) with the order over your label type");
     }
     return lattice;
   }

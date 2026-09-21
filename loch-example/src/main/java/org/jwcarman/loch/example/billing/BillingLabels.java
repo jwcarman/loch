@@ -22,9 +22,9 @@ import org.jwcarman.loch.lattice.Lattices;
 /**
  * What this business needs to know about any piece of data it holds.
  *
- * <p>Written once, and the only place the application states its own security vocabulary. Loch
- * ships no mandatory scheme, because a regulated company already has one it is required to use and
- * a library is in no position to argue with it.
+ * <p>Written once, and the only place the application states its own security vocabulary.
+ * SurrogateStore ships no mandatory scheme, because a regulated company already has one it is
+ * required to use and a library is in no position to argue with it.
  */
 public record BillingLabels(Exact<String> tenant, Integrity integrity, Sensitivity sensitivity) {
 

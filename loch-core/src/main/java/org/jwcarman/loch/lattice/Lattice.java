@@ -18,11 +18,11 @@ package org.jwcarman.loch.lattice;
 /**
  * An ordering over labels, expressed as the one operation everything else is derived from.
  *
- * <p><b>Up means more constrained.</b> Every lattice in Loch is oriented that way, without
- * exception: {@link #bottom()} is the label that constrains nothing, and joining two labels yields
- * one at least as constrained as both. Confidentiality rises toward secret, integrity rises toward
- * untrusted, a set of contributing sources rises as it grows. Orienting them alike is what lets one
- * operation serve all of them.
+ * <p><b>Up means more constrained.</b> Every lattice in SurrogateStore is oriented that way,
+ * without exception: {@link #bottom()} is the label that constrains nothing, and joining two labels
+ * yields one at least as constrained as both. Confidentiality rises toward secret, integrity rises
+ * toward untrusted, a set of contributing sources rises as it grows. Orienting them alike is what
+ * lets one operation serve all of them.
  *
  * <p>That orientation is not a convention for tidiness. It is what makes the safety rule a
  * consequence rather than a check: a derived value's label is the join of its parents', join is

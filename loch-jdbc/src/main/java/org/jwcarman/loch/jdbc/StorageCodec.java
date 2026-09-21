@@ -21,8 +21,8 @@ import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
- * What happens to every byte a loch stores, after a value has been serialised and before it is read
- * back: compression, encryption, both.
+ * What happens to every byte a store stores, after a value has been serialised and before it is
+ * read back: compression, encryption, both.
  *
  * <p>A {@code byte[] -> byte[]} codec and nothing more. The codec library's transforms ({@code
  * codec-crypto}, {@code codec-transforms}, {@code codec-zstd}, ...) are exactly this shape and
@@ -38,11 +38,11 @@ import org.jwcarman.codec.spi.TypeRef;
  * costs the same and saves nothing.
  *
  * <p>The type exists so an application can declare one and be found. A bean of plain {@code
- * Codec<byte[]>} names nothing in particular; one of these names a loch's storage.
+ * Codec<byte[]>} names nothing in particular; one of these names a store's storage.
  */
 public interface StorageCodec extends Codec<byte[]> {
 
-  /** A plain byte transform, named as a loch's. */
+  /** A plain byte transform, named as a store's. */
   static StorageCodec of(Codec<byte[]> transform) {
     Objects.requireNonNull(transform, "transform must not be null");
     return new StorageCodec() {

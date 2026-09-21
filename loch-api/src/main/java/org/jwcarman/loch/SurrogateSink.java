@@ -18,15 +18,15 @@ package org.jwcarman.loch;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
- * The authority to take plaintext out of a loch at one particular ceiling.
+ * The authority to take plaintext out of a store at one particular ceiling.
  *
- * <p>The counterpart to {@link SurrogateSource}, and named from the loch's point of view rather
+ * <p>The counterpart to {@link SurrogateSource}, and named from the store's point of view rather
  * than the data's: values enter through an source and leave through an sink. That frame is fixed,
  * which source-and-sink is not -- two flows cross here, plaintext and handles, and a reader cannot
  * tell which one a "source" belongs to.
  *
  * <p><b>Minted during configuration, obtained only by being handed one.</b> Before this existed, a
- * caller named the door it wanted: {@code loch.dereference(handle, DestinationId.of("payment
+ * caller named the door it wanted: {@code store.dereference(handle, DestinationId.of("payment
  * processor"), ctx)}. That factory is public, so any class could construct the name of any door and
  * present it, and the only thing between an arbitrary caller and cardholder plaintext was a ceiling
  * re-checked on every call. Holding the sink is now the authority, and there is no method that
@@ -62,7 +62,7 @@ public interface SurrogateSink<T> {
    * that calling code is expected to handle: show the handle instead, ask for approval, take the
    * other branch.
    *
-   * @throws IllegalStateException if this sink was never bound to a loch
+   * @throws IllegalStateException if this sink was never bound to a store
    */
   Dereferenced<T> exchange(Surrogate<T> surrogate);
 

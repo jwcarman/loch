@@ -56,7 +56,7 @@ public final class MemoryStorage<A> implements Storage<A> {
    * Forgets the trail so far.
    *
    * <p>For tests that want to watch one operation without the setup that preceded it. A durable
-   * loch has no equivalent, and deliberately: the trail is the thing that must not be erasable.
+   * store has no equivalent, and deliberately: the trail is the thing that must not be erasable.
    */
   public void clearAudit() {
     audit.clear();

@@ -20,17 +20,17 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.LochConfig;
+import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
- * How a durable loch is built: everything a loch needs, plus where it keeps things and how it
+ * How a durable store is built: everything a store needs, plus where it keeps things and how it
  * protects them.
  *
  * <p>The fluent methods it inherits are re-declared so they answer with this type and a single
  * chain can mix both kinds of setting.
  */
-public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
+public final class JdbcSurrogateStoreConfig<A, D> extends SurrogateStoreConfig<A, D> {
 
   private DataSource dataSource;
   private CodecFactory codecs;
@@ -38,14 +38,14 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
   private boolean migrate = true;
 
   /** Where the tables are. */
-  public JdbcLochConfig<A, D> dataSource(DataSource dataSource) {
-    this.dataSource = Objects.requireNonNull(dataSource, "a durable loch needs a data source");
+  public JdbcSurrogateStoreConfig<A, D> dataSource(DataSource dataSource) {
+    this.dataSource = Objects.requireNonNull(dataSource, "a durable store needs a data source");
     return this;
   }
 
   /** How values become bytes. Any {@link CodecFactory}: Jackson, fory, protobuf, your own. */
-  public JdbcLochConfig<A, D> codecs(CodecFactory codecs) {
-    this.codecs = Objects.requireNonNull(codecs, "a durable loch needs codecs");
+  public JdbcSurrogateStoreConfig<A, D> codecs(CodecFactory codecs) {
+    this.codecs = Objects.requireNonNull(codecs, "a durable store needs codecs");
     return this;
   }
 
@@ -62,13 +62,13 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
    *         .andThen(EnvelopeCodec.builder(keys).build())))
    * }</pre>
    */
-  public JdbcLochConfig<A, D> storedThrough(StorageCodec storageCodec) {
+  public JdbcSurrogateStoreConfig<A, D> storedThrough(StorageCodec storageCodec) {
     this.storageCodec = Objects.requireNonNull(storageCodec, "a storage codec must not be null");
     return this;
   }
 
   /** Stores bytes exactly as serialised. For a throwaway database, never for real data. */
-  public JdbcLochConfig<A, D> storedPlainly() {
+  public JdbcSurrogateStoreConfig<A, D> storedPlainly() {
     return storedThrough(
         StorageCodec.of(
             new Codec<byte[]>() {
@@ -85,40 +85,40 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
   }
 
   /** Leaves the schema alone; something else owns it. */
-  public JdbcLochConfig<A, D> withoutMigration() {
+  public JdbcSurrogateStoreConfig<A, D> withoutMigration() {
     this.migrate = false;
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A, D> lattice(Lattice<A> lattice) {
+  public JdbcSurrogateStoreConfig<A, D> lattice(Lattice<A> lattice) {
     super.lattice(lattice);
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A, D> explainRefusals() {
+  public JdbcSurrogateStoreConfig<A, D> explainRefusals() {
     super.explainRefusals();
     return this;
   }
 
   /** Re-declared because this config does not inherit the fluent return type. */
   @Override
-  public JdbcLochConfig<A, D> askingWhoIsAsking(
+  public JdbcSurrogateStoreConfig<A, D> askingWhoIsAsking(
       java.util.function.Supplier<AccessContext> ambient) {
     super.askingWhoIsAsking(ambient);
     return this;
   }
 
   @Override
-  public JdbcLochConfig<A, D> callerMayContribute(String... keys) {
+  public JdbcSurrogateStoreConfig<A, D> callerMayContribute(String... keys) {
     super.callerMayContribute(keys);
     return this;
   }
 
   DataSource dataSourceOrFail() {
     if (dataSource == null) {
-      throw new IllegalStateException("a durable loch needs a data source");
+      throw new IllegalStateException("a durable store needs a data source");
     }
     return dataSource;
   }
@@ -126,7 +126,7 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
   CodecFactory codecsOrFail() {
     if (codecs == null) {
       throw new IllegalStateException(
-          "a durable loch needs codecs: give it a CodecFactory that can serialise your values");
+          "a durable store needs codecs: give it a CodecFactory that can serialise your values");
     }
     return codecs;
   }
@@ -134,7 +134,7 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
   StorageCodec storageCodecOrFail() {
     if (storageCodec == null) {
       throw new IllegalStateException(
-          "a durable loch needs a storage codec: call storedThrough(...) with your compression and"
+          "a durable store needs a storage codec: call storedThrough(...) with your compression and"
               + " encryption, or storedPlainly() if this database holds nothing that matters");
     }
     return storageCodec;

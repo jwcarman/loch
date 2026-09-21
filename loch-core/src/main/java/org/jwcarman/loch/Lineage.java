@@ -36,7 +36,7 @@ public record Lineage(List<String> parents, Optional<String> derivation) {
     parents = List.copyOf(parents);
   }
 
-  /** A value nobody derived: it was handed to the loch by trusted code at a boundary. */
+  /** A value nobody derived: it was handed to the store by trusted code at a boundary. */
   public static Lineage held() {
     return HELD;
   }

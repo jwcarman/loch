@@ -19,7 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * What a loch is configured to allow, in a form a person can read.
+ * What a store is configured to allow, in a form a person can read.
  *
  * <p>Worth printing at startup and worth pasting into a review. No algebra can tell you whether a
  * check is strong enough -- an endorsement that merely confirms a record exists looks exactly like
@@ -60,7 +60,7 @@ public record Manifest(
   @Override
   public String toString() {
     List<String> lines = new ArrayList<>();
-    lines.add("loch manifest");
+    lines.add("store manifest");
     lines.add("");
     lines.add("  unconstrained label (bottom)");
     lines.add("    " + bottom);
@@ -75,7 +75,7 @@ public record Manifest(
     List<Entry> weakening = weakening();
     lines.add("  " + weakening.size() + " operation(s) can WEAKEN a label:");
     if (weakening.isEmpty()) {
-      lines.add("    (none -- labels in this loch only ever become more constrained)");
+      lines.add("    (none -- labels in this store only ever become more constrained)");
     } else {
       weakening.forEach(entry -> lines.add("    " + entry.name() + "  " + entry.detail()));
     }

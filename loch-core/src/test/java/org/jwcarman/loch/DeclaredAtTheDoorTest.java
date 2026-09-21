@@ -45,8 +45,8 @@ class DeclaredAtTheDoorTest {
 
   record SessionToken(String token) implements Value {}
 
-  private final LochConfig<Exact<String>, Value> config =
-      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private final SurrogateStoreConfig<Exact<String>, Value> config =
+      new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   private final SurrogateSource<Card> cards =
       config.source("cards", Card.class, ctx -> Exact.of("acme"));
@@ -54,14 +54,14 @@ class DeclaredAtTheDoorTest {
   private final SurrogateSource<SessionToken> tokens =
       config.source("tokens", SessionToken.class, ctx -> Exact.of("acme"));
 
-  private final LochConfig.Destination<Exact<String>, Value> processor =
+  private final SurrogateStoreConfig.Destination<Exact<String>, Value> processor =
       config
           .destination("payment-processor", ctx -> Exact.of("acme"))
           .type(Card.class)
           .type(Last4.class)
           .mint();
 
-  private final Loch<Exact<String>> loch = MemoryLoch.create(config);
+  private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
 
   @Test
   @DisplayName("reads the types it was declared to read")
@@ -94,7 +94,7 @@ class DeclaredAtTheDoorTest {
   void a_value_it_was_never_meant_to_see_stays_out_of_reach() {
     Surrogate<SessionToken> token = tokens.exchange(new SessionToken("sess_abc"));
 
-    assertThat(loch.label(token.id())).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(token.id())).isEqualTo(Exact.of("acme"));
     assertThatThrownBy(() -> processor.reading(SessionToken.class))
         .isInstanceOf(IllegalStateException.class);
   }

@@ -25,7 +25,7 @@ import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattices;
 
 /**
- * A capability minted after its loch was built is attached to nothing.
+ * A capability minted after its store was built is attached to nothing.
  *
  * <p>This is what makes holding a capability mean anything. The configuration is the mint, so
  * anyone still holding it could otherwise manufacture a source at any label, or a derivation
@@ -37,30 +37,30 @@ import org.jwcarman.loch.lattice.Lattices;
  * snapshotted its destinations, and an accident is not a control.
  *
  * <p>There is no policy here to misconfigure and no check to switch off. A capability reaches its
- * loch through a binding attached when that loch is built, so one minted afterwards has nothing to
- * reach.
+ * store through a binding attached when that store is built, so one minted afterwards has nothing
+ * to reach.
  */
-@DisplayName("A capability minted after the loch was built")
+@DisplayName("A capability minted after the store was built")
 class MintedAfterwardsTest {
 
   interface Value {}
 
   record Token(String value) implements Value {}
 
-  private final LochConfig<Exact<String>, Value> config =
-      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private final SurrogateStoreConfig<Exact<String>, Value> config =
+      new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   private final SurrogateSource<Token> acmeTokens =
       config.source("acme-tokens", Token.class, ctx -> Exact.of("acme"));
 
-  private final Loch<Exact<String>> loch = MemoryLoch.create(config);
+  private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
 
   private final Surrogate<Token> secret = acmeTokens.exchange(new Token("acme's cardholder token"));
 
   @Test
-  @DisplayName("proves the loch itself still works, so the refusals below mean something")
+  @DisplayName("proves the store itself still works, so the refusals below mean something")
   void the_loch_itself_still_works() {
-    assertThat(loch.label(secret.id())).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(secret.id())).isEqualTo(Exact.of("acme"));
   }
 
   @Test
@@ -70,7 +70,7 @@ class MintedAfterwardsTest {
 
     assertThatThrownBy(() -> forged.exchange(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("attached to no loch");
+        .hasMessageContaining("attached to no store");
   }
 
   @Test
@@ -84,7 +84,7 @@ class MintedAfterwardsTest {
 
     assertThatThrownBy(() -> forged.derive(secret))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("attached to no loch");
+        .hasMessageContaining("attached to no store");
   }
 
   @Test
@@ -94,7 +94,7 @@ class MintedAfterwardsTest {
 
     assertThatThrownBy(() -> forged.exchange(secret))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("attached to no loch");
+        .hasMessageContaining("attached to no store");
   }
 
   @Test
@@ -108,7 +108,7 @@ class MintedAfterwardsTest {
 
     assertThatThrownBy(() -> forged.fold(List.of(secret)))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("attached to no loch");
+        .hasMessageContaining("attached to no store");
   }
 
   @Test
@@ -126,6 +126,6 @@ class MintedAfterwardsTest {
 
     assertThatThrownBy(() -> forged.ask(secret, "cardholder"))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("attached to no loch");
+        .hasMessageContaining("attached to no store");
   }
 }

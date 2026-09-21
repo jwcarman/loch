@@ -58,8 +58,8 @@ class ErasingAcrossTenantsTest {
   void is_refused_even_for_a_compliance_officer() {
     AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-    LochConfig<Labels, Object> config =
-        new LochConfig<Labels, Object>()
+    SurrogateStoreConfig<Labels, Object> config =
+        new SurrogateStoreConfig<Labels, Object>()
             .lattice(Labels.LATTICE)
             .askingWhoIsAsking(edge::get)
             .mayErase(
@@ -71,14 +71,14 @@ class ErasingAcrossTenantsTest {
         config.source(
             "globex-records", Record.class, ctx -> new Labels(Exact.of("globex"), Level.HIGH));
 
-    Loch<Labels> loch = MemoryLoch.create(config);
+    SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
 
     Surrogate<Record> globexRecord = globexRecords.exchange(new Record("globex's records"));
 
     edge.set(AccessContext.of(Map.of("tenant", "acme", "role", "compliance")));
 
-    assertThat(catchThrowable(() -> loch.erase(globexRecord)))
+    assertThat(catchThrowable(() -> store.erase(globexRecord)))
         .isInstanceOf(AccessDeniedException.class);
-    assertThat(loch.holds(globexRecord.id())).isTrue();
+    assertThat(store.holds(globexRecord.id())).isTrue();
   }
 }

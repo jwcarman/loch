@@ -59,8 +59,10 @@ class LabellingWhatArrivesTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final LochConfig<Labels, Object> config =
-      new LochConfig<Labels, Object>().lattice(Labels.LATTICE).askingWhoIsAsking(edge::get);
+  private final SurrogateStoreConfig<Labels, Object> config =
+      new SurrogateStoreConfig<Labels, Object>()
+          .lattice(Labels.LATTICE)
+          .askingWhoIsAsking(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final SurrogateSource<Mail> mail =
@@ -72,7 +74,7 @@ class LabellingWhatArrivesTest {
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
                   message.senderVerified() ? Integrity.ENDORSED : Integrity.UNENDORSED));
 
-  private final Loch<Labels> loch = MemoryLoch.create(config);
+  private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
 
   @Test
   @DisplayName("takes the part of the label that only the value knows")
@@ -82,8 +84,8 @@ class LabellingWhatArrivesTest {
     Surrogate<Mail> verified = mail.exchange(new Mail("known@acme.example", "hello", true));
     Surrogate<Mail> anonymous = mail.exchange(new Mail("who@nowhere.example", "hello", false));
 
-    assertThat(loch.label(verified.id()).integrity()).isEqualTo(Integrity.ENDORSED);
-    assertThat(loch.label(anonymous.id()).integrity()).isEqualTo(Integrity.UNENDORSED);
+    assertThat(store.label(verified.id()).integrity()).isEqualTo(Integrity.ENDORSED);
+    assertThat(store.label(anonymous.id()).integrity()).isEqualTo(Integrity.UNENDORSED);
   }
 
   /** The rest of the label is still the access's business, and the value cannot touch it. */
@@ -93,6 +95,6 @@ class LabellingWhatArrivesTest {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
     Surrogate<Mail> acmeMail = mail.exchange(new Mail("x@y.example", "globex globex globex", true));
 
-    assertThat(loch.label(acmeMail.id()).tenant()).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(acmeMail.id()).tenant()).isEqualTo(Exact.of("acme"));
   }
 }

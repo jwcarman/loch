@@ -23,12 +23,12 @@ public final class Domain {
   private Domain() {}
 
   /**
-   * Everything this application is willing to put in a loch.
+   * Everything this application is willing to put in a store.
    *
-   * <p>Ours, not the library's: it imports nothing from Loch, and Loch only ever sees it as the
-   * bound on a type parameter. What it buys is that {@code Source<String>} does not compile. A sink
-   * over {@code String} would read every surrogate for a {@code String} whose label permitted it,
-   * and a card token and a customer's display name are the same type to Java.
+   * <p>Ours, not the library's: it imports nothing from SurrogateStore, and SurrogateStore only
+   * ever sees it as the bound on a type parameter. What it buys is that {@code Source<String>} does
+   * not compile. A sink over {@code String} would read every surrogate for a {@code String} whose
+   * label permitted it, and a card token and a customer's display name are the same type to Java.
    */
   public interface BillingValue {}
 

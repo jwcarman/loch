@@ -37,7 +37,7 @@ import org.jwcarman.loch.lattice.Lattices;
  * interface would exist only to satisfy the compiler; and being able to hold a bare {@code String}
  * keeps most of this scenario's assertions exactly as an application would write them.
  */
-@DisplayName("A billing system using Loch")
+@DisplayName("A billing system using SurrogateStore")
 class BillingScenarioTest {
 
   // ---------------------------------------------------------------- the application's labels
@@ -124,7 +124,7 @@ class BillingScenarioTest {
     }
   }
 
-  // ---------------------------------------------------------------- what travels through the loch
+  // ---------------------------------------------------------------- what travels through the store
 
   record DisputeClaim(String invoiceNumber, String reason) {}
 
@@ -186,8 +186,10 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final LochConfig<Billing, Object> config =
-      new LochConfig<Billing, Object>().lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
+  private final SurrogateStoreConfig<Billing, Object> config =
+      new SurrogateStoreConfig<Billing, Object>()
+          .lattice(Billing.LATTICE)
+          .askingWhoIsAsking(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -314,7 +316,7 @@ class BillingScenarioTest {
           .lowering(joined -> joined.withDataClass(DataClass.PII))
           .mint();
 
-  // Declares itself an endorsement without checking anything. Loch refuses it.
+  // Declares itself an endorsement without checking anything. SurrogateStore refuses it.
   private final Derivation<DisputeClaim, InvoiceNumber> wishful =
       config
           .derivation(
@@ -362,7 +364,7 @@ class BillingScenarioTest {
           .lowering(joined -> joined.withDataClass(DataClass.NONE))
           .mint();
 
-  // The whole account never leaves the loch to answer one question about it.
+  // The whole account never leaves the store to answer one question about it.
   private final Query<Account, String> ownedBy =
       config
           .query(
@@ -373,7 +375,7 @@ class BillingScenarioTest {
           .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
           .mint();
 
-  private final Loch<Billing> loch = new DefaultLoch<>(config, storage);
+  private final SurrogateStore<Billing> store = new DefaultSurrogateStore<>(config, storage);
 
   /** Every access in this system is made on behalf of a tenant, established at the edge. */
   private AccessContext acme() {
@@ -395,7 +397,7 @@ class BillingScenarioTest {
    * Holds a value at exactly the label given, by encoding it into the ambient context an source's
    * generic {@link #labelFrom} reads back out, then restoring whatever the edge held before.
    *
-   * <p>This is the plumbing equivalent of the old {@code loch.exchange(value, type, label)}: the
+   * <p>This is the plumbing equivalent of the old {@code store.exchange(value, type, label)}: the
    * label is still asserted by trusted code at a boundary, not computed, and still fixed before the
    * value is stored. What changed is the mechanism -- there is no method left that takes a label as
    * an argument, so the label has to travel through the one channel an source reads.
@@ -457,7 +459,7 @@ class BillingScenarioTest {
     void is_still_a_handle_everywhere_else() {
       Surrogate<String> email = customerEmail();
 
-      assertThat(email.toString()).doesNotContain("123-45-6789").contains("loch_");
+      assertThat(email.toString()).doesNotContain("123-45-6789").contains("sur_");
     }
   }
 
@@ -553,14 +555,14 @@ class BillingScenarioTest {
 
       Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
 
-      assertThat(loch.label(report).tenant().conflicted()).isTrue();
+      assertThat(store.label(report).tenant().conflicted()).isTrue();
       assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(paymentProcessorReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(vendorLlmReports.exchange(report, AccessContext.of("tenant", "globex")).allowed())
           .isFalse();
       // It exists, and it remembers where it came from.
-      assertThat(loch.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
+      assertThat(store.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
     }
 
     @Test
@@ -600,7 +602,7 @@ class BillingScenarioTest {
 
       Surrogate<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
 
-      assertThat(loch.label(report).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(store.label(report).dataClass()).isEqualTo(DataClass.PII);
       assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isTrue();
     }
@@ -646,7 +648,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses an id nobody minted, rather than computing anything")
     void refuses_an_id_nobody_minted() {
-      Surrogate<String> invented = Surrogate.of("loch_whatever-i-like");
+      Surrogate<String> invented = Surrogate.of("sur_whatever-i-like");
 
       assertThat(quarantinedLlmText.exchange(invented, acme()))
           .isInstanceOfSatisfying(
@@ -655,7 +657,7 @@ class BillingScenarioTest {
     }
 
     /**
-     * This used to invent a destination name and assert the loch refused it. There is no longer a
+     * This used to invent a destination name and assert the store refused it. There is no longer a
      * method that takes one: a door is reached by holding the sink, and outlets are minted during
      * configuration. What is worth asserting is that the door really is gone, because it is exactly
      * the sort of thing that gets added back for a test fixture and left there.
@@ -663,7 +665,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses a destination nobody registered")
     void refuses_a_destination_nobody_registered() {
-      assertThat(Loch.class.getMethods())
+      assertThat(SurrogateStore.class.getMethods())
           .isNotEmpty()
           .noneSatisfy(method -> assertThat(method.getReturnType()).isEqualTo(Dereferenced.class));
     }
@@ -710,7 +712,7 @@ class BillingScenarioTest {
     void a_projection_inherits_its_parents_labels() {
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
-      assertThat(loch.label(number))
+      assertThat(store.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
       assertThat(quarantinedLlmInvoice.exchange(number, acme()).granted())
           .contains(new InvoiceNumber("INV-4471"));
@@ -723,7 +725,7 @@ class BillingScenarioTest {
     void extracting_a_field_does_not_make_it_trustworthy() {
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
-      assertThat(loch.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
+      assertThat(store.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
     }
 
     @Test
@@ -733,9 +735,9 @@ class BillingScenarioTest {
 
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(parent, acme()).orThrow();
 
-      assertThat(loch.lineage(number).parents()).containsExactly(parent.id());
-      assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE);
-      assertThat(loch.lineage(parent).asserted()).isTrue();
+      assertThat(store.lineage(number).parents()).containsExactly(parent.id());
+      assertThat(store.lineage(number).derivation()).contains(CLAIMED_INVOICE);
+      assertThat(store.lineage(parent).asserted()).isTrue();
     }
 
     /**
@@ -755,8 +757,8 @@ class BillingScenarioTest {
       Surrogate<InvoiceNumber> twice = claimedInvoice.derive(parent, acme()).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
-      assertThat(loch.lineage(once).parents()).containsExactly(parent.id());
-      assertThat(loch.lineage(twice).parents()).containsExactly(parent.id());
+      assertThat(store.lineage(once).parents()).containsExactly(parent.id());
+      assertThat(store.lineage(twice).parents()).containsExactly(parent.id());
     }
 
     @Test
@@ -767,16 +769,16 @@ class BillingScenarioTest {
     }
 
     /**
-     * This used to invent a name and assert the loch refused it. The name no longer buys anything
+     * This used to invent a name and assert the store refused it. The name no longer buys anything
      * -- there is no method that takes one -- so what is worth asserting is the property that
      * replaced it, and it is the stronger one: a derivation cannot be run unless somebody handed
-     * you the capability, and a capability minted after the loch was built was handed nothing.
+     * you the capability, and a capability minted after the store was built was handed nothing.
      *
-     * <p>Not a policy. There is no check to disable: a late capability is attached to no loch, so
+     * <p>Not a policy. There is no check to disable: a late capability is attached to no store, so
      * there is nothing for it to act on.
      */
     @Test
-    @DisplayName("a derivation minted after the loch was built is attached to nothing")
+    @DisplayName("a derivation minted after the store was built is attached to nothing")
     void a_derivation_minted_afterwards_is_attached_to_nothing() {
       Derivation<DisputeClaim, InvoiceNumber> invented =
           config
@@ -791,7 +793,7 @@ class BillingScenarioTest {
 
       assertThatThrownBy(() -> invented.derive(claim, acme()))
           .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("attached to no loch");
+          .hasMessageContaining("attached to no store");
     }
   }
 
@@ -815,7 +817,7 @@ class BillingScenarioTest {
     void truncating_a_card_lowers_it_to_pii() {
       Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
-      assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(store.label(last4).dataClass()).isEqualTo(DataClass.PII);
       assertThat(approvalCardLast4.exchange(last4, acme("clearance", "finance")).granted())
           .contains(new Last4("4821"));
     }
@@ -825,8 +827,8 @@ class BillingScenarioTest {
     void lowers_nothing_it_did_not_name() {
       Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
-      assertThat(loch.label(last4).tenant().resolved()).contains("acme");
-      assertThat(loch.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
+      assertThat(store.label(last4).tenant().resolved()).contains("acme");
+      assertThat(store.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
     }
 
     /**
@@ -838,8 +840,8 @@ class BillingScenarioTest {
     void lowering_only_one_dimension_leaves_the_other_blocking() {
       Surrogate<Last4> partly = cardLast4Partial.derive(token(), acme()).orThrow();
 
-      assertThat(loch.label(partly).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(loch.label(partly).tlp()).isEqualTo(Tlp.RED);
+      assertThat(store.label(partly).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(store.label(partly).tlp()).isEqualTo(Tlp.RED);
       assertThat(approvalCardLast4.exchange(partly, acme("clearance", "finance")).allowed())
           .isFalse();
     }
@@ -872,7 +874,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("the manifest names every operation that can weaken a label")
     void the_manifest_names_every_weakening_operation() {
-      Manifest manifest = loch.manifest();
+      Manifest manifest = store.manifest();
 
       assertThat(manifest.weakening()).isNotEmpty();
       assertThat(manifest.weakening())
@@ -888,7 +890,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("including ones that read several values, which used to weaken labels invisibly")
     void including_ones_that_read_several_values() {
-      assertThat(loch.manifest().weakening())
+      assertThat(store.manifest().weakening())
           .extracting(Manifest.Entry::name)
           .contains(SUMMARISE_FOR_RELEASE)
           .doesNotContain(SUMMARISE);
@@ -898,16 +900,16 @@ class BillingScenarioTest {
     @Test
     @DisplayName("and the report keeps the order everything was registered in")
     void the_report_keeps_registration_order() {
-      Manifest manifest = loch.manifest();
+      Manifest manifest = store.manifest();
 
-      assertThat(manifest.toString()).isEqualTo(loch.manifest().toString());
+      assertThat(manifest.toString()).isEqualTo(store.manifest().toString());
       assertThat(manifest.destinations()).extracting(Manifest.Entry::name).startsWith("vendor-llm");
     }
 
     @Test
     @DisplayName("and is readable, which is the whole point of it")
     void and_is_readable() {
-      String report = loch.manifest().toString();
+      String report = store.manifest().toString();
 
       System.out.println(report);
       assertThat(report)
@@ -958,7 +960,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
-      LochConfig<Billing, Object> choosyConfig = new LochConfig<>();
+      SurrogateStoreConfig<Billing, Object> choosyConfig = new SurrogateStoreConfig<>();
       choosyConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
       SurrogateSource<Account> secretAccounts =
           choosyConfig.source(
@@ -970,7 +972,7 @@ class BillingScenarioTest {
               .query("Account.ownedBy", Account.class, String.class, (account, sender, ctx) -> true)
               .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
               .mint();
-      Loch<Billing> choosy = MemoryLoch.create(choosyConfig);
+      SurrogateStore<Billing> choosy = MemorySurrogateStore.create(choosyConfig);
       Surrogate<Account> secret = secretAccounts.exchange(new Account("ACC-2", "x@y.example"));
 
       assertThat(secretOwnedBy.ask(secret, "x@y.example", acme()))
@@ -1005,7 +1007,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("unless the application asks for the explanation")
     void unless_the_application_asks_for_the_explanation() {
-      LochConfig<Billing, Object> chattyConfig = new LochConfig<>();
+      SurrogateStoreConfig<Billing, Object> chattyConfig = new SurrogateStoreConfig<>();
       chattyConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get).explainRefusals();
       SurrogateSource<String> chattyMail =
           chattyConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
@@ -1014,7 +1016,7 @@ class BillingScenarioTest {
               "vendor-llm",
               String.class,
               ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
-      Loch<Billing> chatty = MemoryLoch.create(chattyConfig);
+      SurrogateStore<Billing> chatty = MemorySurrogateStore.create(chattyConfig);
       Surrogate<String> held =
           holdAs(
               Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII), chattyMail, "x");
@@ -1028,7 +1030,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
-      LochConfig<Billing, Object> fragileConfig = new LochConfig<>();
+      SurrogateStoreConfig<Billing, Object> fragileConfig = new SurrogateStoreConfig<>();
       fragileConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
       SurrogateSource<String> fragileMail =
           fragileConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
@@ -1039,7 +1041,7 @@ class BillingScenarioTest {
               ctx -> {
                 throw new IllegalStateException("policy service is down");
               });
-      Loch<Billing> fragile = MemoryLoch.create(fragileConfig);
+      SurrogateStore<Billing> fragile = MemorySurrogateStore.create(fragileConfig);
       Surrogate<String> held =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), fragileMail, "x");
@@ -1158,7 +1160,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
     void an_access_that_cannot_be_recorded_does_not_happen() {
-      LochConfig<Billing, Object> watchedConfig = new LochConfig<>();
+      SurrogateStoreConfig<Billing, Object> watchedConfig = new SurrogateStoreConfig<>();
       watchedConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
       SurrogateSource<String> watchedMail =
           watchedConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
@@ -1195,7 +1197,7 @@ class BillingScenarioTest {
               return kept.erase(root);
             }
           };
-      Loch<Billing> watched = new DefaultLoch<>(watchedConfig, broken);
+      SurrogateStore<Billing> watched = new DefaultSurrogateStore<>(watchedConfig, broken);
 
       assertThatThrownBy(
               () ->
@@ -1219,7 +1221,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("keeping no record is not something you can ask for")
     void keeping_no_record_is_not_something_you_can_ask_for() {
-      assertThat(LochConfig.class.getMethods())
+      assertThat(SurrogateStoreConfig.class.getMethods())
           .isNotEmpty()
           .noneSatisfy(method -> assertThat(method.getName()).contains("udit"));
     }

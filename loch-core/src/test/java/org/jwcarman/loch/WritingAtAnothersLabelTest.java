@@ -60,8 +60,10 @@ class WritingAtAnothersLabelTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final LochConfig<Labels, Value> config =
-      new LochConfig<Labels, Value>().lattice(Labels.LATTICE).askingWhoIsAsking(edge::get);
+  private final SurrogateStoreConfig<Labels, Value> config =
+      new SurrogateStoreConfig<Labels, Value>()
+          .lattice(Labels.LATTICE)
+          .askingWhoIsAsking(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final SurrogateSource<Note> notes =
@@ -82,7 +84,7 @@ class WritingAtAnothersLabelTest {
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
                   Integrity.UNENDORSED));
 
-  private final Loch<Labels> loch = MemoryLoch.create(config);
+  private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
 
   @Test
   @DisplayName("is refused, so a forgery never becomes somebody else's fact")
@@ -92,7 +94,7 @@ class WritingAtAnothersLabelTest {
     Surrogate<Note> written = notes.exchange(new Note("globex owes us 1,000,000"));
 
     // Acme wrote it and acme owns it. There was no argument through which to claim otherwise.
-    assertThat(loch.label(written.id()).tenant()).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(written.id()).tenant()).isEqualTo(Exact.of("acme"));
 
     // And globex does not read it as its own.
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
@@ -106,7 +108,7 @@ class WritingAtAnothersLabelTest {
 
     Surrogate<Note> mine = notes.exchange(new Note("our own note"));
 
-    assertThat(loch.holds(mine.id())).isTrue();
+    assertThat(store.holds(mine.id())).isTrue();
     assertThat(reporting.exchange(mine).granted()).contains(new Note("our own note"));
   }
 }

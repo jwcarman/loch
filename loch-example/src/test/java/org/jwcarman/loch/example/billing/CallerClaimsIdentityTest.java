@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.Loch;
+import org.jwcarman.loch.SurrogateStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -42,23 +42,23 @@ class CallerClaimsIdentityTest {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired Loch<BillingLabels> loch;
+  @Autowired SurrogateStore<BillingLabels> store;
 
   @Autowired org.springframework.context.ApplicationContext context;
 
   /**
    * The gate is only worth anything if identity comes from somewhere a caller does not control.
    *
-   * <p>This test used to fabricate a value at acme's label and assert the loch refused it. It
-   * cannot be written any more: nothing on {@link Loch} takes a label, so there is no way to say
-   * what a value should be labelled except by holding the source that decides. What is left worth
-   * asserting is that the door really is gone, because it is the sort of thing that gets added back
-   * for a test fixture and never removed.
+   * <p>This test used to fabricate a value at acme's label and assert the store refused it. It
+   * cannot be written any more: nothing on {@link SurrogateStore} takes a label, so there is no way
+   * to say what a value should be labelled except by holding the source that decides. What is left
+   * worth asserting is that the door really is gone, because it is the sort of thing that gets
+   * added back for a test fixture and never removed.
    */
   @Test
-  @DisplayName("cannot create a value through the loch, because nothing there creates values")
+  @DisplayName("cannot create a value through the store, because nothing there creates values")
   void cannot_create_a_value_through_the_loch() {
-    assertThat(Loch.class.getMethods())
+    assertThat(SurrogateStore.class.getMethods())
         .isNotEmpty()
         .noneSatisfy(
             method ->
@@ -76,14 +76,15 @@ class CallerClaimsIdentityTest {
    *
    * <p>A portal is one pre-declared authority. The configuration that makes portals can make any of
    * them, at any label and any ceiling. It is a local variable in one constructor and it never
-   * enters the container, which is also why minting after the loch was built cannot be expressed
+   * enters the container, which is also why minting after the store was built cannot be expressed
    * here: there is nothing to mint from.
    */
   @Test
   @DisplayName("cannot obtain the mint from the application context")
   void cannot_obtain_the_mint_from_the_context() {
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.LochConfig.class)).isEmpty();
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.jdbc.JdbcLochConfig.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.SurrogateStoreConfig.class)).isEmpty();
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.jdbc.JdbcSurrogateStoreConfig.class))
+        .isEmpty();
   }
 
   @Test

@@ -83,7 +83,7 @@ class BillingSupportTest {
   void takes_a_message_and_gives_back_a_reference() {
     String reference = raiseAcmeDispute();
 
-    assertThat(reference).startsWith("loch_").doesNotContain("dana@acme.example");
+    assertThat(reference).startsWith("sur_").doesNotContain("dana@acme.example");
   }
 
   @Test
@@ -127,7 +127,7 @@ class BillingSupportTest {
             DisputeController.Reference.class);
 
     assertThat(confirmed.getStatusCode()).isEqualTo(HttpStatus.OK);
-    assertThat(confirmed.getBody().id()).startsWith("loch_");
+    assertThat(confirmed.getBody().id()).startsWith("sur_");
   }
 
   /** An invoice that exists, and belongs to somebody else. */

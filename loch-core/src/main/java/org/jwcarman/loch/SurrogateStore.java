@@ -34,7 +34,7 @@ package org.jwcarman.loch;
  *
  * @param <A> the application's label type: one record holding whatever labels it cares about
  */
-public interface Loch<A> {
+public interface SurrogateStore<A> {
 
   /**
    * What a value is labelled, for rendering and for reporting.
@@ -44,7 +44,7 @@ public interface Loch<A> {
    * to show a value or a handle, and it cannot ask permission to ask -- but it does mean a label is
    * disclosed more freely than the value it describes. Ids are unguessable and only handed out on
    * purpose, which is what keeps that reasonable; a deployment that disagrees should not expose a
-   * loch directly.
+   * store directly.
    *
    * <p>Reading a label is not reading a value. This is how a renderer decides what to say about a
    * handle it is not allowed to open.
@@ -65,22 +65,22 @@ public interface Loch<A> {
    *
    * <p><b>Refused unless the application said who may.</b> A label governs disclosure, not
    * destruction, so this is the one operation no ceiling can decide. See {@code
-   * LochConfig#mayErase}.
+   * SurrogateStoreConfig#mayErase}.
    *
    * @return how many values were removed, the root included
    * @throws AccessDeniedException when the erasure policy refuses
    */
   int erase(Surrogate<?> root, AccessContext context);
 
-  /** Using whatever the loch was told about who is asking. */
+  /** Using whatever the store was told about who is asking. */
   default int erase(Surrogate<?> root) {
     return erase(root, AccessContext.empty());
   }
 
-  /** Whether the loch is holding this at all. */
+  /** Whether the store is holding this at all. */
   boolean holds(String id);
 
-  /** Whether the loch is holding this, by typed handle. */
+  /** Whether the store is holding this, by typed handle. */
   default boolean holds(Surrogate<?> handle) {
     return holds(handle.id());
   }
@@ -94,7 +94,7 @@ public interface Loch<A> {
   }
 
   /**
-   * What this loch is configured to allow, in a form a person can read.
+   * What this store is configured to allow, in a form a person can read.
    *
    * <p>Worth printing at startup and worth pasting into a review: the destinations values may
    * reach, the ways one value can be made from another, the questions that can be asked without

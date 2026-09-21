@@ -28,12 +28,12 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Derivation;
-import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Query;
 import org.jwcarman.loch.SurrogateSink;
 import org.jwcarman.loch.SurrogateSource;
-import org.jwcarman.loch.jdbc.JdbcLoch;
-import org.jwcarman.loch.jdbc.JdbcLochConfig;
+import org.jwcarman.loch.SurrogateStore;
+import org.jwcarman.loch.jdbc.JdbcSurrogateStore;
+import org.jwcarman.loch.jdbc.JdbcSurrogateStoreConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
 import org.jwcarman.loch.lattice.Exact;
 import org.slf4j.Logger;
@@ -48,25 +48,25 @@ import tools.jackson.databind.json.JsonMapper;
  * Everything this application is allowed to do, decided once, in one constructor.
  *
  * <p><b>Ordering is guaranteed because this is a constructor, not a bean graph.</b> Capabilities
- * are attached to a loch when that loch is built, so every one of them has to be minted first. A
+ * are attached to a store when that store is built, so every one of them has to be minted first. A
  * constructor body runs top to bottom, so the compiler and the language settle the ordering and
  * Spring is never asked to. The {@code @Bean} methods below hand out what was already made; they do
  * not make anything.
  *
  * <p>Minting inside a {@code @Bean} method instead would mint <i>after</i> this class was built,
- * and quite possibly after the loch was. That capability would be attached to nothing and would
+ * and quite possibly after the store was. That capability would be attached to nothing and would
  * throw on first use rather than failing quietly, but the place to not do it is here.
  *
  * <p>The infrastructure it depends on lives in {@link StorageConfiguration}, because a
  * configuration class cannot both declare a bean and take it as a constructor parameter.
  */
 @Configuration
-public class LochConfiguration {
+public class SurrogateStoreConfiguration {
 
-  private static final Logger log = LoggerFactory.getLogger(LochConfiguration.class);
+  private static final Logger log = LoggerFactory.getLogger(SurrogateStoreConfiguration.class);
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
 
-  private final Loch<BillingLabels> loch;
+  private final SurrogateStore<BillingLabels> store;
   private final SurrogateSource<Domain.Mail> customerMail;
   private final SurrogateSink<Domain.Invoice> supportUi;
   private final SurrogateSink<Domain.Last4> approvalDesk;
@@ -75,10 +75,12 @@ public class LochConfiguration {
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
   private final Query<Domain.Mail, String> mailMentions;
 
-  public LochConfiguration(DataSource dataSource, StorageCodec storageCodec, Invoices invoices) {
+  public SurrogateStoreConfiguration(
+      DataSource dataSource, StorageCodec storageCodec, Invoices invoices) {
 
     // The domain bound is the second parameter. Source<String> would not compile.
-    JdbcLochConfig<BillingLabels, Domain.BillingValue> c = new JdbcLochConfig<>();
+    JdbcSurrogateStoreConfig<BillingLabels, Domain.BillingValue> c =
+        new JdbcSurrogateStoreConfig<>();
     c.dataSource(dataSource)
         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
         .storedThrough(storageCodec)
@@ -138,12 +140,12 @@ public class LochConfiguration {
             .mint();
 
     // Last, and only now: everything above is attached to this.
-    this.loch = JdbcLoch.create(BillingLabels.class, c);
+    this.store = JdbcSurrogateStore.create(BillingLabels.class, c);
   }
 
   @Bean
-  public Loch<BillingLabels> loch() {
-    return loch;
+  public SurrogateStore<BillingLabels> store() {
+    return store;
   }
 
   /**
@@ -170,7 +172,7 @@ public class LochConfiguration {
   /** Printed once at startup, so what this service will allow is in the log. */
   @EventListener(ApplicationReadyEvent.class)
   public void announce(ApplicationReadyEvent event) {
-    log.info("\n{}", event.getApplicationContext().getBean(Loch.class).manifest());
+    log.info("\n{}", event.getApplicationContext().getBean(SurrogateStore.class).manifest());
   }
 
   /**
@@ -178,8 +180,8 @@ public class LochConfiguration {
    *
    * <p>{@code Exact.none()} for a missing tenant would be a cross-tenant leak on its own -- none is
    * the bottom of the order, so it constrains nothing, so the value would be readable by every
-   * tenant. It is safe here only because the tenant axis is declared required, which makes the loch
-   * refuse the write rather than store something anybody can read.
+   * tenant. It is safe here only because the tenant axis is declared required, which makes the
+   * store refuse the write rather than store something anybody can read.
    */
   private static BillingLabels label(
       AccessContext ctx, BillingLabels.Integrity integrity, BillingLabels.Sensitivity sensitivity) {

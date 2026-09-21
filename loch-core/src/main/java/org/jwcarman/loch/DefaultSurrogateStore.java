@@ -27,13 +27,13 @@ import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
- * Every policy decision a loch makes, over whatever {@link Storage} it was given.
+ * Every policy decision a store makes, over whatever {@link Storage} it was given.
  *
  * <p>The gate, the lattice, the registries and the audit live here and nowhere else, so an
- * in-memory loch and a durable one cannot disagree about who may see what. Storage implementations
+ * in-memory store and a durable one cannot disagree about who may see what. Storage implementations
  * keep bytes; this decides.
  */
-public final class DefaultLoch<A> implements Loch<A> {
+public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
 
   private final Lattice<A> lattice;
   private final Map<String, DestinationSpec<A>> destinations;
@@ -45,7 +45,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final java.util.function.BiPredicate<A, AccessContext> mayErase;
   private final Storage<A> storage;
 
-  public DefaultLoch(LochConfig<A, ?> config, Storage<A> storage) {
+  public DefaultSurrogateStore(SurrogateStoreConfig<A, ?> config, Storage<A> storage) {
     this.storage = storage;
     this.lattice = config.lattice();
     Map<String, DestinationSpec<A>> byId = new LinkedHashMap<>();
@@ -70,7 +70,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     this.callerMayContribute = config.callerMayContribute();
     this.mayErase = config.mayErase();
     // Last, and only once everything above succeeded: capabilities minted during configuration
-    // reach this loch through the config, and one that half-built must not be reachable at all.
+    // reach this store through the config, and one that half-built must not be reachable at all.
     config.bind(this);
   }
 
@@ -87,7 +87,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       java.util.function.BiFunction<T, AccessContext, A> labelling,
       T value) {
     if (value == null) {
-      throw new IllegalArgumentException("a loch holds values, not nulls");
+      throw new IllegalArgumentException("a store holds values, not nulls");
     }
     AccessContext asking = asking(AccessContext.empty());
     A label;
@@ -182,7 +182,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   /**
-   * Who is asking: what the loch was told, with anything the caller added laid over it.
+   * Who is asking: what the store was told, with anything the caller added laid over it.
    *
    * <p>Resolved once per operation, because an ambient source may be doing real work to answer.
    */
@@ -281,7 +281,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private StoredMetadata<A> metadataOf(String id) {
     return storage
         .metadata(id)
-        .orElseThrow(() -> new IllegalArgumentException("this loch is not holding " + id));
+        .orElseThrow(() -> new IllegalArgumentException("this store is not holding " + id));
   }
 
   /**
@@ -293,7 +293,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    * makes that true, and it is also why a surrogate in a log file matters.
    */
   private static String freshId() {
-    return "loch_" + java.util.UUID.randomUUID();
+    return "sur_" + java.util.UUID.randomUUID();
   }
 
   /** What a surrogate says it is, in the form the store wrote it. */
@@ -324,7 +324,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           asking);
       throw new AccessDeniedException(
           Dereferenced.Reason.ABOVE_CEILING,
-          "erasing is refused: this loch was not told who may erase");
+          "erasing is refused: this store was not told who may erase");
     }
     int removed = storage.erase(root.id());
     audit(
@@ -370,7 +370,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     StoredMetadata<A> entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
       return new Answer.Refused(
-          Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
+          Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
     }
     refused.set(entry.label());
     if (!entry.typeName().equals(nameOf(spec.inputType()))) {
@@ -397,7 +397,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     I subject = storage.value(held.id(), spec.inputType()).orElse(null);
     if (subject == null) {
       return new Answer.Refused(
-          Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
+          Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
     }
     boolean answer;
     try {
@@ -518,7 +518,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
       if (entry == null) {
         return new Derived.Refused<>(
-            Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
+            Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
       }
       if (!entry.typeName().equals(nameOf(expected))) {
         return new Derived.Refused<>(
@@ -534,7 +534,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       Object input = storage.value(parent.id(), expected).orElse(null);
       if (input == null) {
         return new Derived.Refused<>(
-            Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
+            Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
       }
       inputs.add(input);
       parentIds.add(parent.id());
@@ -606,7 +606,7 @@ public final class DefaultLoch<A> implements Loch<A> {
     if (entry == null) {
       return denied(
           Dereferenced.Reason.NO_SUCH_VALUE,
-          "this loch is not holding " + held.id(),
+          "this store is not holding " + held.id(),
           held.id(),
           to,
           null,
@@ -655,6 +655,6 @@ public final class DefaultLoch<A> implements Loch<A> {
         .orElseGet(
             () ->
                 new Dereferenced.Denied<>(
-                    Dereferenced.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id()));
+                    Dereferenced.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id()));
   }
 }

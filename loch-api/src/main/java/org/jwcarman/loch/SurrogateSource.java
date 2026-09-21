@@ -16,7 +16,7 @@
 package org.jwcarman.loch;
 
 /**
- * The authority to put a value into a loch at one particular label.
+ * The authority to put a value into a store at one particular label.
  *
  * <p><b>There is no label argument.</b> An source carries its own, decided once when it was minted,
  * so code holding this can write at that label and no other. A service handed the source for
@@ -54,7 +54,7 @@ public interface SurrogateSource<T> {
    * surrogate, hand that surrogate to an sink and get the value.
    *
    * @throws IllegalArgumentException if the value is null
-   * @throws IllegalStateException if this source was never attached to a loch
+   * @throws IllegalStateException if this source was never attached to a store
    */
   Surrogate<T> exchange(T value);
 }

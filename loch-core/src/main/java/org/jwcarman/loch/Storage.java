@@ -19,11 +19,11 @@ import java.util.Optional;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
- * Where a loch keeps things.
+ * Where a store keeps things.
  *
  * <p><b>Storage only.</b> No policy lives here: the gate, the lattice, the registries and the audit
- * are decided once in {@code DefaultLoch} and shared by every implementation. A second copy of a
- * security decision is a second chance to get it wrong, and the two would drift.
+ * are decided once in {@code DefaultSurrogateStore} and shared by every implementation. A second
+ * copy of a security decision is a second chance to get it wrong, and the two would drift.
  *
  * <p>An implementation must be safe to use from several threads.
  *

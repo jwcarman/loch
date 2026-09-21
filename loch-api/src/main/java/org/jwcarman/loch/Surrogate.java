@@ -18,7 +18,7 @@ package org.jwcarman.loch;
 import java.util.Objects;
 
 /**
- * What stands in for a value the loch is keeping.
+ * What stands in for a value the store is keeping.
  *
  * <p>An identifier and nothing else. It does not say what kind of value it names, what tenant owns
  * it, or how sensitive it is -- and that is deliberate, because a surrogate is the one thing here

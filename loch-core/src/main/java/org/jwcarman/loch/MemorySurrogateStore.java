@@ -18,23 +18,23 @@ package org.jwcarman.loch;
 import java.util.function.Consumer;
 
 /**
- * A loch that keeps everything in memory.
+ * A store that keeps everything in memory.
  *
  * <p>For tests, for single-process tools, and for working out whether a policy is right before a
  * database is involved. It does not encrypt and does not survive a restart, so it is not the thing
- * to put in front of real cardholder data -- but it enforces the gate exactly as a durable loch
+ * to put in front of real cardholder data -- but it enforces the gate exactly as a durable store
  * does, because both use the same one.
  *
  * @see MemoryStorage for the mutable-value hazard this implementation has and a durable one does
  *     not
  */
-public final class MemoryLoch {
+public final class MemorySurrogateStore {
 
-  private MemoryLoch() {}
+  private MemorySurrogateStore() {}
 
   /** Builds one. The customizer is where the lattice, destinations and auditor are declared. */
-  public static <A, D> Loch<A> create(Consumer<LochConfig<A, D>> customizer) {
-    LochConfig<A, D> config = new LochConfig<>();
+  public static <A, D> SurrogateStore<A> create(Consumer<SurrogateStoreConfig<A, D>> customizer) {
+    SurrogateStoreConfig<A, D> config = new SurrogateStoreConfig<>();
     customizer.accept(config);
     return create(config);
   }
@@ -46,13 +46,13 @@ public final class MemoryLoch {
    * local: configure, mint into plain final variables, then build.
    *
    * <pre>{@code
-   * LochConfig<Billing, BillingValue> c = new LochConfig<>();
+   * SurrogateStoreConfig<Billing, BillingValue> c = new SurrogateStoreConfig<>();
    * c.lattice(Billing.LATTICE).auditor(auditor);
    * SurrogateSource<Mail> mail = c.source(CUSTOMER_MAIL, Mail.class, ctx -> ...);
-   * Loch<Billing> loch = MemoryLoch.create(c);
+   * SurrogateStore<Billing> store = MemorySurrogateStore.create(c);
    * }</pre>
    */
-  public static <A, D> Loch<A> create(LochConfig<A, D> config) {
-    return new DefaultLoch<>(config, new MemoryStorage<>());
+  public static <A, D> SurrogateStore<A> create(SurrogateStoreConfig<A, D> config) {
+    return new DefaultSurrogateStore<>(config, new MemoryStorage<>());
   }
 }

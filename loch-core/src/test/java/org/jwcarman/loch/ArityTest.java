@@ -37,8 +37,8 @@ class ArityTest {
 
   record Note(String text) implements Value {}
 
-  private final LochConfig<Exact<String>, Value> config =
-      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private final SurrogateStoreConfig<Exact<String>, Value> config =
+      new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   private final SurrogateSource<Note> notes =
       config.source("notes", Note.class, ctx -> Exact.of("acme"));
@@ -53,7 +53,7 @@ class ArityTest {
           .acceptingAnything()
           .mint();
 
-  private final Loch<Exact<String>> loch = MemoryLoch.create(config);
+  private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
 
   private final Surrogate<Note> first = notes.exchange(new Note("a"));
   private final Surrogate<Note> second = notes.exchange(new Note("b"));
@@ -81,6 +81,6 @@ class ArityTest {
   void carries_the_join_of_every_parents_label() {
     Surrogate<Note> result = joined.fold(List.of(first, second)).orThrow();
 
-    assertThat(loch.label(result.id())).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(result.id())).isEqualTo(Exact.of("acme"));
   }
 }

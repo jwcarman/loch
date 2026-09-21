@@ -26,7 +26,7 @@ import org.jwcarman.loch.lattice.Lattices;
  * Every gate in this library is application code, and application code throws.
  *
  * <p>A ceiling reads a tenant id out of a context that turns out to be empty; a lowering rule
- * consults a table that is not there yet. What matters is what the loch does about it, because the
+ * consults a table that is not there yet. What matters is what the store does about it, because the
  * two available behaviours are not equally safe: a policy that cannot be evaluated has not said
  * yes, and an exception that escapes leaves the operation with no audit line at all.
  *
@@ -38,8 +38,8 @@ class PolicyThatCannotDecideTest {
 
   private final MemoryStorage<Exact<String>> storage = new MemoryStorage<>();
 
-  private final LochConfig<Exact<String>, Object> config =
-      new LochConfig<Exact<String>, Object>().lattice(Lattices.exact());
+  private final SurrogateStoreConfig<Exact<String>, Object> config =
+      new SurrogateStoreConfig<Exact<String>, Object>().lattice(Lattices.exact());
 
   private final SurrogateSource<String> source =
       config.source("source", String.class, ctx -> Exact.of("acme"));
@@ -79,7 +79,7 @@ class PolicyThatCannotDecideTest {
           .acceptingAnything()
           .mint();
 
-  private final Loch<Exact<String>> loch = new DefaultLoch<>(config, storage);
+  private final SurrogateStore<Exact<String>> store = new DefaultSurrogateStore<>(config, storage);
 
   private final Surrogate<String> held = source.exchange("secret");
 

@@ -39,25 +39,27 @@ class AmbientContextTest {
   private final AtomicReference<String> currentUser = new AtomicReference<>("support");
 
   /**
-   * One loch, its source and its sink, built together.
+   * One store, its source and its sink, built together.
    *
-   * <p>Capabilities are attached when the loch is built, so they have to be minted first. A record
+   * <p>Capabilities are attached when the store is built, so they have to be minted first. A record
    * keeps the three together without every test repeating the order.
    */
-  record Wired(Loch<Clearance> loch, SurrogateSource<String> cards, SurrogateSink<String> card) {}
+  record Wired(
+      SurrogateStore<Clearance> store, SurrogateSource<String> cards, SurrogateSink<String> card) {}
 
   private static Wired wire(
-      java.util.function.Consumer<LochConfig<Clearance, Object>> settings,
+      java.util.function.Consumer<SurrogateStoreConfig<Clearance, Object>> settings,
       java.util.function.Function<AccessContext, Clearance> ceiling) {
-    LochConfig<Clearance, Object> config = new LochConfig<>();
+    SurrogateStoreConfig<Clearance, Object> config = new SurrogateStoreConfig<>();
     config.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE));
     settings.accept(config);
     SurrogateSource<String> cards = config.source("cards", String.class, ctx -> Clearance.FINANCE);
     SurrogateSink<String> card = config.sink("card", String.class, ceiling);
-    return new Wired(MemoryLoch.create(config), cards, card);
+    return new Wired(MemorySurrogateStore.create(config), cards, card);
   }
 
-  // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- Loch does not care
+  // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- SurrogateStore does not
+  // care
   // where the answer lives.
   private final Wired wired =
       wire(

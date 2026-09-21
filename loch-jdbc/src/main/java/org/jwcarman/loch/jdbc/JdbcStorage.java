@@ -129,7 +129,7 @@ public final class JdbcStorage<A> implements Storage<A> {
         }
       }
     } catch (SQLException e) {
-      throw new IllegalStateException("could not create the loch schema", e);
+      throw new IllegalStateException("could not create the store schema", e);
     }
   }
 

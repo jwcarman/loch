@@ -16,14 +16,14 @@
 package org.jwcarman.loch.jdbc;
 
 import java.util.function.Consumer;
-import org.jwcarman.loch.DefaultLoch;
-import org.jwcarman.loch.Loch;
+import org.jwcarman.loch.DefaultSurrogateStore;
+import org.jwcarman.loch.SurrogateStore;
 
 /**
- * A loch that keeps its values in a database, encrypted.
+ * A store that keeps its values in a database, encrypted.
  *
  * <pre>{@code
- * Loch<Billing> loch = JdbcLoch.create(Billing.class, c -> c
+ * SurrogateStore<Billing> store = JdbcSurrogateStore.create(Billing.class, c -> c
  *     .dataSource(dataSource)
  *     .codecs(new JacksonCodecFactory(mapper))
  *     .storedThrough(StorageCodec.of(
@@ -34,13 +34,13 @@ import org.jwcarman.loch.Loch;
  *     .destination(...));
  * }</pre>
  *
- * <p>It makes exactly the same decisions an in-memory loch does, because both run the same gate.
+ * <p>It makes exactly the same decisions an in-memory store does, because both run the same gate.
  * What changes is that values survive a restart, are encrypted at rest, and can be erased along
  * with everything ever derived from them.
  */
-public final class JdbcLoch {
+public final class JdbcSurrogateStore {
 
-  private JdbcLoch() {}
+  private JdbcSurrogateStore() {}
 
   /**
    * Builds one.
@@ -48,9 +48,9 @@ public final class JdbcLoch {
    * @param labelType the application's label record, which has to be serialised like any other
    *     value because labels are stored encrypted too
    */
-  public static <A, D> Loch<A> create(
-      Class<A> labelType, Consumer<JdbcLochConfig<A, D>> customizer) {
-    JdbcLochConfig<A, D> config = new JdbcLochConfig<>();
+  public static <A, D> SurrogateStore<A> create(
+      Class<A> labelType, Consumer<JdbcSurrogateStoreConfig<A, D>> customizer) {
+    JdbcSurrogateStoreConfig<A, D> config = new JdbcSurrogateStoreConfig<>();
     customizer.accept(config);
     return create(labelType, config);
   }
@@ -64,7 +64,8 @@ public final class JdbcLoch {
    * @param labelType the application's label record, which has to be serialised like any other
    *     value because labels are stored encrypted too
    */
-  public static <A, D> Loch<A> create(Class<A> labelType, JdbcLochConfig<A, D> config) {
+  public static <A, D> SurrogateStore<A> create(
+      Class<A> labelType, JdbcSurrogateStoreConfig<A, D> config) {
     JdbcStorage<A> storage =
         new JdbcStorage<>(
             config.dataSourceOrFail(),
@@ -74,6 +75,6 @@ public final class JdbcLoch {
     if (config.migrates()) {
       storage.migrate();
     }
-    return new DefaultLoch<>(config, storage);
+    return new DefaultSurrogateStore<>(config, storage);
   }
 }
