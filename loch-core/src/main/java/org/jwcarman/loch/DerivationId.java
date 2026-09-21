@@ -18,24 +18,16 @@ package org.jwcarman.loch;
 import java.util.Objects;
 
 /**
- * The name of a way to make one value from another.
+ * The name a derivation or a fold is known by in the manifest and in every audit line it writes.
  *
- * <p><b>Inert, and that is the point.</b> A derivation's function lives in the registry, declared
- * at wiring. This carries only a name, so anyone may construct one and gain nothing: an
- * unregistered name is refused, and a registered one resolves to exactly the reviewed
- * implementation.
+ * <p>Untyped, and that is the change minting bought. It used to carry the input and output types so
+ * that {@code loch.derive(handle, ID)} could type-check at the call site. With the capability
+ * itself typed, the call site no longer names anything -- and five arities would otherwise have
+ * needed five id types whose only job was compile-time safety at a call that no longer exists.
  *
- * <p>The alternative -- passing a {@code Derivation} object to the store -- cannot work, because
- * the store has no way to tell a reviewed constant from a lambda built at the call site a
- * nanosecond ago. A function handed to the store is a function that runs inside the trust boundary
- * with the plaintext, so the set of them has to be enumerable, and it is only enumerable if it is a
- * registry.
- *
- * <p>The type parameters are phantom: they exist so the compiler can check that a derivation is
- * applied to the right kind of handle, and are not present at runtime. The registry holds the real
- * types and checks them.
+ * <p>A name, never a key. Constructing one does not obtain the derivation it names.
  */
-public record DerivationId<I, O>(String value) {
+public record DerivationId(String value) {
 
   public DerivationId {
     Objects.requireNonNull(value, "a derivation needs a name");
@@ -44,8 +36,8 @@ public record DerivationId<I, O>(String value) {
     }
   }
 
-  public static <I, O> DerivationId<I, O> of(String value) {
-    return new DerivationId<>(value);
+  public static DerivationId of(String value) {
+    return new DerivationId(value);
   }
 
   @Override

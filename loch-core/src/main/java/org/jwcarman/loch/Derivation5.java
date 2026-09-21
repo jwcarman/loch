@@ -33,7 +33,7 @@ package org.jwcarman.loch;
 public interface Derivation5<I1, I2, I3, I4, I5, O> {
 
   /** What this is called in the manifest and in the record. */
-  DerivationId<?, ?> id();
+  DerivationId id();
 
   /** Makes the new value, or refuses. */
   Derived<O> derive(

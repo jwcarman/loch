@@ -21,7 +21,6 @@ import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
-import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Destination;
 import org.jwcarman.loch.DestinationId;
 import org.jwcarman.loch.LochConfig;
@@ -128,12 +127,6 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
   @Override
   public JdbcLochConfig<A> destination(DestinationId id, A ceiling) {
     super.destination(id, ceiling);
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A> derivation(Derivation<A, ?, ?> derivation) {
-    super.derivation(derivation);
     return this;
   }
 

@@ -15,6 +15,7 @@
  */
 package org.jwcarman.loch.example.billing;
 
+import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Handle;
 import org.jwcarman.loch.HandleId;
 import org.jwcarman.loch.Inlet;
@@ -37,6 +38,8 @@ public class DisputeService {
   private final Outlet<Domain.Invoice> supportUi;
   private final Outlet<Domain.Last4> approvalDesk;
   private final Outlet<Domain.Invoice> paymentProcessor;
+  private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
+  private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
 
   // What this class may do is this list. It was handed three outlets, so it can reach three
   // places; it was handed one inlet, so there is exactly one label it can create a value at.
@@ -45,12 +48,16 @@ public class DisputeService {
       Inlet<Domain.Mail> customerMail,
       Outlet<Domain.Invoice> supportUi,
       Outlet<Domain.Last4> approvalDesk,
-      Outlet<Domain.Invoice> paymentProcessor) {
+      Outlet<Domain.Invoice> paymentProcessor,
+      Derivation<Domain.Mail, Domain.Invoice> confirmInvoice,
+      Derivation<Domain.Invoice, Domain.Last4> cardLast4) {
     this.loch = loch;
     this.customerMail = customerMail;
     this.supportUi = supportUi;
     this.approvalDesk = approvalDesk;
     this.paymentProcessor = paymentProcessor;
+    this.confirmInvoice = confirmInvoice;
+    this.cardLast4 = cardLast4;
   }
 
   /**
@@ -74,15 +81,12 @@ public class DisputeService {
    * address that wrote in. Only then does the result become endorsed.
    */
   public HandleId confirm(HandleId mail) {
-    return loch.derive(Handle.of(mail, Domain.Mail.class), Billing.CONFIRMED_INVOICE)
-        .orThrow()
-        .id();
+    return confirmInvoice.derive(Handle.of(mail, Domain.Mail.class)).orThrow().id();
   }
 
   /** What an approver is shown: four digits, and only if they are an approver. */
   public Domain.Last4 cardForApproval(HandleId invoice) {
-    HandleId last4 =
-        loch.derive(Handle.of(invoice, Domain.Invoice.class), Billing.CARD_LAST4).orThrow().id();
+    HandleId last4 = cardLast4.derive(Handle.of(invoice, Domain.Invoice.class)).orThrow().id();
     return approvalDesk.read(Handle.of(last4, Domain.Last4.class)).orThrow();
   }
 

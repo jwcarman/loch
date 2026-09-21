@@ -28,8 +28,6 @@ public sealed interface Derived<O> {
 
   /** Why a derivation did not happen. */
   enum Reason {
-    /** No derivation registered under that name. A bug: startup validated the registry. */
-    NO_SUCH_DERIVATION,
     /** A derivation was given nothing to work from. */
     NO_PARENTS,
     /** No such parent value. */

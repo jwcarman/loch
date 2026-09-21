@@ -18,6 +18,8 @@ package org.jwcarman.loch;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
@@ -38,10 +40,11 @@ public class LochConfig<A> {
   private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
   private java.util.function.BiPredicate<A, AccessContext> mayHold = (label, context) -> true;
   private final List<Destination<A>> destinations = new ArrayList<>();
-  private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
+  private final List<DerivationSpec<A, ?>> derivations = new ArrayList<>();
   private final List<Question<A, ?, ?>> questions = new ArrayList<>();
   private final java.util.Set<InletId> inlets = new java.util.LinkedHashSet<>();
   private DefaultLoch<A> bound;
+  private final List<Binding<A>> bindings = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
   public LochConfig<A> lattice(Lattice<A> lattice) {
@@ -60,12 +63,6 @@ public class LochConfig<A> {
     return destination(Destinations.fixed(id, ceiling));
   }
 
-  /** A way of making one value from another. Registered once; referenced by name forever after. */
-  public LochConfig<A> derivation(Derivation<A, ?, ?> derivation) {
-    derivations.add(Objects.requireNonNull(derivation, "a derivation must not be null"));
-    return this;
-  }
-
   // ------------------------------------------------------------------ minting capabilities
 
   /**
@@ -82,6 +79,7 @@ public class LochConfig<A> {
   public <T> Inlet<T> inlet(
       InletId id, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
     Objects.requireNonNull(id, "an inlet needs a name");
+    Binding<A> binding = binding("inlet '" + id + "'");
     Objects.requireNonNull(type, "an inlet needs to know what it accepts");
     Objects.requireNonNull(labelling, "an inlet needs to say how it labels what arrives");
     if (!inlets.add(id)) {
@@ -95,7 +93,7 @@ public class LochConfig<A> {
 
       @Override
       public Handle<T> hold(T value) {
-        return engine().holdVia(id, type, labelling, value);
+        return binding.engine().holdVia(id, type, labelling, value);
       }
 
       @Override
@@ -126,6 +124,7 @@ public class LochConfig<A> {
   public <T> Outlet<T> outlet(
       DestinationId id, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
     Objects.requireNonNull(id, "an outlet needs a name");
+    Binding<A> binding = binding("outlet '" + id + "'");
     Objects.requireNonNull(type, "an outlet needs to say what comes out of it");
     destination(Destinations.varying(id, ceiling));
     return new Outlet<>() {
@@ -146,7 +145,7 @@ public class LochConfig<A> {
 
       @Override
       public Dereferenced<T> read(Handle<T> held, AccessContext context) {
-        return engine().dereference(held, id, context);
+        return binding.engine().dereference(held, id, context);
       }
 
       @Override
@@ -168,6 +167,238 @@ public class LochConfig<A> {
     return outlet(id, TypeRef.of(type), context -> ceiling);
   }
 
+  // ------------------------------------------------------------------ derivations and folds
+
+  /**
+   * Mints the authority to make one value from one other. Configuration time only.
+   *
+   * <p>Five arities, one per shape, because the JVM has no variadic generics and every library that
+   * has faced this made the same choice: {@code kotlinx.coroutines} gives {@code Flow.combine}
+   * overloads for two through five flows, as do RxJava and Reactor for {@code zip}. Beyond five, or
+   * where the parents share a type, use {@link #fold}.
+   */
+  public <I, O> Minting<A, O, Derivation<I, O>> derivation(
+      DerivationId id, Class<I> input, Class<O> output, Function<I, O> function) {
+    return new Minting<>(
+        this,
+        id,
+        List.of(TypeRef.of(input)),
+        TypeRef.of(output),
+        (values, context) -> Optional.ofNullable(function.apply(input.cast(values.getFirst()))),
+        false,
+        (spec, binding) ->
+            new Derivation<>() {
+              @Override
+              public DerivationId id() {
+                return id;
+              }
+
+              @Override
+              public Derived<O> derive(Handle<I> parent) {
+                return derive(parent, AccessContext.empty());
+              }
+
+              @Override
+              public Derived<O> derive(Handle<I> parent, AccessContext context) {
+                return binding.engine().deriveVia(spec, List.of(parent), context);
+              }
+            });
+  }
+
+  /**
+   * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
+   */
+  public <I, O> Minting<A, O, Derivation<I, O>> checking(
+      DerivationId id,
+      Class<I> input,
+      Class<O> output,
+      java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
+    return new Minting<>(
+        this,
+        id,
+        List.of(TypeRef.of(input)),
+        TypeRef.of(output),
+        (values, context) -> function.apply(input.cast(values.getFirst()), context),
+        false,
+        (spec, binding) ->
+            new Derivation<>() {
+              @Override
+              public DerivationId id() {
+                return id;
+              }
+
+              @Override
+              public Derived<O> derive(Handle<I> parent) {
+                return derive(parent, AccessContext.empty());
+              }
+
+              @Override
+              public Derived<O> derive(Handle<I> parent, AccessContext context) {
+                return binding.engine().deriveVia(spec, List.of(parent), context);
+              }
+            });
+  }
+
+  /** From two values of different types. */
+  public <I1, I2, O> Minting<A, O, Derivation2<I1, I2, O>> derivation(
+      DerivationId id,
+      Class<I1> first,
+      Class<I2> second,
+      Class<O> output,
+      java.util.function.BiFunction<I1, I2, O> function) {
+    return new Minting<>(
+        this,
+        id,
+        List.of(TypeRef.of(first), TypeRef.of(second)),
+        TypeRef.of(output),
+        (values, context) ->
+            Optional.ofNullable(
+                function.apply(first.cast(values.get(0)), second.cast(values.get(1)))),
+        false,
+        (spec, binding) ->
+            new Derivation2<>() {
+              @Override
+              public DerivationId id() {
+                return id;
+              }
+
+              @Override
+              public Derived<O> derive(Handle<I1> one, Handle<I2> two) {
+                return derive(one, two, AccessContext.empty());
+              }
+
+              @Override
+              public Derived<O> derive(Handle<I1> one, Handle<I2> two, AccessContext context) {
+                return binding.engine().deriveVia(spec, List.of(one, two), context);
+              }
+            });
+  }
+
+  /**
+   * Mints the authority to fold any number of values of one type into a new one.
+   *
+   * <p>The result carries the join of every parent's label, so folding two tenants' data yields
+   * something labelled for both, which no destination admits.
+   */
+  public <I, O> Minting<A, O, Fold<I, O>> fold(
+      DerivationId id, Class<I> input, Class<O> output, Function<List<I>, O> function) {
+    return new Minting<>(
+        this,
+        id,
+        List.of(TypeRef.of(input)),
+        TypeRef.of(output),
+        (values, context) ->
+            Optional.ofNullable(function.apply(values.stream().map(input::cast).toList())),
+        true,
+        (spec, binding) ->
+            new Fold<>() {
+              @Override
+              public DerivationId id() {
+                return id;
+              }
+
+              @Override
+              public Derived<O> fold(List<Handle<I>> parents) {
+                return fold(parents, AccessContext.empty());
+              }
+
+              @Override
+              public Derived<O> fold(List<Handle<I>> parents, AccessContext context) {
+                return binding.engine().deriveVia(spec, List.copyOf(parents), context);
+              }
+            });
+  }
+
+  /**
+   * What a derivation still needs said about it before it becomes a capability.
+   *
+   * <p>One type for every arity, because everything left to say -- what it may read, whether it
+   * lowers, where it is offered -- is about labels and contexts, not about how many parents there
+   * are. {@code C} is whatever this eventually mints.
+   */
+  public static final class Minting<A, O, C> {
+
+    private final LochConfig<A> config;
+    private final DerivationId id;
+    private final List<TypeRef<?>> inputTypes;
+    private final TypeRef<O> outputType;
+    private final java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function;
+    private final boolean fold;
+    private final java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability;
+    private java.util.function.Function<AccessContext, A> ceiling;
+    private boolean anything;
+    private java.util.function.UnaryOperator<A> relabel;
+    private java.util.function.Predicate<AccessContext> availableTo = context -> true;
+
+    private Minting(
+        LochConfig<A> config,
+        DerivationId id,
+        List<TypeRef<?>> inputTypes,
+        TypeRef<O> outputType,
+        java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function,
+        boolean fold,
+        java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability) {
+      this.config = config;
+      this.id = id;
+      this.inputTypes = inputTypes;
+      this.outputType = outputType;
+      this.function = function;
+      this.fold = fold;
+      this.capability = capability;
+    }
+
+    /** The most constrained parent this will accept. */
+    public Minting<A, O, C> accepting(A ceiling) {
+      Objects.requireNonNull(ceiling, "a ceiling must not be null");
+      return accepting(context -> ceiling);
+    }
+
+    /** A ceiling that depends on who is asking, which a tenant always does. */
+    public Minting<A, O, C> accepting(java.util.function.Function<AccessContext, A> ceiling) {
+      this.ceiling = Objects.requireNonNull(ceiling, "a ceiling must not be null");
+      return this;
+    }
+
+    /**
+     * Reads anything, at any label.
+     *
+     * <p>Required if no ceiling is set, for the same reason a question's is: this receives
+     * plaintext, so breadth has to be said out loud rather than fallen into.
+     */
+    public Minting<A, O, C> acceptingAnything() {
+      this.anything = true;
+      return this;
+    }
+
+    /** Declares that the result is less constrained than its parents, and by how much. */
+    public Minting<A, O, C> lowering(java.util.function.UnaryOperator<A> relabel) {
+      this.relabel = Objects.requireNonNull(relabel, "a lowering must not be null");
+      return this;
+    }
+
+    /** Whether this is offered at all, given who is asking. */
+    public Minting<A, O, C> availableTo(java.util.function.Predicate<AccessContext> availableTo) {
+      this.availableTo = Objects.requireNonNull(availableTo, "an availability must not be null");
+      return this;
+    }
+
+    /** Registers it and hands back the capability. Nothing can obtain one any other way. */
+    public C mint() {
+      if (ceiling == null && !anything) {
+        throw new IllegalStateException(
+            "'"
+                + id
+                + "' reads plaintext, so it needs a ceiling: call accepting(...) with what it may"
+                + " look at, or acceptingAnything() if it really may look at everything");
+      }
+      DerivationSpec<A, O> spec =
+          new DerivationSpec<>(
+              id, inputTypes, outputType, function, ceiling, relabel, availableTo, fold);
+      config.derivations.add(spec);
+      return capability.apply(spec, config.binding("'" + id + "'"));
+    }
+  }
+
   /**
    * Handed to every capability minted here, once the loch they belong to exists.
    *
@@ -184,14 +415,48 @@ public class LochConfig<A> {
               + " its capabilities would write into the first");
     }
     this.bound = loch;
+    bindings.forEach(binding -> binding.attach(loch));
   }
 
-  private DefaultLoch<A> engine() {
-    if (bound == null) {
-      throw new IllegalStateException(
-          "this capability was minted but the loch it belongs to was never finished being built");
+  /**
+   * The loch a capability reaches through, attached when that loch is built.
+   *
+   * <p>Per capability, not per config, and that distinction is the whole safety property. If a
+   * capability reached the loch through the config, one minted <i>after</i> the loch was built
+   * would find it already there and work perfectly -- measured doing exactly that: an inlet minted
+   * after startup planted a value at another tenant's label, and a derivation minted after startup
+   * read a cardholder token. Binding each capability at construction means a late one is attached
+   * to nothing, and says so.
+   */
+  static final class Binding<A> {
+
+    private final String what;
+    private DefaultLoch<A> loch;
+
+    private Binding(String what) {
+      this.what = what;
     }
-    return bound;
+
+    private void attach(DefaultLoch<A> loch) {
+      this.loch = loch;
+    }
+
+    DefaultLoch<A> engine() {
+      if (loch == null) {
+        throw new IllegalStateException(
+            what
+                + " is attached to no loch. Capabilities are minted while a loch is being"
+                + " configured and are attached when it is built; this one was minted afterwards,"
+                + " so there is nothing for it to act on.");
+      }
+      return loch;
+    }
+  }
+
+  private Binding<A> binding(String what) {
+    Binding<A> binding = new Binding<>(what);
+    bindings.add(binding);
+    return binding;
   }
 
   /** A question that can be asked of a held value without the value leaving. */
@@ -204,7 +469,7 @@ public class LochConfig<A> {
     return List.copyOf(questions);
   }
 
-  List<Derivation<A, ?, ?>> derivations() {
+  List<DerivationSpec<A, ?>> derivations() {
     return List.copyOf(derivations);
   }
 

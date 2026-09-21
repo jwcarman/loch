@@ -15,7 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import java.util.List;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
@@ -116,24 +115,6 @@ public interface Loch<A> {
   }
 
   /**
-   * Makes a new value from one already held, through a derivation registered at wiring.
-   *
-   * <p>The new value's label is the join of its parents', so it can only be more constrained --
-   * unless the derivation is a privileged one, which may label it lower and is recorded as having
-   * done so. Either way the parentage is kept, which is what makes "erase everything derived from
-   * this" a question with an answer.
-   *
-   * <p>A derivation reads plaintext in order to compute, so it is a destination like any other and
-   * passes the same gate.
-   */
-  <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> derivation, AccessContext context);
-
-  /** Using whatever the loch was told about who is asking. */
-  default <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> derivation) {
-    return derive(parent, derivation, AccessContext.empty());
-  }
-
-  /**
    * Asks a registered question about a held value, without the value being handed over.
    *
    * <p>The way to avoid dereferencing. A check runs inside the store, sees the plaintext, and
@@ -146,22 +127,6 @@ public interface Loch<A> {
   /** Using whatever the loch was told about who is asking. */
   default <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> question, Q against) {
     return ask(held, question, against, AccessContext.empty());
-  }
-
-  /**
-   * Makes a new value from several already held.
-   *
-   * <p>The new value's label is the join of <b>every</b> parent's, so combining data from two
-   * tenants yields something labelled for both -- a conflict, in an exact-match dimension, which no
-   * destination admits. The value exists and keeps its lineage; it simply cannot be dereferenced
-   * anywhere. Cross-tenant leakage is not forbidden by a rule someone remembered to write.
-   */
-  <I, O> Derived<O> deriveAll(
-      List<Handle<I>> parents, DerivationId<I, O> derivation, AccessContext context);
-
-  /** Using whatever the loch was told about who is asking. */
-  default <I, O> Derived<O> deriveAll(List<Handle<I>> parents, DerivationId<I, O> derivation) {
-    return deriveAll(parents, derivation, AccessContext.empty());
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */

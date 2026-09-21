@@ -145,121 +145,126 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final Loch<Billing> loch =
-      MemoryLoch.create(
-          c ->
-              c.lattice(Billing.LATTICE)
-                  .auditor(audit)
-                  .askingWhoIsAsking(edge::get)
-                  // A vendor's model: nothing personal, nothing unendorsed.
-                  .destination(
-                      tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-                  // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
-                  .destination(
-                      tenantScoped(QUARANTINED_LLM, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-                  // The only place cardholder data may go, anywhere in the system.
-                  .destination(
-                      tenantScoped(
-                          PAYMENT_PROCESSOR, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-                  // A person. What they may see depends on who they are.
-                  .destination(
-                      Destinations.varying(
-                          APPROVAL_CARD,
-                          ctx ->
-                              Billing.ceilingFor(
-                                  ctx,
-                                  Integrity.ENDORSED,
-                                  Tlp.AMBER,
-                                  ctx.has("clearance", "finance")
-                                      ? DataClass.PII
-                                      : DataClass.NONE)))
-                  // A projection. Cannot weaken anything, so it needs no ceremony.
-                  .derivation(
-                      Derivations.<Billing, DisputeClaim, InvoiceNumber>of(
-                              CLAIMED_INVOICE,
-                              DisputeClaim.class,
-                              InvoiceNumber.class,
-                              claim -> new InvoiceNumber(claim.invoiceNumber()))
-                          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-                          .build())
-                  // Truncating a card IS a declassification, and PCI auditors ask about it.
-                  .derivation(
-                      Derivations.<Billing, String, Last4>of(
-                              CARD_LAST4,
-                              String.class,
-                              Last4.class,
-                              token -> new Last4(token.substring(token.length() - 4)))
-                          .accepting(
-                              ctx ->
-                                  Billing.ceilingFor(
-                                      ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-                          // Both dimensions, deliberately: four digits are neither cardholder
-                          // data nor RED any more, and saying so is the reviewed act.
-                          .lowering(
-                              joined -> joined.withDataClass(DataClass.PII).withTlp(Tlp.AMBER))
-                          .availableTo(ctx -> ctx.has("tool", "prepare_approval"))
-                          .build())
-                  // The same truncation, lowering only one dimension. Still cannot be shown.
-                  .derivation(
-                      Derivations.<Billing, String, Last4>of(
-                              CARD_LAST4_PARTIAL,
-                              String.class,
-                              Last4.class,
-                              token -> new Last4(token.substring(token.length() - 4)))
-                          .accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-                          .lowering(joined -> joined.withDataClass(DataClass.PII))
-                          .build())
-                  // Declares itself an endorsement without checking anything. Loch refuses it.
-                  .derivation(
-                      Derivations.<Billing, DisputeClaim, InvoiceNumber>of(
-                              WISHFUL,
-                              DisputeClaim.class,
-                              InvoiceNumber.class,
-                              claim -> new InvoiceNumber(claim.invoiceNumber()))
-                          .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-                          .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
-                          .build())
-                  // Several values in, one out. Every parent's label lands on the result.
-                  .derivation(
-                      Derivations.<Billing, String, Report>fromAll(
-                              SUMMARISE,
-                              String.class,
-                              Report.class,
-                              notes -> new Report(String.join(" / ", notes)))
-                          // An internal reporting job, entitled to read across tenants. The point
-                          // of the test below is what happens to what it produces, not whether it
-                          // may read: a ceiling would refuse the combination earlier, and then
-                          // there would be nothing to demonstrate.
-                          .acceptingAnything()
-                          .build())
-                  // Reads the value, then says no. The refusal has to be recorded because the
-                  // function already saw the plaintext.
-                  .derivation(
-                      Derivations.<Billing, DisputeClaim, InvoiceNumber>checking(
-                              DECLINES,
-                              DisputeClaim.class,
-                              InvoiceNumber.class,
-                              (claim, ctx) -> java.util.Optional.empty())
-                          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-                          .build())
-                  // A fold that lowers is as privileged as a derivation that lowers.
-                  .derivation(
-                      Derivations.<Billing, String, Report>fromAll(
-                              SUMMARISE_FOR_RELEASE,
-                              String.class,
-                              Report.class,
-                              notes -> new Report("redacted summary of " + notes.size()))
-                          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-                          .lowering(joined -> joined.withDataClass(DataClass.NONE))
-                          .build())
-                  // The whole account never leaves the loch to answer one question about it.
-                  .question(
-                      Question.<Billing, Account, String>of(
-                              OWNED_BY,
-                              Account.class,
-                              (account, sender) -> account.email().equalsIgnoreCase(sender))
-                          .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
-                          .build()));
+  private final LochConfig<Billing> config =
+      new LochConfig<Billing>()
+          .lattice(Billing.LATTICE)
+          .auditor(audit)
+          .askingWhoIsAsking(edge::get)
+          // A vendor's model: nothing personal, nothing unendorsed.
+          .destination(tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
+          // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
+          .destination(
+              tenantScoped(QUARANTINED_LLM, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
+          // The only place cardholder data may go, anywhere in the system.
+          .destination(
+              tenantScoped(PAYMENT_PROCESSOR, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+          // A person. What they may see depends on who they are.
+          .destination(
+              Destinations.varying(
+                  APPROVAL_CARD,
+                  ctx ->
+                      Billing.ceilingFor(
+                          ctx,
+                          Integrity.ENDORSED,
+                          Tlp.AMBER,
+                          ctx.has("clearance", "finance") ? DataClass.PII : DataClass.NONE)))
+          // The whole account never leaves the loch to answer one question about it.
+          .question(
+              Question.<Billing, Account, String>of(
+                      OWNED_BY,
+                      Account.class,
+                      (account, sender) -> account.email().equalsIgnoreCase(sender))
+                  .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
+                  .build());
+
+  // A projection. Cannot weaken anything, so it needs no ceremony.
+  private final Derivation<DisputeClaim, InvoiceNumber> claimedInvoice =
+      config
+          .derivation(
+              CLAIMED_INVOICE,
+              DisputeClaim.class,
+              InvoiceNumber.class,
+              claim -> new InvoiceNumber(claim.invoiceNumber()))
+          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
+          .mint();
+
+  // Truncating a card IS a declassification, and PCI auditors ask about it.
+  private final Derivation<String, Last4> cardLast4 =
+      config
+          .derivation(
+              CARD_LAST4,
+              String.class,
+              Last4.class,
+              token -> new Last4(token.substring(token.length() - 4)))
+          .accepting(
+              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+          // Both dimensions, deliberately: four digits are neither cardholder
+          // data nor RED any more, and saying so is the reviewed act.
+          .lowering(joined -> joined.withDataClass(DataClass.PII).withTlp(Tlp.AMBER))
+          .availableTo(ctx -> ctx.has("tool", "prepare_approval"))
+          .mint();
+
+  // The same truncation, lowering only one dimension. Still cannot be shown.
+  private final Derivation<String, Last4> cardLast4Partial =
+      config
+          .derivation(
+              CARD_LAST4_PARTIAL,
+              String.class,
+              Last4.class,
+              token -> new Last4(token.substring(token.length() - 4)))
+          .accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+          .lowering(joined -> joined.withDataClass(DataClass.PII))
+          .mint();
+
+  // Declares itself an endorsement without checking anything. Loch refuses it.
+  private final Derivation<DisputeClaim, InvoiceNumber> wishful =
+      config
+          .derivation(
+              WISHFUL,
+              DisputeClaim.class,
+              InvoiceNumber.class,
+              claim -> new InvoiceNumber(claim.invoiceNumber()))
+          .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
+          .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
+          .mint();
+
+  // Several values in, one out. Every parent's label lands on the result.
+  private final Fold<String, Report> summarise =
+      config
+          .fold(
+              SUMMARISE, String.class, Report.class, notes -> new Report(String.join(" / ", notes)))
+          // An internal reporting job, entitled to read across tenants. The point
+          // of the test below is what happens to what it produces, not whether it
+          // may read: a ceiling would refuse the combination earlier, and then
+          // there would be nothing to demonstrate.
+          .acceptingAnything()
+          .mint();
+
+  // Reads the value, then says no. The refusal has to be recorded because the
+  // function already saw the plaintext.
+  private final Derivation<DisputeClaim, InvoiceNumber> declines =
+      config
+          .checking(
+              DECLINES,
+              DisputeClaim.class,
+              InvoiceNumber.class,
+              (claim, ctx) -> java.util.Optional.empty())
+          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
+          .mint();
+
+  // A fold that lowers is as privileged as a derivation that lowers.
+  private final Fold<String, Report> summariseForRelease =
+      config
+          .fold(
+              SUMMARISE_FOR_RELEASE,
+              String.class,
+              Report.class,
+              notes -> new Report("redacted summary of " + notes.size()))
+          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
+          .lowering(joined -> joined.withDataClass(DataClass.NONE))
+          .mint();
+
+  private final Loch<Billing> loch = MemoryLoch.create(config);
 
   record DisputeClaim(String invoiceNumber, String reason) {}
 
@@ -267,27 +272,22 @@ class BillingScenarioTest {
 
   record Last4(String digits) {}
 
-  static final DerivationId<DisputeClaim, InvoiceNumber> CLAIMED_INVOICE =
-      DerivationId.of("DisputeClaim.invoiceNumber");
-  static final DerivationId<String, Last4> CARD_LAST4 = DerivationId.of("Card.last4");
-  static final DerivationId<String, Last4> CARD_LAST4_PARTIAL =
-      DerivationId.of("Card.last4.dataClassOnly");
+  static final DerivationId CLAIMED_INVOICE = DerivationId.of("DisputeClaim.invoiceNumber");
+  static final DerivationId CARD_LAST4 = DerivationId.of("Card.last4");
+  static final DerivationId CARD_LAST4_PARTIAL = DerivationId.of("Card.last4.dataClassOnly");
 
   record Account(String number, String email) {}
 
   record Report(String text) {}
 
-  static final DerivationId<String, Report> SUMMARISE = DerivationId.of("notes.summarise");
-  static final DerivationId<String, Report> SUMMARISE_FOR_RELEASE =
-      DerivationId.of("notes.summarise.forRelease");
+  static final DerivationId SUMMARISE = DerivationId.of("notes.summarise");
+  static final DerivationId SUMMARISE_FOR_RELEASE = DerivationId.of("notes.summarise.forRelease");
 
   static final QuestionId<Account, String> OWNED_BY = QuestionId.of("Account.ownedBy");
 
-  static final DerivationId<DisputeClaim, InvoiceNumber> DECLINES =
-      DerivationId.of("DisputeClaim.alwaysDeclines");
+  static final DerivationId DECLINES = DerivationId.of("DisputeClaim.alwaysDeclines");
 
-  static final DerivationId<DisputeClaim, InvoiceNumber> WISHFUL =
-      DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
+  static final DerivationId WISHFUL = DerivationId.of("DisputeClaim.invoiceNumber.trustMe");
 
   /** What an operation reading plaintext may look at: always the acting tenant's own data. */
   private static java.util.function.Function<AccessContext, Billing> reading(
@@ -442,8 +442,7 @@ class BillingScenarioTest {
               String.class,
               Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      Handle<Report> report =
-          loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE, acme()).orThrow();
+      Handle<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
 
       assertThat(loch.label(report).tenant().conflicted()).isTrue();
       assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
@@ -470,7 +469,7 @@ class BillingScenarioTest {
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      Handle<Report> report = loch.deriveAll(List.of(first, second), SUMMARISE, acme()).orThrow();
+      Handle<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
 
       assertThat(loch.dereference(report, VENDOR_LLM, acme()).granted())
           .contains(new Report("first note / second note"));
@@ -491,8 +490,7 @@ class BillingScenarioTest {
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
 
-      Handle<Report> report =
-          loch.deriveAll(List.of(ordinary, personal), SUMMARISE, acme()).orThrow();
+      Handle<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
 
       assertThat(loch.label(report).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.dereference(report, VENDOR_LLM, acme()).allowed()).isFalse();
@@ -502,7 +500,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a fold with nothing to fold is refused")
     void a_fold_with_nothing_to_fold_is_refused() {
-      assertThat(loch.<String, Report>deriveAll(List.of(), SUMMARISE, acme()))
+      assertThat(summarise.fold(List.of(), acme()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NO_PARENTS));
@@ -595,7 +593,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a projection inherits its parent's labels exactly")
     void a_projection_inherits_its_parents_labels() {
-      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow();
+      Handle<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
       assertThat(loch.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
@@ -608,7 +606,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("extracting a field does not make it trustworthy")
     void extracting_a_field_does_not_make_it_trustworthy() {
-      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow();
+      Handle<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
       assertThat(loch.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
     }
@@ -618,7 +616,7 @@ class BillingScenarioTest {
     void records_what_it_came_from() {
       Handle<DisputeClaim> parent = claim();
 
-      Handle<InvoiceNumber> number = loch.derive(parent, CLAIMED_INVOICE, acme()).orThrow();
+      Handle<InvoiceNumber> number = claimedInvoice.derive(parent, acme()).orThrow();
 
       assertThat(loch.lineage(number).parents()).containsExactly(parent.id());
       assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE.value());
@@ -638,8 +636,8 @@ class BillingScenarioTest {
     void deriving_twice_makes_two_values() {
       Handle<DisputeClaim> parent = claim();
 
-      Handle<InvoiceNumber> once = loch.derive(parent, CLAIMED_INVOICE, acme()).orThrow();
-      Handle<InvoiceNumber> twice = loch.derive(parent, CLAIMED_INVOICE, acme()).orThrow();
+      Handle<InvoiceNumber> once = claimedInvoice.derive(parent, acme()).orThrow();
+      Handle<InvoiceNumber> twice = claimedInvoice.derive(parent, acme()).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
       assertThat(loch.lineage(once).parents()).containsExactly(parent.id());
@@ -649,19 +647,36 @@ class BillingScenarioTest {
     @Test
     @DisplayName("two different parents give two different handles")
     void two_different_parents_give_two_different_handles() {
-      assertThat(loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow().id())
-          .isNotEqualTo(loch.derive(claim(), CLAIMED_INVOICE, acme()).orThrow().id());
+      assertThat(claimedInvoice.derive(claim(), acme()).orThrow().id())
+          .isNotEqualTo(claimedInvoice.derive(claim(), acme()).orThrow().id());
     }
 
+    /**
+     * This used to invent a name and assert the loch refused it. The name no longer buys anything
+     * -- there is no method that takes one -- so what is worth asserting is the property that
+     * replaced it, and it is the stronger one: a derivation cannot be run unless somebody handed
+     * you the capability, and a capability minted after the loch was built was handed nothing.
+     *
+     * <p>Not a policy. There is no check to disable: a late capability is attached to no loch, so
+     * there is nothing for it to act on.
+     */
     @Test
-    @DisplayName("an unregistered name is refused rather than run")
-    void an_unregistered_name_is_refused() {
-      DerivationId<DisputeClaim, InvoiceNumber> invented = DerivationId.of("whatever-i-like");
+    @DisplayName("a derivation minted after the loch was built is attached to nothing")
+    void a_derivation_minted_afterwards_is_attached_to_nothing() {
+      Derivation<DisputeClaim, InvoiceNumber> invented =
+          config
+              .derivation(
+                  DerivationId.of("whatever-i-like"),
+                  DisputeClaim.class,
+                  InvoiceNumber.class,
+                  c -> new InvoiceNumber(c.invoiceNumber()))
+              .acceptingAnything()
+              .mint();
+      Handle<DisputeClaim> claim = claim();
 
-      assertThat(loch.derive(claim(), invented, acme()))
-          .isInstanceOfSatisfying(
-              Derived.Refused.class,
-              refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NO_SUCH_DERIVATION));
+      assertThatThrownBy(() -> invented.derive(claim, acme()))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("attached to no loch");
     }
   }
 
@@ -683,7 +698,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("truncating a card lowers it to PII, which a person may then see")
     void truncating_a_card_lowers_it_to_pii() {
-      Handle<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
+      Handle<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.dereference(last4, APPROVAL_CARD, acme("clearance", "finance")).granted())
@@ -693,7 +708,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("and lowers nothing it did not name: still acme's, still endorsed")
     void lowers_nothing_it_did_not_name() {
-      Handle<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
+      Handle<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).tenant().resolved()).contains("acme");
       assertThat(loch.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
@@ -706,7 +721,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("lowering only one dimension leaves the other still blocking")
     void lowering_only_one_dimension_leaves_the_other_blocking() {
-      Handle<Last4> partly = loch.derive(token(), CARD_LAST4_PARTIAL, acme()).orThrow();
+      Handle<Last4> partly = cardLast4Partial.derive(token(), acme()).orThrow();
 
       assertThat(loch.label(partly).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.label(partly).tlp()).isEqualTo(Tlp.RED);
@@ -717,7 +732,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("is offered only where it was declared to be")
     void is_offered_only_where_declared() {
-      assertThat(loch.derive(token(), CARD_LAST4, acme()))
+      assertThat(cardLast4.derive(token(), acme()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NOT_AVAILABLE_HERE));
@@ -733,7 +748,7 @@ class BillingScenarioTest {
               DisputeClaim.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      assertThat(loch.derive(endorsed, WISHFUL, acme()))
+      assertThat(wishful.derive(endorsed, acme()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NOT_A_LOWERING));
@@ -985,7 +1000,7 @@ class BillingScenarioTest {
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
-      loch.derive(token, CARD_LAST4, acme("tool", "prepare_approval"));
+      cardLast4.derive(token, acme("tool", "prepare_approval"));
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.reason()).hasValueSatisfying(r -> assertThat(r).startsWith("weakened from"));
@@ -1001,7 +1016,7 @@ class BillingScenarioTest {
               DisputeClaim.class,
               Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
-      loch.derive(claim, CLAIMED_INVOICE, acme());
+      claimedInvoice.derive(claim, acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
     }
@@ -1016,7 +1031,7 @@ class BillingScenarioTest {
           loch.hold(
               "b", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      loch.deriveAll(java.util.List.of(first, second), SUMMARISE, acme());
+      summarise.fold(java.util.List.of(first, second), acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason())
           .contains("combined from 2 values");
@@ -1104,7 +1119,7 @@ class BillingScenarioTest {
     void a_derivation_that_declined_is_recorded() {
       audit.clear();
 
-      loch.derive(claim(), DECLINES, acme());
+      declines.derive(claim(), acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE))
           .isNotEmpty()
@@ -1127,7 +1142,7 @@ class BillingScenarioTest {
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
       audit.clear();
 
-      loch.derive(token, CARD_LAST4, acme());
+      cardLast4.derive(token, acme());
 
       AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -1141,7 +1156,7 @@ class BillingScenarioTest {
     void a_refusal_after_reading_records_its_label() {
       audit.clear();
 
-      loch.derive(claim(), DECLINES, acme());
+      declines.derive(claim(), acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().label())
           .hasValueSatisfying(label -> assertThat(label).contains("UNENDORSED"));
@@ -1168,7 +1183,7 @@ class BillingScenarioTest {
     void a_fold_refused_at_the_gate_is_recorded() {
       audit.clear();
 
-      loch.<String, Report>deriveAll(java.util.List.of(), SUMMARISE, acme());
+      summarise.fold(java.util.List.of(), acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE))
           .anySatisfy(
@@ -1183,7 +1198,7 @@ class BillingScenarioTest {
     void a_refusal_never_says_what_the_value_was() {
       audit.clear();
 
-      loch.derive(claim(), DECLINES, acme());
+      declines.derive(claim(), acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().toString())
           .doesNotContain("charged twice")

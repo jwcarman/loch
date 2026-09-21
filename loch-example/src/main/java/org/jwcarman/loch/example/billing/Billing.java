@@ -39,10 +39,8 @@ public final class Billing {
   public static final DestinationId APPROVAL_DESK = DestinationId.of("approval-desk");
   public static final DestinationId PAYMENT_PROCESSOR = DestinationId.of("payment-processor");
 
-  public static final DerivationId<Domain.Mail, Domain.Invoice> CONFIRMED_INVOICE =
-      DerivationId.of("mail.confirmedInvoice");
-  public static final DerivationId<Domain.Invoice, Domain.Last4> CARD_LAST4 =
-      DerivationId.of("invoice.card.last4");
+  public static final DerivationId CONFIRMED_INVOICE = DerivationId.of("mail.confirmedInvoice");
+  public static final DerivationId CARD_LAST4 = DerivationId.of("invoice.card.last4");
 
   public static final QuestionId<Domain.Mail, String> MAIL_MENTIONS =
       QuestionId.of("mail.mentions");

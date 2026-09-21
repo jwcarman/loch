@@ -36,8 +36,8 @@ import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditors;
+import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.DerivationId;
-import org.jwcarman.loch.Derivations;
 import org.jwcarman.loch.DestinationId;
 import org.jwcarman.loch.Destinations;
 import org.jwcarman.loch.Handle;
@@ -116,10 +116,11 @@ class JdbcLochTest {
 
   static final DestinationId VENDOR_LLM = DestinationId.of("vendor-llm");
   static final DestinationId PAYMENT_PROCESSOR = DestinationId.of("payment-processor");
-  static final DerivationId<Card, Last4> CARD_LAST4 = DerivationId.of("Card.last4");
+  static final DerivationId CARD_LAST4 = DerivationId.of("Card.last4");
 
   private DataSource dataSource;
   private Loch<Billing> loch;
+  private Derivation<Card, Last4> cardLast4;
 
   /** Standing in for the edge. A caller is not allowed to say who it is. */
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
@@ -153,52 +154,42 @@ class JdbcLochTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    loch =
-        JdbcLoch.create(
-            Billing.class,
-            c ->
-                c.dataSource(dataSource)
-                    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-                    // The application composes its own pipeline: squeeze, then seal.
-                    .storedThrough(
-                        StorageCodec.of(
-                            Compression.whenItHelps(new GzipCodec())
-                                .andThen(
-                                    EnvelopeCodec.builder(
-                                            new JceDataKeyProvider("k1", Map.of("k1", kek)))
-                                        .build())))
-                    .lattice(Billing.LATTICE)
-                    .askingWhoIsAsking(edge::get)
-                    // Erasure is the one operation a label cannot decide, so it is named here.
-                    .mayErase(
-                        (label, ctx) ->
-                            ctx.has("role", "compliance")
-                                && label
-                                    .tenant()
-                                    .resolved()
-                                    .filter(t -> ctx.has("tenant", t))
-                                    .isPresent())
-                    .auditor(Auditors.discarding())
-                    .destination(
-                        Destinations.varying(
-                            VENDOR_LLM, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE)))
-                    .destination(
-                        Destinations.varying(
-                            PAYMENT_PROCESSOR,
-                            ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER)))
-                    .derivation(
-                        Derivations.<Billing, Card, Last4>of(
-                                CARD_LAST4,
-                                Card.class,
-                                Last4.class,
-                                card ->
-                                    new Last4(card.number().substring(card.number().length() - 4)))
-                            .accepting(
-                                ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-                            .lowering(
-                                joined ->
-                                    new Billing(joined.tenant(), joined.integrity(), DataClass.PII))
-                            .build()));
+    JdbcLochConfig<Billing> c = new JdbcLochConfig<>();
+    c.dataSource(dataSource)
+        .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+        // The application composes its own pipeline: squeeze, then seal.
+        .storedThrough(
+            StorageCodec.of(
+                Compression.whenItHelps(new GzipCodec())
+                    .andThen(
+                        EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
+                            .build())))
+        .lattice(Billing.LATTICE)
+        .askingWhoIsAsking(edge::get)
+        // Erasure is the one operation a label cannot decide, so it is named here.
+        .mayErase(
+            (label, ctx) ->
+                ctx.has("role", "compliance")
+                    && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
+        .auditor(Auditors.discarding())
+        .destination(
+            Destinations.varying(
+                VENDOR_LLM, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE)))
+        .destination(
+            Destinations.varying(
+                PAYMENT_PROCESSOR, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER)));
+
+    cardLast4 =
+        c.derivation(
+                CARD_LAST4,
+                Card.class,
+                Last4.class,
+                card -> new Last4(card.number().substring(card.number().length() - 4)))
+            .accepting(ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
+            .lowering(joined -> new Billing(joined.tenant(), joined.integrity(), DataClass.PII))
+            .mint();
+
+    loch = JdbcLoch.create(Billing.class, c);
   }
 
   private Handle<Card> card() {
@@ -253,7 +244,7 @@ class JdbcLochTest {
   void a_derived_value_keeps_its_parentage() {
     Handle<Card> card = card();
 
-    Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
     assertThat(loch.lineage(last4).parents()).containsExactly(card.id());
@@ -265,8 +256,8 @@ class JdbcLochTest {
   void deriving_twice_stores_twice() throws SQLException {
     Handle<Card> card = card();
 
-    Handle<Last4> once = loch.derive(card, CARD_LAST4, acme()).orThrow();
-    Handle<Last4> twice = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> once = cardLast4.derive(card, acme()).orThrow();
+    Handle<Last4> twice = cardLast4.derive(card, acme()).orThrow();
 
     assertThat(once.id()).isNotEqualTo(twice.id());
     assertThat(rowCount("loch_value")).isEqualTo(3);
@@ -277,7 +268,7 @@ class JdbcLochTest {
   @DisplayName("erasing a value takes everything ever derived from it")
   void erasing_takes_everything_derived_from_it() throws SQLException {
     Handle<Card> card = card();
-    Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     int removed = loch.erase(card);
@@ -292,7 +283,7 @@ class JdbcLochTest {
   @DisplayName("erasing a derived value leaves its parent alone")
   void erasing_a_derived_value_leaves_its_parent() {
     Handle<Card> card = card();
-    Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     assertThat(loch.erase(last4)).isEqualTo(1);

@@ -16,7 +16,6 @@
 package org.jwcarman.loch;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,80 +34,59 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("Arity")
 class ArityTest {
 
-  private static final DerivationId<String, String> ONE_AT_A_TIME = DerivationId.of("one");
-  private static final DerivationId<String, String> A_FOLD = DerivationId.of("fold");
+  private static final DerivationId ONE_AT_A_TIME = DerivationId.of("one");
+  private static final DerivationId A_FOLD = DerivationId.of("fold");
 
   private final AtomicInteger unaryRuns = new AtomicInteger();
 
-  private final Loch<Exact<String>> loch =
-      MemoryLoch.create(
-          c ->
-              c.lattice(Lattices.exact())
-                  .withoutAudit()
-                  .derivation(
-                      Derivations.<Exact<String>, String, String>of(
-                              ONE_AT_A_TIME,
-                              String.class,
-                              String.class,
-                              value -> {
-                                unaryRuns.incrementAndGet();
-                                return value.toUpperCase();
-                              })
-                          .acceptingAnything()
-                          .build())
-                  .derivation(
-                      Derivations.<Exact<String>, String, String>fromAll(
-                              A_FOLD,
-                              String.class,
-                              String.class,
-                              values -> String.join("+", values))
-                          .acceptingAnything()
-                          .build()));
+  private final LochConfig<Exact<String>> config = new LochConfig<>();
+
+  private final Derivation<String, String> oneAtATime =
+      config
+          .lattice(Lattices.<String>exact())
+          .withoutAudit()
+          .derivation(
+              ONE_AT_A_TIME,
+              String.class,
+              String.class,
+              value -> {
+                unaryRuns.incrementAndGet();
+                return value.toUpperCase();
+              })
+          .acceptingAnything()
+          .mint();
+
+  private final Fold<String, String> aFold =
+      config
+          .fold(A_FOLD, String.class, String.class, values -> String.join("+", values))
+          .acceptingAnything()
+          .mint();
+
+  private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
   private final Handle<String> first = loch.hold("a", String.class, Exact.of("acme"));
   private final Handle<String> second = loch.hold("b", String.class, Exact.of("acme"));
 
-  @Test
-  @DisplayName("mismatched on a one-at-a-time derivation is a bug, and says so")
-  void mismatched_is_a_bug_and_says_so() {
-    List<Handle<String>> two = List.of(first, second);
-
-    assertThatThrownBy(() -> loch.deriveAll(two, ONE_AT_A_TIME))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("one value at a time");
-  }
-
   /**
-   * The half that matters. Discovering the arity inside the function would mean every parent had
-   * already been decoded, and a function that blew up on the data would be indistinguishable from a
-   * caller that passed the wrong number of handles.
+   * Arity is a compile-time fact now, so the old runtime mismatch cannot be written. What remains
+   * worth asserting is that a fold is happy with any number, and that none is a refusal rather than
+   * a bug: nothing having arrived is data, not a mistake in the caller.
    */
-  @Test
-  @DisplayName("is settled before any value is decoded")
-  void is_settled_before_any_value_is_decoded() {
-    List<Handle<String>> two = List.of(first, second);
-
-    assertThatThrownBy(() -> loch.deriveAll(two, ONE_AT_A_TIME))
-        .isInstanceOf(IllegalArgumentException.class);
-
-    assertThat(unaryRuns).hasValue(0);
-  }
-
   @Test
   @DisplayName("of one is fine for a fold, which is what folding over one value means")
   void one_is_fine_for_a_fold() {
-    assertThat(loch.deriveAll(List.of(first), A_FOLD).succeeded()).isTrue();
+    assertThat(aFold.fold(List.of(first)).succeeded()).isTrue();
   }
 
   @Test
   @DisplayName("of several is what a fold is for")
   void several_is_what_a_fold_is_for() {
-    assertThat(loch.deriveAll(List.of(first, second), A_FOLD).succeeded()).isTrue();
+    assertThat(aFold.fold(List.of(first, second)).succeeded()).isTrue();
   }
 
   @Test
   @DisplayName("of none is a refusal, not a bug: an empty list is data, not a mistake")
   void none_is_a_refusal() {
-    assertThat(loch.<String, String>deriveAll(List.of(), A_FOLD).made()).isEmpty();
+    assertThat(aFold.fold(List.of()).made()).isEmpty();
   }
 }

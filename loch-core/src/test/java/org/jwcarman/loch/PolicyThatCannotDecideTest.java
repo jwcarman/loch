@@ -43,51 +43,51 @@ class PolicyThatCannotDecideTest {
       QuestionId.of("question-whose-ceiling-throws");
   private static final QuestionId<String, String> GATE_THROWS =
       QuestionId.of("question-whose-gate-throws");
-  private static final DerivationId<String, String> DERIVATION_CEILING_THROWS =
+  private static final DerivationId DERIVATION_CEILING_THROWS =
       DerivationId.of("derivation-whose-ceiling-throws");
-  private static final DerivationId<String, String> LOWERING_THROWS =
+  private static final DerivationId LOWERING_THROWS =
       DerivationId.of("derivation-whose-lowering-throws");
-  private static final DerivationId<String, String> FUNCTION_THROWS =
+  private static final DerivationId FUNCTION_THROWS =
       DerivationId.of("derivation-that-fails-midway");
 
   private final List<AuditRecord> audit = new ArrayList<>();
 
-  private final Loch<Exact<String>> loch =
-      MemoryLoch.create(
-          c ->
-              c.lattice(Lattices.exact())
-                  .auditor(audit::add)
-                  .destination(Destinations.varying(ANYWHERE, ctx -> boom()))
-                  .question(
-                      Question.<Exact<String>, String, String>of(
-                              CEILING_THROWS, String.class, String::equals)
-                          .accepting(ctx -> boom())
-                          .build())
-                  .question(
-                      Question.<Exact<String>, String, String>of(
-                              GATE_THROWS, String.class, String::equals)
-                          .acceptingAnything()
-                          .availableTo(ctx -> boom())
-                          .build())
-                  .derivation(
-                      Derivations.<Exact<String>, String, String>of(
-                              DERIVATION_CEILING_THROWS,
-                              String.class,
-                              String.class,
-                              String::toUpperCase)
-                          .accepting(ctx -> boom())
-                          .build())
-                  .derivation(
-                      Derivations.<Exact<String>, String, String>of(
-                              LOWERING_THROWS, String.class, String.class, String::toUpperCase)
-                          .acceptingAnything()
-                          .lowering(joined -> boom())
-                          .build())
-                  .derivation(
-                      Derivations.<Exact<String>, String, String>of(
-                              FUNCTION_THROWS, String.class, String.class, value -> boom())
-                          .acceptingAnything()
-                          .build()));
+  private final LochConfig<Exact<String>> config =
+      new LochConfig<Exact<String>>()
+          .lattice(Lattices.exact())
+          .auditor(audit::add)
+          .destination(Destinations.varying(ANYWHERE, ctx -> boom()))
+          .question(
+              Question.<Exact<String>, String, String>of(
+                      CEILING_THROWS, String.class, String::equals)
+                  .accepting(ctx -> boom())
+                  .build())
+          .question(
+              Question.<Exact<String>, String, String>of(GATE_THROWS, String.class, String::equals)
+                  .acceptingAnything()
+                  .availableTo(ctx -> boom())
+                  .build());
+
+  private final Derivation<String, String> ceilingThrows =
+      config
+          .derivation(DERIVATION_CEILING_THROWS, String.class, String.class, String::toUpperCase)
+          .accepting(ctx -> boom())
+          .mint();
+
+  private final Derivation<String, String> loweringThrows =
+      config
+          .derivation(LOWERING_THROWS, String.class, String.class, String::toUpperCase)
+          .acceptingAnything()
+          .lowering(joined -> boom())
+          .mint();
+
+  private final Derivation<String, String> functionThrows =
+      config
+          .derivation(FUNCTION_THROWS, String.class, String.class, value -> boom())
+          .acceptingAnything()
+          .mint();
+
+  private final Loch<Exact<String>> loch = MemoryLoch.create(config);
 
   private final Handle<String> held = loch.hold("secret", String.class, Exact.of("acme"));
 
@@ -126,7 +126,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is not a derivation that may read the value")
   void is_not_a_derivation_that_may_read_the_value() {
-    Derived<String> result = loch.derive(held, DERIVATION_CEILING_THROWS, AccessContext.empty());
+    Derived<String> result = ceilingThrows.derive(held, AccessContext.empty());
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.ABOVE_CEILING);
@@ -135,7 +135,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is not a lowering that lowered anything")
   void is_not_a_lowering_that_lowered_anything() {
-    Derived<String> result = loch.derive(held, LOWERING_THROWS, AccessContext.empty());
+    Derived<String> result = loweringThrows.derive(held, AccessContext.empty());
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason())
@@ -154,7 +154,7 @@ class PolicyThatCannotDecideTest {
   void that_fails_after_reading_still_leaves_a_line() {
     audit.clear();
 
-    Derived<String> result = loch.derive(held, FUNCTION_THROWS, AccessContext.empty());
+    Derived<String> result = functionThrows.derive(held, AccessContext.empty());
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.DECLINED);
@@ -172,8 +172,8 @@ class PolicyThatCannotDecideTest {
     loch.dereference(held, ANYWHERE, AccessContext.empty());
     loch.ask(held, CEILING_THROWS, "secret", AccessContext.empty());
     loch.ask(held, GATE_THROWS, "secret", AccessContext.empty());
-    loch.derive(held, DERIVATION_CEILING_THROWS, AccessContext.empty());
-    loch.derive(held, LOWERING_THROWS, AccessContext.empty());
+    ceilingThrows.derive(held, AccessContext.empty());
+    loweringThrows.derive(held, AccessContext.empty());
 
     assertThat(audit).hasSize(5);
     assertThat(audit)

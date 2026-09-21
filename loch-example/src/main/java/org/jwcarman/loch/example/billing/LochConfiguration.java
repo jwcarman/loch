@@ -28,7 +28,7 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
-import org.jwcarman.loch.Derivations;
+import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Outlet;
@@ -61,6 +61,8 @@ public class LochConfiguration {
   private final Outlet<Domain.Invoice> supportUi;
   private final Outlet<Domain.Last4> approvalDesk;
   private final Outlet<Domain.Invoice> paymentProcessor;
+  private final Derivation<Domain.Mail, Domain.Invoice> confirmInvoice;
+  private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
 
   public LochConfiguration(
       DataSource dataSource, StorageCodec storageCodec, Auditor auditor, Invoices invoices) {
@@ -102,40 +104,38 @@ public class LochConfiguration {
 
     // ---- one value from another -----------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
-    // claimed to the mailbox their message came from.
-    c.derivation(
-            Derivations.<BillingLabels, Domain.Mail, Domain.Invoice>checking(
-                    Billing.CONFIRMED_INVOICE,
-                    Domain.Mail.class,
-                    Domain.Invoice.class,
-                    (mail, ctx) -> confirm(invoices, mail, ctx))
-                // Reads untrusted personal mail, and only this tenant's.
-                .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
-                .lowering(joined -> joined.withIntegrity(ENDORSED))
-                .build())
+    // claimed to the mailbox their message came from. Reads untrusted personal mail, and
+    // only this tenant's.
+    this.confirmInvoice =
+        c.checking(
+                Billing.CONFIRMED_INVOICE,
+                Domain.Mail.class,
+                Domain.Invoice.class,
+                (mail, ctx) -> confirm(invoices, mail, ctx))
+            .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
+            .lowering(joined -> joined.withIntegrity(ENDORSED))
+            .mint();
 
-        // Truncating a card is a declassification, which is what a PCI reviewer asks about.
-        .derivation(
-            Derivations.<BillingLabels, Domain.Invoice, Domain.Last4>of(
-                    Billing.CARD_LAST4,
-                    Domain.Invoice.class,
-                    Domain.Last4.class,
-                    invoice -> new Domain.Last4(last4(invoice.cardToken())))
-                .accepting(ctx -> label(ctx, ENDORSED, CARDHOLDER))
-                .lowering(joined -> joined.withSensitivity(PERSONAL))
-                .availableTo(ctx -> ctx.has("role", "approver"))
-                .build())
+    // Truncating a card is a declassification, which is what a PCI reviewer asks about.
+    this.cardLast4 =
+        c.derivation(
+                Billing.CARD_LAST4,
+                Domain.Invoice.class,
+                Domain.Last4.class,
+                invoice -> new Domain.Last4(last4(invoice.cardToken())))
+            .accepting(ctx -> label(ctx, ENDORSED, CARDHOLDER))
+            .lowering(joined -> joined.withSensitivity(PERSONAL))
+            .availableTo(ctx -> ctx.has("role", "approver"))
+            .mint();
 
-        // ---- questions answered without handing the value over --------------------
-        .question(
-            Question.<BillingLabels, Domain.Mail, String>of(
-                    Billing.MAIL_MENTIONS,
-                    Domain.Mail.class,
-                    (mail, text) -> mail.body().toLowerCase().contains(text.toLowerCase()))
-                // A ceiling, like an outlet's, takes the tenant from the access: there is no
-                // fixed ceiling meaning "any one tenant but not a mixture".
-                .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
-                .build());
+    // ---- questions answered without handing the value over --------------------
+    c.question(
+        Question.<BillingLabels, Domain.Mail, String>of(
+                Billing.MAIL_MENTIONS,
+                Domain.Mail.class,
+                (mail, text) -> mail.body().toLowerCase().contains(text.toLowerCase()))
+            .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
+            .build());
 
     this.loch = JdbcLoch.create(BillingLabels.class, c);
   }
@@ -163,6 +163,16 @@ public class LochConfiguration {
   @Bean
   public Outlet<Domain.Invoice> paymentProcessor() {
     return paymentProcessor;
+  }
+
+  @Bean
+  public Derivation<Domain.Mail, Domain.Invoice> confirmInvoice() {
+    return confirmInvoice;
+  }
+
+  @Bean
+  public Derivation<Domain.Invoice, Domain.Last4> cardLast4() {
+    return cardLast4;
   }
 
   /** Printed once at startup, so what this service will allow is in the log. */

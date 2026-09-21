@@ -38,7 +38,7 @@ import java.util.List;
 public interface Fold<I, O> {
 
   /** What this is called in the manifest and in the record. */
-  DerivationId<?, ?> id();
+  DerivationId id();
 
   /**
    * Folds the values into a new one, or refuses.

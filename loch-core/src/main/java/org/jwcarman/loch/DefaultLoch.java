@@ -37,7 +37,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   private final Lattice<A> lattice;
   private final Map<DestinationId, Destination<A>> destinations;
-  private final Map<String, Derivation<A, ?, ?>> derivations;
+  private final List<DerivationSpec<A, ?>> derivations;
   private final Map<String, Question<A, ?, ?>> questions;
   private final boolean explainRefusals;
   private final Auditor auditor;
@@ -58,14 +58,14 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
     this.destinations = Collections.unmodifiableMap(byId);
-    Map<String, Derivation<A, ?, ?>> byName = new LinkedHashMap<>();
-    for (Derivation<A, ?, ?> derivation : config.derivations()) {
+    Map<String, DerivationSpec<A, ?>> byName = new LinkedHashMap<>();
+    for (DerivationSpec<A, ?> derivation : config.derivations()) {
       if (byName.put(derivation.id().value(), derivation) != null) {
         throw new IllegalStateException(
             "two derivations are registered as '" + derivation.id() + "'");
       }
     }
-    this.derivations = Collections.unmodifiableMap(byName);
+    this.derivations = List.copyOf(config.derivations());
     Map<String, Question<A, ?, ?>> byQuestion = new LinkedHashMap<>();
     for (Question<A, ?, ?> question : config.questions()) {
       if (byQuestion.put(question.id().value(), question) != null) {
@@ -232,11 +232,20 @@ public final class DefaultLoch<A> implements Loch<A> {
    * several values is worth noting because the result is more constrained than any one parent.
    * Deriving one value from one is the ordinary case and says nothing extra.
    */
-  private String reasonFor(Derivation<A, ?, ?> derivation, A joined, int parents) {
-    if (derivation.privileged()) {
+  private String reasonFor(DerivationSpec<A, ?> spec, A joined, int parents) {
+    if (spec.privileged()) {
       return "weakened from " + joined;
     }
     return parents > 1 ? "combined from " + parents + " values" : null;
+  }
+
+  /** How a derivation's parents read in the manifest: positionally, or as many of one type. */
+  private static String reads(DerivationSpec<?, ?> spec) {
+    String types =
+        spec.inputTypes().stream()
+            .map(type -> type.rawClass().getSimpleName())
+            .collect(java.util.stream.Collectors.joining(", "));
+    return spec.fold() ? "many " + types : types;
   }
 
   /** What a refusal is allowed to say about labels, which by default is nothing. */
@@ -428,14 +437,13 @@ public final class DefaultLoch<A> implements Loch<A> {
         });
     List<Manifest.Entry> theDerivations = new ArrayList<>();
     derivations.forEach(
-        (name, derivation) ->
+        derivation ->
             theDerivations.add(
                 new Manifest.Entry(
-                    name,
+                    derivation.id().value(),
                     "%s -> %s"
                         .formatted(
-                            derivation.inputType().rawClass().getSimpleName(),
-                            derivation.outputType().rawClass().getSimpleName()),
+                            reads(derivation), derivation.outputType().rawClass().getSimpleName()),
                     derivation.privileged())));
     List<Manifest.Entry> theQuestions = new ArrayList<>();
     questions.forEach(
@@ -449,17 +457,24 @@ public final class DefaultLoch<A> implements Loch<A> {
         String.valueOf(lattice.bottom()), theDestinations, theDerivations, theQuestions);
   }
 
-  @Override
-  public <I, O> Derived<O> deriveAll(
-      List<Handle<I>> parents, DerivationId<I, O> id, AccessContext context) {
-    AccessContext asking = asking(context);
+  /**
+   * Every derivation and every fold, run positionally.
+   *
+   * <p>The parents' types and their number were settled by the capability the caller held, so this
+   * does not re-derive them -- it checks each parent against the type declared for its position,
+   * which is the one thing the compiler could not know: a {@link HandleId} that arrived as text can
+   * be given any type by {@link Handle#of}, so what the store wrote remains the only ground truth.
+   */
+  <O> Derived<O> deriveVia(
+      DerivationSpec<A, O> spec, List<Handle<?>> parents, AccessContext explicit) {
+    AccessContext asking = asking(explicit);
     AtomicReference<A> label = new AtomicReference<>();
-    Derived<O> result = derivingAll(parents, id, asking, label);
+    Derived<O> result = deriving(spec, parents, asking, label);
     if (result instanceof Derived.Refused<O> refused) {
       audit(
           AuditRecord.Operation.DERIVE,
           parents.isEmpty() ? HandleId.fresh() : parents.getFirst().id(),
-          id.value(),
+          spec.id().value(),
           AuditRecord.Outcome.REFUSED,
           refused.reason().name(),
           label.get(),
@@ -468,61 +483,59 @@ public final class DefaultLoch<A> implements Loch<A> {
     return result;
   }
 
-  @SuppressWarnings("unchecked")
-  private <I, O> Derived<O> derivingAll(
-      List<Handle<I>> parents,
-      DerivationId<I, O> id,
+  private <O> Derived<O> deriving(
+      DerivationSpec<A, O> spec,
+      List<Handle<?>> parents,
       AccessContext context,
       AtomicReference<A> refused) {
-    Derivation<A, I, O> derivation = (Derivation<A, I, O>) derivations.get(id.value());
-    if (derivation == null) {
-      return new Derived.Refused<>(
-          Derived.Reason.NO_SUCH_DERIVATION, "no derivation is registered as '" + id + "'");
-    }
-    // Before anything is decoded, and thrown rather than refused. Asking a one-at-a-time
-    // derivation to read three values is a mistake in the calling code, not a decision about
-    // whether this access is allowed, and the two must not arrive looking alike.
-    if (!derivation.readsMany() && parents.size() > 1) {
-      throw new IllegalArgumentException(
-          "'%s' reads one value at a time, and was given %d".formatted(id, parents.size()));
-    }
+    DerivationId id = spec.id();
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
           Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
     }
-    if (!offeredHere(() -> derivation.availableTo(context))) {
+    // A fixed-arity capability cannot be called with the wrong number of handles, so reaching this
+    // means the spec and the capability that minted it disagree. That is a bug here, not there.
+    if (!spec.fold() && parents.size() != spec.inputTypes().size()) {
+      throw new IllegalStateException(
+          "'%s' reads %d values and was given %d"
+              .formatted(id, spec.inputTypes().size(), parents.size()));
+    }
+    if (!offeredHere(() -> spec.availableTo().test(context))) {
       return new Derived.Refused<>(
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
+    // Once, not once per parent: a ceiling that reads ambient context is doing real work.
+    Optional<A> ceiling =
+        ceilingOf(() -> Optional.ofNullable(spec.ceiling()).map(f -> f.apply(context)));
+    if (ceiling == null) {
+      return new Derived.Refused<>(
+          Derived.Reason.ABOVE_CEILING,
+          "'" + id + "' could not say what it accepts, so it does not accept this");
+    }
 
-    String expected = nameOf(derivation.inputType());
-    List<I> inputs = new ArrayList<>();
+    List<Object> inputs = new ArrayList<>();
     List<HandleId> parentIds = new ArrayList<>();
     A joined = null;
-    for (Handle<I> parent : parents) {
+    for (int position = 0; position < parents.size(); position++) {
+      Handle<?> parent = parents.get(position);
+      TypeRef<?> expected = spec.typeAt(position);
       StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
       if (entry == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
       }
-      if (!entry.typeName().equals(expected)) {
+      if (!entry.typeName().equals(nameOf(expected))) {
         return new Derived.Refused<>(
             Derived.Reason.WRONG_TYPE,
-            "'%s' reads a %s, but %s is a %s"
-                .formatted(id, expected, parent.id(), entry.typeName()));
-      }
-      Optional<A> ceiling = ceilingOf(() -> derivation.ceiling(context));
-      if (ceiling == null) {
-        return new Derived.Refused<>(
-            Derived.Reason.ABOVE_CEILING,
-            "'" + id + "' could not say what it accepts, so it does not accept this");
+            "'%s' reads a %s in position %d, but %s is a %s"
+                .formatted(id, nameOf(expected), position + 1, parent.id(), entry.typeName()));
       }
       if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
             parent.id() + " may not reach '" + id + "'" + explain(entry.label(), ceiling.get()));
       }
-      I input = storage.value(parent.id(), derivation.inputType()).orElse(null);
+      Object input = storage.value(parent.id(), expected).orElse(null);
       if (input == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
@@ -536,7 +549,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
     Optional<O> produced;
     try {
-      produced = derivation.apply(List.copyOf(inputs), context);
+      produced = spec.function().apply(List.copyOf(inputs), context);
     } catch (RuntimeException e) {
       // It has already seen the plaintext, so this refusal has to be recorded like any other.
       return new Derived.Refused<>(
@@ -547,10 +560,9 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     A label = joined;
-    Optional<java.util.function.UnaryOperator<A>> relabel = derivation.relabel();
-    if (relabel.isPresent()) {
+    if (spec.relabel() != null) {
       try {
-        label = relabel.get().apply(joined);
+        label = spec.relabel().apply(joined);
       } catch (RuntimeException e) {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
@@ -569,22 +581,14 @@ public final class DefaultLoch<A> implements Loch<A> {
         newId,
         id.value(),
         AuditRecord.Outcome.ALLOWED,
-        reasonFor(derivation, joined, parentIds.size()),
+        reasonFor(spec, joined, parentIds.size()),
         label,
         context);
     storage.put(
         newId,
         new StoredValue<>(
-            produced.get(),
-            derivation.outputType(),
-            label,
-            Lineage.derivedFrom(parentIds, id.value())));
-    return new Derived.Made<>(new Handle<>(newId, derivation.outputType()));
-  }
-
-  @Override
-  public <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> id, AccessContext context) {
-    return deriveAll(List.of(parent), id, context);
+            produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
+    return new Derived.Made<>(new Handle<>(newId, spec.outputType()));
   }
 
   @Override
