@@ -51,6 +51,19 @@ public final class JdbcLoch {
   public static <A> Loch<A> create(Class<A> labelType, Consumer<JdbcLochConfig<A>> customizer) {
     JdbcLochConfig<A> config = new JdbcLochConfig<>();
     customizer.accept(config);
+    return create(labelType, config);
+  }
+
+  /**
+   * Builds one from a config that has already been filled in.
+   *
+   * <p>The form to use when capabilities are being minted, because a lambda cannot assign to a
+   * local: configure, mint into plain final variables, then build.
+   *
+   * @param labelType the application's label record, which has to be serialised like any other
+   *     value because labels are stored encrypted too
+   */
+  public static <A> Loch<A> create(Class<A> labelType, JdbcLochConfig<A> config) {
     JdbcStorage<A> storage =
         new JdbcStorage<>(
             config.dataSourceOrFail(),

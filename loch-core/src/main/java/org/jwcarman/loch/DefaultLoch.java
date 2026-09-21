@@ -79,6 +79,58 @@ public final class DefaultLoch<A> implements Loch<A> {
     this.callerMayContribute = config.callerMayContribute();
     this.mayErase = config.mayErase();
     this.mayHold = config.mayHold();
+    // Last, and only once everything above succeeded: capabilities minted during configuration
+    // reach this loch through the config, and one that half-built must not be reachable at all.
+    config.bind(this);
+  }
+
+  /**
+   * Holding through an inlet, which is holding without being told a label.
+   *
+   * <p>No {@code mayHold} check, because there is nothing left to check. That policy existed to
+   * police a label the caller supplied; an inlet's label is a property of the door, decided during
+   * configuration, and the caller contributes nothing to it.
+   */
+  <T> Handle<T> holdVia(
+      InletId inlet,
+      TypeRef<T> type,
+      java.util.function.Function<AccessContext, A> labelling,
+      T value) {
+    if (value == null) {
+      throw new IllegalArgumentException("a loch holds values, not nulls");
+    }
+    AccessContext asking = asking(AccessContext.empty());
+    A label;
+    try {
+      label = labelling.apply(asking);
+    } catch (RuntimeException e) {
+      label = null;
+    }
+    if (label == null) {
+      audit(
+          AuditRecord.Operation.HOLD,
+          HandleId.fresh(),
+          inlet.value(),
+          AuditRecord.Outcome.REFUSED,
+          "the inlet could not say how to label this",
+          null,
+          asking);
+      throw new AccessDeniedException(
+          "INLET_CANNOT_LABEL", "'" + inlet + "' could not say what it labels values");
+    }
+    HandleId id = HandleId.fresh();
+    // Recorded before it is stored, for the reason given in hold(...): an auditor that throws must
+    // leave nothing behind. The inlet is named, so the record says which door this came in through.
+    audit(
+        AuditRecord.Operation.HOLD,
+        id,
+        inlet.value(),
+        AuditRecord.Outcome.ALLOWED,
+        null,
+        label,
+        asking);
+    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
+    return new Handle<>(id, type);
   }
 
   /**

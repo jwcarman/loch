@@ -17,6 +17,7 @@ package org.jwcarman.loch.example.billing;
 
 import org.jwcarman.loch.DerivationId;
 import org.jwcarman.loch.DestinationId;
+import org.jwcarman.loch.InletId;
 import org.jwcarman.loch.QuestionId;
 
 /**
@@ -28,6 +29,11 @@ import org.jwcarman.loch.QuestionId;
 public final class Billing {
 
   private Billing() {}
+
+  /**
+   * Where customer mail comes in: nobody vouched for it, and it is somebody's personal business.
+   */
+  public static final InletId CUSTOMER_MAIL = InletId.of("customer-mail");
 
   public static final DestinationId SUPPORT_UI = DestinationId.of("support-ui");
   public static final DestinationId APPROVAL_DESK = DestinationId.of("approval-desk");

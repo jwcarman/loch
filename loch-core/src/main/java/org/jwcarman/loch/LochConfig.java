@@ -18,6 +18,7 @@ package org.jwcarman.loch;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
@@ -39,6 +40,8 @@ public class LochConfig<A> {
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Question<A, ?, ?>> questions = new ArrayList<>();
+  private final java.util.Set<InletId> inlets = new java.util.LinkedHashSet<>();
+  private DefaultLoch<A> bound;
 
   /** The order over this application's labels. Required. */
   public LochConfig<A> lattice(Lattice<A> lattice) {
@@ -61,6 +64,120 @@ public class LochConfig<A> {
   public LochConfig<A> derivation(Derivation<A, ?, ?> derivation) {
     derivations.add(Objects.requireNonNull(derivation, "a derivation must not be null"));
     return this;
+  }
+
+  // ------------------------------------------------------------------ minting capabilities
+
+  /**
+   * Mints the authority to put values into this loch at one label. Configuration time only.
+   *
+   * <p>Returns the {@link Inlet} rather than this config, so the fluent chain stops here and the
+   * caller has to capture what it was given. That is the point: there is no way to ask for an inlet
+   * afterwards, so a capability nobody kept is a capability nobody has.
+   *
+   * <p>The function fixes the parts of the label that are properties of the door -- what this is,
+   * how far it is trusted, what kind of data arrives here -- and may read the rest, typically a
+   * tenant, from ambient context.
+   */
+  public <T> Inlet<T> inlet(
+      InletId id, TypeRef<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    Objects.requireNonNull(id, "an inlet needs a name");
+    Objects.requireNonNull(type, "an inlet needs to know what it accepts");
+    Objects.requireNonNull(labelling, "an inlet needs to say how it labels what arrives");
+    if (!inlets.add(id)) {
+      throw new IllegalStateException("two inlets are registered as '" + id + "'");
+    }
+    return new Inlet<>() {
+      @Override
+      public InletId id() {
+        return id;
+      }
+
+      @Override
+      public Handle<T> hold(T value) {
+        return engine().holdVia(id, type, labelling, value);
+      }
+
+      @Override
+      public String toString() {
+        return "inlet '" + id + "'";
+      }
+    };
+  }
+
+  /** The same, for a type with no generic parameters of its own. */
+  public <T> Inlet<T> inlet(
+      InletId id, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
+    return inlet(id, TypeRef.of(type), labelling);
+  }
+
+  /** An inlet whose label does not depend on who is acting. */
+  public <T> Inlet<T> inlet(InletId id, Class<T> type, A label) {
+    Objects.requireNonNull(label, "an inlet needs a label");
+    return inlet(id, TypeRef.of(type), context -> label);
+  }
+
+  /**
+   * Mints the authority to read plaintext out of this loch at one ceiling. Configuration time only.
+   *
+   * <p>Also registers the destination, so the manifest still enumerates it and audit lines still
+   * name it. The id remains what this door is called; it stops being a way to reach it.
+   */
+  public Outlet outlet(DestinationId id, java.util.function.Function<AccessContext, A> ceiling) {
+    destination(Destinations.varying(id, ceiling));
+    return new Outlet() {
+      @Override
+      public DestinationId id() {
+        return id;
+      }
+
+      @Override
+      public <T> Dereferenced<T> read(Handle<T> held) {
+        return read(held, AccessContext.empty());
+      }
+
+      @Override
+      public <T> Dereferenced<T> read(Handle<T> held, AccessContext context) {
+        return engine().dereference(held, id, context);
+      }
+
+      @Override
+      public String toString() {
+        return "outlet '" + id + "'";
+      }
+    };
+  }
+
+  /** An outlet whose ceiling does not depend on who is asking. */
+  public Outlet outlet(DestinationId id, A ceiling) {
+    Objects.requireNonNull(ceiling, "an outlet needs a ceiling");
+    return outlet(id, context -> ceiling);
+  }
+
+  /**
+   * Handed to every capability minted here, once the loch they belong to exists.
+   *
+   * <p>A capability is minted while the configuration lambda is still running, which is before
+   * there is anything for it to act on. So it holds this config and reaches the loch through it,
+   * and until the loch has been built there is nothing to reach. Refusing loudly matters more than
+   * it looks: the failure mode this replaces is a capability that silently does nothing, which
+   * every happy-path test would pass.
+   */
+  void bind(DefaultLoch<A> loch) {
+    if (this.bound != null) {
+      throw new IllegalStateException(
+          "this configuration has already built a loch; build a second one from a fresh config, or"
+              + " its capabilities would write into the first");
+    }
+    this.bound = loch;
+  }
+
+  private DefaultLoch<A> engine() {
+    if (bound == null) {
+      throw new IllegalStateException(
+          "this capability was minted but the loch it belongs to was never finished being built");
+    }
+    return bound;
   }
 
   /** A question that can be asked of a held value without the value leaving. */
@@ -240,5 +357,9 @@ public class LochConfig<A> {
 
   List<Destination<A>> destinations() {
     return List.copyOf(destinations);
+  }
+
+  java.util.Set<InletId> inlets() {
+    return java.util.Set.copyOf(inlets);
   }
 }

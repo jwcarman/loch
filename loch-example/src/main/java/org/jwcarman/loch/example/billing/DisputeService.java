@@ -15,12 +15,11 @@
  */
 package org.jwcarman.loch.example.billing;
 
-import static org.jwcarman.loch.example.billing.BillingLabels.Integrity.UNENDORSED;
-import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.PERSONAL;
-
 import org.jwcarman.loch.Handle;
 import org.jwcarman.loch.HandleId;
+import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
+import org.jwcarman.loch.Outlet;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,9 +33,24 @@ import org.springframework.stereotype.Service;
 public class DisputeService {
 
   private final Loch<BillingLabels> loch;
+  private final Inlet<Domain.Mail> customerMail;
+  private final Outlet supportUi;
+  private final Outlet approvalDesk;
+  private final Outlet paymentProcessor;
 
-  public DisputeService(Loch<BillingLabels> loch) {
+  // What this class may do is this list. It was handed three outlets, so it can reach three
+  // places; it was handed one inlet, so there is exactly one label it can create a value at.
+  public DisputeService(
+      Loch<BillingLabels> loch,
+      Inlet<Domain.Mail> customerMail,
+      Outlet supportUi,
+      Outlet approvalDesk,
+      Outlet paymentProcessor) {
     this.loch = loch;
+    this.customerMail = customerMail;
+    this.supportUi = supportUi;
+    this.approvalDesk = approvalDesk;
+    this.paymentProcessor = paymentProcessor;
   }
 
   /**
@@ -44,8 +58,8 @@ public class DisputeService {
    *
    * <p>The one place this application states what something is. After this, labels are computed.
    */
-  public HandleId receive(String tenant, Domain.Mail mail) {
-    return loch.hold(mail, Domain.Mail.class, BillingLabels.of(tenant, UNENDORSED, PERSONAL)).id();
+  public HandleId receive(Domain.Mail mail) {
+    return customerMail.hold(mail).id();
   }
 
   /** Does the message mention this? Answered without the message leaving the store. */
@@ -69,7 +83,7 @@ public class DisputeService {
   public Domain.Last4 cardForApproval(HandleId invoice) {
     HandleId last4 =
         loch.derive(Handle.of(invoice, Domain.Invoice.class), Billing.CARD_LAST4).orThrow().id();
-    return loch.dereference(Handle.of(last4, Domain.Last4.class), Billing.APPROVAL_DESK).orThrow();
+    return approvalDesk.read(Handle.of(last4, Domain.Last4.class)).orThrow();
   }
 
   /**
@@ -81,15 +95,14 @@ public class DisputeService {
    */
   public String refund(HandleId invoice) {
     Domain.Invoice confirmed =
-        loch.dereference(Handle.of(invoice, Domain.Invoice.class), Billing.PAYMENT_PROCESSOR)
-            .orThrow();
+        paymentProcessor.read(Handle.of(invoice, Domain.Invoice.class)).orThrow();
     return "refunded %s to card ending %s"
         .formatted(confirmed.amount(), last4(confirmed.cardToken()));
   }
 
   /** What the support agent's screen may show. */
   public Domain.Invoice forSupportScreen(HandleId invoice) {
-    return loch.dereference(Handle.of(invoice, Domain.Invoice.class), Billing.SUPPORT_UI).orThrow();
+    return supportUi.read(Handle.of(invoice, Domain.Invoice.class)).orThrow();
   }
 
   private static String last4(String token) {

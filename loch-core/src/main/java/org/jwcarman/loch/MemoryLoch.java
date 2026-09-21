@@ -36,6 +36,23 @@ public final class MemoryLoch {
   public static <A> Loch<A> create(Consumer<LochConfig<A>> customizer) {
     LochConfig<A> config = new LochConfig<>();
     customizer.accept(config);
+    return create(config);
+  }
+
+  /**
+   * Builds one from a config that has already been filled in.
+   *
+   * <p>The form to use when capabilities are being minted, because a lambda cannot assign to a
+   * local: configure, mint into plain final variables, then build.
+   *
+   * <pre>{@code
+   * LochConfig<Billing> c = new LochConfig<>();
+   * c.lattice(Billing.LATTICE).auditor(auditor);
+   * Inlet<Mail> mail = c.inlet(CUSTOMER_MAIL, Mail.class, ctx -> ...);
+   * Loch<Billing> loch = MemoryLoch.create(c);
+   * }</pre>
+   */
+  public static <A> Loch<A> create(LochConfig<A> config) {
     return new DefaultLoch<>(config, new MemoryStorage<>());
   }
 }

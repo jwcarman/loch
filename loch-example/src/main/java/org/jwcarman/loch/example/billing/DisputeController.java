@@ -24,7 +24,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -49,10 +48,11 @@ public class DisputeController {
 
   public record Reference(String id) {}
 
+  // No tenant parameter. The inlet reads it from the access, which is established from the
+  // request by CurrentAccess, so there is nowhere for this method to get it wrong.
   @PostMapping
-  public Reference raise(@RequestHeader("X-Tenant") String tenant, @RequestBody Raise raise) {
-    return new Reference(
-        disputes.receive(tenant, new Domain.Mail(raise.from(), raise.body())).value());
+  public Reference raise(@RequestBody Raise raise) {
+    return new Reference(disputes.receive(new Domain.Mail(raise.from(), raise.body())).value());
   }
 
   @GetMapping("/{id}/mentions")

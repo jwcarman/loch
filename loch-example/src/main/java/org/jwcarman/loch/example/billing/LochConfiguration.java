@@ -21,30 +21,24 @@ import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.CARDHO
 import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.ORDINARY;
 import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.PERSONAL;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import javax.sql.DataSource;
-import org.jwcarman.codec.crypto.EnvelopeCodec;
-import org.jwcarman.codec.crypto.JceDataKeyProvider;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
-import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Derivations;
-import org.jwcarman.loch.Destinations;
+import org.jwcarman.loch.Inlet;
 import org.jwcarman.loch.Loch;
+import org.jwcarman.loch.Outlet;
 import org.jwcarman.loch.Question;
-import org.jwcarman.loch.jdbc.Compression;
 import org.jwcarman.loch.jdbc.JdbcLoch;
+import org.jwcarman.loch.jdbc.JdbcLochConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
 import org.jwcarman.loch.lattice.Exact;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -58,89 +52,112 @@ public class LochConfiguration {
   private static final Logger log = LoggerFactory.getLogger(LochConfiguration.class);
   private static final Pattern INVOICE = Pattern.compile("INV-\\d+");
 
-  /** Every access, allowed or refused, ends up here. */
-  @Bean
-  public Auditor auditor() {
-    return record -> log.info("[loch] {}", record);
-  }
+  // Minted once, in a constructor, and handed out below. Nothing can obtain one any other way:
+  // there is no method that trades an id for the capability it names, which is the only reason
+  // holding one of these means anything.
 
-  @Bean
-  public StorageCodec storageCodec(@Value("${billing.key}") String key) {
-    SecretKey kek = new SecretKeySpec(java.util.Base64.getDecoder().decode(key), "AES");
-    return StorageCodec.of(
-        Compression.whenItHelps(new GzipCodec())
-            .andThen(
-                EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek))).build()));
-  }
+  private final Loch<BillingLabels> loch;
+  private final Inlet<Domain.Mail> customerMail;
+  private final Outlet supportUi;
+  private final Outlet approvalDesk;
+  private final Outlet paymentProcessor;
 
-  @Bean
-  public Loch<BillingLabels> loch(
+  public LochConfiguration(
       DataSource dataSource, StorageCodec storageCodec, Auditor auditor, Invoices invoices) {
-    return JdbcLoch.create(
-        BillingLabels.class,
-        c ->
-            c.dataSource(dataSource)
-                .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-                .storedThrough(storageCodec)
-                .lattice(BillingLabels.LATTICE)
-                .auditor(auditor)
-                .askingWhoIsAsking(CurrentAccess::get)
-                // A blind write up: without this, code acting for one tenant can create a record
-                // labelled as another tenant's, which that tenant then reads as its own.
-                .mayHold(
-                    (label, ctx) ->
-                        label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
 
-                // ---- where values may go ------------------------------------------------
-                .destination(
-                    Destinations.varying(
-                        Billing.SUPPORT_UI, ctx -> ceiling(ctx, ENDORSED, ORDINARY)))
-                .destination(
-                    Destinations.varying(
-                        Billing.APPROVAL_DESK,
-                        ctx ->
-                            ceiling(
-                                ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY)))
-                .destination(
-                    Destinations.varying(
-                        Billing.PAYMENT_PROCESSOR, ctx -> ceiling(ctx, ENDORSED, CARDHOLDER)))
+    JdbcLochConfig<BillingLabels> c = new JdbcLochConfig<>();
+    c.dataSource(dataSource)
+        .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+        .storedThrough(storageCodec)
+        .lattice(BillingLabels.LATTICE)
+        .auditor(auditor)
+        .askingWhoIsAsking(CurrentAccess::get)
+        // A stopgap, and only that. Inlets make a blind write up unsayable -- no method on one
+        // takes a label -- but Loch.hold still exists and still takes a label, so the old door
+        // needs its old lock until that door is gone. Deleting this line while hold(...) remains
+        // leaves the application strictly less safe than before inlets existed.
+        .mayHold(
+            (label, ctx) ->
+                label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
 
-                // ---- one value from another ---------------------------------------------
-                // The only operation that can raise trust, and it earns it by tying what the
-                // customer claimed to the mailbox their message came from.
-                .derivation(
-                    Derivations.<BillingLabels, Domain.Mail, Domain.Invoice>checking(
-                            Billing.CONFIRMED_INVOICE,
-                            Domain.Mail.class,
-                            Domain.Invoice.class,
-                            (mail, ctx) -> confirm(invoices, mail, ctx))
-                        // Reads untrusted personal mail, and only this tenant's.
-                        .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
-                        .lowering(joined -> joined.withIntegrity(ENDORSED))
-                        .build())
+    // ---- how values get in ----------------------------------------------------
+    // The tenant is read from the access, never passed by the caller. A blind write up is not
+    // refused here so much as unsayable: no method on an inlet takes a label.
+    this.customerMail =
+        c.inlet(Billing.CUSTOMER_MAIL, Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
-                // Truncating a card is a declassification, which is what a PCI reviewer asks about.
-                .derivation(
-                    Derivations.<BillingLabels, Domain.Invoice, Domain.Last4>of(
-                            Billing.CARD_LAST4,
-                            Domain.Invoice.class,
-                            Domain.Last4.class,
-                            invoice -> new Domain.Last4(last4(invoice.cardToken())))
-                        .accepting(ctx -> ceiling(ctx, ENDORSED, CARDHOLDER))
-                        .lowering(joined -> joined.withSensitivity(PERSONAL))
-                        .availableTo(ctx -> ctx.has("role", "approver"))
-                        .build())
+    // ---- how values get out ---------------------------------------------------
+    this.supportUi = c.outlet(Billing.SUPPORT_UI, ctx -> label(ctx, ENDORSED, ORDINARY));
+    this.approvalDesk =
+        c.outlet(
+            Billing.APPROVAL_DESK,
+            ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
+    this.paymentProcessor =
+        c.outlet(Billing.PAYMENT_PROCESSOR, ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
-                // ---- questions answered without handing the value over ------------------
-                .question(
-                    Question.<BillingLabels, Domain.Mail, String>of(
-                            Billing.MAIL_MENTIONS,
-                            Domain.Mail.class,
-                            (mail, text) -> mail.body().toLowerCase().contains(text.toLowerCase()))
-                        // A ceiling, like a destination's, takes the tenant from the access: there
-                        // is no fixed ceiling meaning "any one tenant but not a mixture".
-                        .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
-                        .build()));
+    // ---- one value from another -----------------------------------------------
+    // The only operation that can raise trust, and it earns it by tying what the customer
+    // claimed to the mailbox their message came from.
+    c.derivation(
+            Derivations.<BillingLabels, Domain.Mail, Domain.Invoice>checking(
+                    Billing.CONFIRMED_INVOICE,
+                    Domain.Mail.class,
+                    Domain.Invoice.class,
+                    (mail, ctx) -> confirm(invoices, mail, ctx))
+                // Reads untrusted personal mail, and only this tenant's.
+                .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
+                .lowering(joined -> joined.withIntegrity(ENDORSED))
+                .build())
+
+        // Truncating a card is a declassification, which is what a PCI reviewer asks about.
+        .derivation(
+            Derivations.<BillingLabels, Domain.Invoice, Domain.Last4>of(
+                    Billing.CARD_LAST4,
+                    Domain.Invoice.class,
+                    Domain.Last4.class,
+                    invoice -> new Domain.Last4(last4(invoice.cardToken())))
+                .accepting(ctx -> label(ctx, ENDORSED, CARDHOLDER))
+                .lowering(joined -> joined.withSensitivity(PERSONAL))
+                .availableTo(ctx -> ctx.has("role", "approver"))
+                .build())
+
+        // ---- questions answered without handing the value over --------------------
+        .question(
+            Question.<BillingLabels, Domain.Mail, String>of(
+                    Billing.MAIL_MENTIONS,
+                    Domain.Mail.class,
+                    (mail, text) -> mail.body().toLowerCase().contains(text.toLowerCase()))
+                // A ceiling, like an outlet's, takes the tenant from the access: there is no
+                // fixed ceiling meaning "any one tenant but not a mixture".
+                .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
+                .build());
+
+    this.loch = JdbcLoch.create(BillingLabels.class, c);
+  }
+
+  @Bean
+  public Loch<BillingLabels> loch() {
+    return loch;
+  }
+
+  @Bean
+  public Inlet<Domain.Mail> customerMail() {
+    return customerMail;
+  }
+
+  @Bean
+  public Outlet supportUi() {
+    return supportUi;
+  }
+
+  @Bean
+  public Outlet approvalDesk() {
+    return approvalDesk;
+  }
+
+  @Bean
+  public Outlet paymentProcessor() {
+    return paymentProcessor;
   }
 
   /** Printed once at startup, so what this service will allow is in the log. */
@@ -155,7 +172,7 @@ public class LochConfiguration {
    * <p>Naming nobody gives a ceiling of "no tenant", which admits only unattributed values: the
    * fail-closed answer, and deliberate.
    */
-  private static BillingLabels ceiling(
+  private static BillingLabels label(
       AccessContext ctx, BillingLabels.Integrity integrity, BillingLabels.Sensitivity sensitivity) {
     return new BillingLabels(
         ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
