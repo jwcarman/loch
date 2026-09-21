@@ -30,7 +30,7 @@ public sealed interface Answer {
   record Refused(Reason reason, String detail) implements Answer {}
 
   enum Reason {
-    NO_SUCH_CHECK,
+    NO_SUCH_QUESTION,
     NO_SUCH_VALUE,
     WRONG_TYPE,
     ABOVE_CEILING,

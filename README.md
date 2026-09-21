@@ -314,7 +314,7 @@ that a decision somebody wrote down.
 
 ## Where this sits in the literature
 
-The algebra is **Denning's lattice model** (1976), used the way Denning stated it — parametric over
+Two halves of this trace to the same person. The algebra is **Denning's lattice model** (1976), used the way Denning stated it — parametric over
 the lattice, so its theorems hold for whichever one you supply. Integrity as the dual of
 confidentiality is **Biba** (1977); orienting every lattice so that *up means more constrained* is
 what lets one `join` serve both. Weakening a label is **declassification** and **endorsement** from
@@ -329,6 +329,13 @@ that dynamic systems miss:
 ```java
 if (secret) { publicFlag = 1; }   // leaks a bit without ever assigning secret
 ```
+
+And the other half: a question answers one bit about a value nobody may read, which is a
+**predicate** in the zero-knowledge sense and has an older cousin in the non-extractable keys of
+PKCS#11 and every HSM — use it, never read it. Bounding how many such questions may be asked is
+**inference control**, from the statistical-database literature: Denning, Denning and Schwartz's
+tracker attack (1979) and Denning and Schlörer on inference controls (1983), where a sequence of
+individually harmless queries reconstructs the record. The same Dorothy Denning, twice.
 
 **Loch cannot see that, and makes no non-interference claim.** Its real ancestry is dynamic: Perl's
 taint mode, PCI tokenization vaults, and — for the agent case — the dual-LLM pattern and CaMeL.
@@ -381,7 +388,7 @@ answers a question inside the store so the value never leaves:
 
 ```java
 Account account = loch.dereference(handle, SOMEWHERE).orThrow();   // Loch loses sight of it
-boolean ok = loch.check(handle, OWNED_BY, sender).isTrue();        // never leaves
+boolean ok = loch.ask(handle, OWNED_BY, sender).isTrue();        // never leaves
 ```
 
 The design target is that most callers never dereference anything.

@@ -114,11 +114,11 @@ public interface Loch<A> {
    * that could keep it. Prefer this to {@link #dereference} wherever a question is what you
    * actually have.
    */
-  <I, Q> Answer check(Handle<I> held, CheckId<I, Q> check, Q question, AccessContext context);
+  <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> question, Q against, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default <I, Q> Answer check(Handle<I> held, CheckId<I, Q> check, Q question) {
-    return check(held, check, question, AccessContext.empty());
+  default <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> question, Q against) {
+    return ask(held, question, against, AccessContext.empty());
   }
 
   /**

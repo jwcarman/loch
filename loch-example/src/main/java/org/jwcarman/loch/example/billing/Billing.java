@@ -15,9 +15,9 @@
  */
 package org.jwcarman.loch.example.billing;
 
-import org.jwcarman.loch.CheckId;
 import org.jwcarman.loch.DerivationId;
 import org.jwcarman.loch.DestinationId;
+import org.jwcarman.loch.QuestionId;
 
 /**
  * The names this application uses to talk to its loch.
@@ -38,5 +38,6 @@ public final class Billing {
   public static final DerivationId<Domain.Invoice, Domain.Last4> CARD_LAST4 =
       DerivationId.of("invoice.card.last4");
 
-  public static final CheckId<Domain.Mail, String> MAIL_MENTIONS = CheckId.of("mail.mentions");
+  public static final QuestionId<Domain.Mail, String> MAIL_MENTIONS =
+      QuestionId.of("mail.mentions");
 }

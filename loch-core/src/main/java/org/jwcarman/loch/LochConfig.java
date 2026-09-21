@@ -36,7 +36,7 @@ public class LochConfig<A> {
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
-  private final List<Check<A, ?, ?>> checks = new ArrayList<>();
+  private final List<Question<A, ?, ?>> questions = new ArrayList<>();
   private final List<Fold<A, ?, ?>> folds = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
@@ -63,8 +63,8 @@ public class LochConfig<A> {
   }
 
   /** A question that can be asked of a held value without the value leaving. */
-  public LochConfig<A> check(Check<A, ?, ?> check) {
-    checks.add(Objects.requireNonNull(check, "a check must not be null"));
+  public LochConfig<A> question(Question<A, ?, ?> question) {
+    questions.add(Objects.requireNonNull(question, "a question must not be null"));
     return this;
   }
 
@@ -78,8 +78,8 @@ public class LochConfig<A> {
     return List.copyOf(folds);
   }
 
-  List<Check<A, ?, ?>> checks() {
-    return List.copyOf(checks);
+  List<Question<A, ?, ?>> questions() {
+    return List.copyOf(questions);
   }
 
   List<Derivation<A, ?, ?>> derivations() {

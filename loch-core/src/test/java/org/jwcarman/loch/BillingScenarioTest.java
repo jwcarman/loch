@@ -243,8 +243,8 @@ class BillingScenarioTest {
                           .lowering(joined -> joined.withDataClass(DataClass.NONE))
                           .build())
                   // The whole account never leaves the loch to answer one question about it.
-                  .check(
-                      Check.<Billing, Account, String>of(
+                  .question(
+                      Question.<Billing, Account, String>of(
                               OWNED_BY,
                               Account.class,
                               (account, sender) -> account.email().equalsIgnoreCase(sender))
@@ -270,7 +270,7 @@ class BillingScenarioTest {
   static final FoldId<String, Report> SUMMARISE_FOR_RELEASE =
       FoldId.of("notes.summarise.forRelease");
 
-  static final CheckId<Account, String> OWNED_BY = CheckId.of("Account.ownedBy");
+  static final QuestionId<Account, String> OWNED_BY = QuestionId.of("Account.ownedBy");
 
   static final DerivationId<DisputeClaim, InvoiceNumber> DECLINES =
       DerivationId.of("DisputeClaim.alwaysDeclines");
@@ -783,17 +783,17 @@ class BillingScenarioTest {
     void answers_without_the_account_leaving() {
       Handle<Account> account = account();
 
-      assertThat(loch.check(account, OWNED_BY, "someone@acme.example").isTrue()).isTrue();
-      assertThat(loch.check(account, OWNED_BY, "attacker@elsewhere.example").isFalse()).isTrue();
+      assertThat(loch.ask(account, OWNED_BY, "someone@acme.example").isTrue()).isTrue();
+      assertThat(loch.ask(account, OWNED_BY, "attacker@elsewhere.example").isFalse()).isTrue();
     }
 
     /** A refusal is not a "no". Collapsing them is how a denied check reads as a failed one. */
     @Test
     @DisplayName("a refusal is neither true nor false")
     void a_refusal_is_neither_true_nor_false() {
-      CheckId<Account, String> invented = CheckId.of("whatever");
+      QuestionId<Account, String> invented = QuestionId.of("whatever");
 
-      Answer answer = loch.check(account(), invented, "x");
+      Answer answer = loch.ask(account(), invented, "x");
 
       assertThat(answer.isTrue()).isFalse();
       assertThat(answer.isFalse()).isFalse();
@@ -809,8 +809,8 @@ class BillingScenarioTest {
                   c.lattice(Billing.LATTICE)
                       .withoutAudit()
                       .askingWhoIsAsking(edge::get)
-                      .check(
-                          Check.<Billing, Account, String>of(
+                      .question(
+                          Question.<Billing, Account, String>of(
                                   OWNED_BY, Account.class, (account, sender) -> true)
                               .accepting(
                                   ctx ->
@@ -823,7 +823,7 @@ class BillingScenarioTest {
               Account.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
-      assertThat(choosy.check(secret, OWNED_BY, "x@y.example", acme()))
+      assertThat(choosy.ask(secret, OWNED_BY, "x@y.example", acme()))
           .isInstanceOfSatisfying(
               Answer.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Answer.Reason.ABOVE_CEILING));
@@ -947,9 +947,9 @@ class BillingScenarioTest {
               Account.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
 
-      loch.check(account, OWNED_BY, "someone@acme.example", acme());
+      loch.ask(account, OWNED_BY, "someone@acme.example", acme());
 
-      AuditRecord entry = audit.of(AuditRecord.Operation.CHECK).getLast();
+      AuditRecord entry = audit.of(AuditRecord.Operation.ASK).getLast();
       assertThat(entry.reason()).contains("answered true");
       assertThat(entry.toString()).doesNotContain("someone@acme.example");
     }
@@ -1116,13 +1116,13 @@ class BillingScenarioTest {
     void a_refused_check_is_recorded() {
       audit.clear();
 
-      loch.check(claim(), CheckId.of("no-such-check"), "x", acme());
+      loch.ask(claim(), QuestionId.of("no-such-check"), "x", acme());
 
-      assertThat(audit.of(AuditRecord.Operation.CHECK))
+      assertThat(audit.of(AuditRecord.Operation.ASK))
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
-                assertThat(entry.reason()).contains("NO_SUCH_CHECK");
+                assertThat(entry.reason()).contains("NO_SUCH_QUESTION");
               });
     }
 

@@ -22,10 +22,15 @@ import org.jwcarman.codec.spi.TypeRef;
 /**
  * A question about a held value, answered without surrendering it.
  *
- * <p><b>This is the mitigation for the one gap the architecture cannot close.</b> Once a value has
- * been dereferenced, the code holding it can do anything with it and Loch cannot follow. A check
- * runs inside the store, sees the plaintext, and returns a boolean -- so the caller learns the one
- * bit it needed and the value never enters code that could keep it.
+ * <p>This is a <b>predicate</b> in the sense the zero-knowledge and selective-disclosure literature
+ * means: something proved about protected data without the data being disclosed. That is the
+ * accurate word, and it is taken -- {@code java.util.function.Predicate} is already used in this
+ * package -- so the type says "question" and the javadoc says what it is.
+ *
+ * <p><b>The mitigation for the one gap the architecture cannot close.</b> Once a value has been
+ * dereferenced, the code holding it can do anything and Loch cannot follow. A question runs inside
+ * the store, sees the plaintext, and returns a boolean -- so the caller learns the one bit it
+ * needed and the value never enters code that could keep it.
  *
  * <pre>{@code
  * // hands plaintext to code Loch can no longer follow
@@ -33,22 +38,38 @@ import org.jwcarman.codec.spi.TypeRef;
  * boolean ok = account.email().equals(sender);
  *
  * // the same answer, and the account never leaves
- * boolean ok = loch.check(handle, OWNED_BY, sender).isTrue();
+ * boolean ok = loch.ask(handle, OWNED_BY, sender).isTrue();
  * }</pre>
  *
- * <p>The design target is that most callers never dereference anything.
+ * <p>The oldest form of this is a key you may use but not read: PKCS#11's non-extractable keys, and
+ * every HSM since. A password hash is the everyday one -- {@code checkpw(candidate, hash)} answers
+ * yes or no and there is no {@code read()}.
  *
- * <p>A check reads plaintext in order to answer, so it is a destination like any other and passes
- * the same gate. It also leaks exactly one bit per call by construction, which is the honest reason
- * a ceiling still applies: a thousand checks against a thousand guesses is a thousand bits.
+ * <p><b>Why the answer must be a boolean.</b> Not because small is tidy. Everything else that comes
+ * out of a held value is governed: a derivation produces a labelled value, a dereference is checked
+ * against a destination. An answer is neither -- it escapes unlabelled and ungated, straight to the
+ * caller. So the rule is that <i>anything escaping unlabelled must be too small to be the
+ * value</i>, and anything richer becomes a derived value instead, where it gets a label and a gate.
+ * Wanting four digits is a derivation; wanting to know whether an account belongs to the sender is
+ * this.
+ *
+ * <p><b>And why a bounded answer is still not free.</b> One bit per call is small; a thousand calls
+ * is not. That is the tracker attack, studied in statistical databases long before anyone needed it
+ * here -- Denning, Denning and Schwartz (1979), and Denning and Schlörer on inference controls
+ * (1983) -- where a sequence of individually harmless aggregate queries reconstructs the record. A
+ * ceiling and an audit line per call are this library's inference control, and that is what they
+ * should be called.
+ *
+ * <p>A question reads plaintext in order to answer, so it is a destination like any other and
+ * passes the same gate.
  *
  * @param <A> the application's label type
  * @param <I> the kind of value this asks about
  * @param <Q> what the caller supplies to ask it
  */
-public interface Check<A, I, Q> {
+public interface Question<A, I, Q> {
 
-  CheckId<I, Q> id();
+  QuestionId<I, Q> id();
 
   TypeRef<I> inputType();
 
@@ -74,18 +95,18 @@ public interface Check<A, I, Q> {
 
   /** Declares one. Always at wiring; never at a call site. */
   static <A, I, Q> Builder<A, I, Q> of(
-      CheckId<I, Q> id, Class<I> inputType, BiPredicate<I, Q> test) {
+      QuestionId<I, Q> id, Class<I> inputType, BiPredicate<I, Q> test) {
     return of(id, TypeRef.of(inputType), test);
   }
 
   /** For a question about a generic container. */
   static <A, I, Q> Builder<A, I, Q> of(
-      CheckId<I, Q> id, TypeRef<I> inputType, BiPredicate<I, Q> test) {
+      QuestionId<I, Q> id, TypeRef<I> inputType, BiPredicate<I, Q> test) {
     return new Builder<>(id, inputType, (value, question, context) -> test.test(value, question));
   }
 
   /** Declares one that also reads the access context. */
-  static <A, I, Q> Builder<A, I, Q> of(CheckId<I, Q> id, Class<I> inputType, Asking<I, Q> test) {
+  static <A, I, Q> Builder<A, I, Q> of(QuestionId<I, Q> id, Class<I> inputType, Asking<I, Q> test) {
     return new Builder<>(id, TypeRef.of(inputType), test);
   }
 
@@ -98,13 +119,13 @@ public interface Check<A, I, Q> {
   /** Collects the optional parts. */
   final class Builder<A, I, Q> {
 
-    private final CheckId<I, Q> id;
+    private final QuestionId<I, Q> id;
     private final TypeRef<I> inputType;
     private final Asking<I, Q> test;
     private java.util.function.Function<AccessContext, A> ceiling;
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
-    private Builder(CheckId<I, Q> id, TypeRef<I> inputType, Asking<I, Q> test) {
+    private Builder(QuestionId<I, Q> id, TypeRef<I> inputType, Asking<I, Q> test) {
       this.id = id;
       this.inputType = inputType;
       this.test = test;
@@ -126,12 +147,12 @@ public interface Check<A, I, Q> {
       return this;
     }
 
-    public Check<A, I, Q> build() {
+    public Question<A, I, Q> build() {
       java.util.function.Function<AccessContext, A> theCeiling = ceiling;
       java.util.function.Predicate<AccessContext> theAvailability = availableTo;
-      return new Check<>() {
+      return new Question<>() {
         @Override
-        public CheckId<I, Q> id() {
+        public QuestionId<I, Q> id() {
           return id;
         }
 

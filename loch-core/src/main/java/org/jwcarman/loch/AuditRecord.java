@@ -56,7 +56,7 @@ public record AuditRecord(
     /** A new value was made from one already held. */
     DERIVE,
     /** A question was answered about a value without the value leaving. */
-    CHECK,
+    ASK,
     /** A value and everything derived from it were removed. */
     ERASE
   }

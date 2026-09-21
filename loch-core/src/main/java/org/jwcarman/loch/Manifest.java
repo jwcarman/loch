@@ -35,7 +35,7 @@ public record Manifest(
     List<Entry> destinations,
     List<Entry> derivations,
     List<Entry> folds,
-    List<Entry> checks) {
+    List<Entry> questions) {
 
   /**
    * One line of the report.
@@ -48,7 +48,7 @@ public record Manifest(
     destinations = List.copyOf(destinations);
     derivations = List.copyOf(derivations);
     folds = List.copyOf(folds);
-    checks = List.copyOf(checks);
+    questions = List.copyOf(questions);
   }
 
   /**
@@ -77,7 +77,7 @@ public record Manifest(
     }
     section(lines, "derivations", derivations, "  no value can be made from another");
     section(lines, "folds", folds, "  no value can be made from several others");
-    section(lines, "checks", checks, "  no question can be asked without taking the value");
+    section(lines, "questions", questions, "  no question can be asked without taking the value");
     lines.add("");
     List<Entry> weakening = weakening();
     lines.add("  " + weakening.size() + " operation(s) can WEAKEN a label:");

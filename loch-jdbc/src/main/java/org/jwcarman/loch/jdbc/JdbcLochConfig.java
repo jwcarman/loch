@@ -19,12 +19,14 @@ import java.util.Objects;
 import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
+import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
-import org.jwcarman.loch.Check;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Destination;
 import org.jwcarman.loch.DestinationId;
+import org.jwcarman.loch.Fold;
 import org.jwcarman.loch.LochConfig;
+import org.jwcarman.loch.Question;
 import org.jwcarman.loch.lattice.Lattice;
 
 /**
@@ -137,8 +139,27 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
   }
 
   @Override
-  public JdbcLochConfig<A> check(Check<A, ?, ?> check) {
-    super.check(check);
+  public JdbcLochConfig<A> question(Question<A, ?, ?> question) {
+    super.question(question);
+    return this;
+  }
+
+  @Override
+  public JdbcLochConfig<A> fold(Fold<A, ?, ?> fold) {
+    super.fold(fold);
+    return this;
+  }
+
+  /** Re-declared because this config does not inherit the fluent return type. */
+  @Override
+  public JdbcLochConfig<A> askingWhoIsAsking(java.util.function.Supplier<AccessContext> ambient) {
+    super.askingWhoIsAsking(ambient);
+    return this;
+  }
+
+  @Override
+  public JdbcLochConfig<A> callerMayContribute(String... keys) {
+    super.callerMayContribute(keys);
     return this;
   }
 

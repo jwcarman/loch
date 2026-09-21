@@ -51,7 +51,7 @@ public class DisputeService {
 
   /** Does the message mention this? Answered without the message leaving the store. */
   public boolean mentions(HandleId mail, String text) {
-    return loch.check(Handle.of(mail, Domain.Mail.class), Billing.MAIL_MENTIONS, text).isTrue();
+    return loch.ask(Handle.of(mail, Domain.Mail.class), Billing.MAIL_MENTIONS, text).isTrue();
   }
 
   /**

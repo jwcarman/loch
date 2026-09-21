@@ -22,17 +22,17 @@ import java.util.Objects;
  *
  * <p>Inert, like every reference here: the question's implementation lives in the registry.
  */
-public record CheckId<I, Q>(String value) {
+public record QuestionId<I, Q>(String value) {
 
-  public CheckId {
+  public QuestionId {
     Objects.requireNonNull(value, "a check needs a name");
     if (value.isBlank()) {
       throw new IllegalArgumentException("a check's name cannot be blank");
     }
   }
 
-  public static <I, Q> CheckId<I, Q> of(String value) {
-    return new CheckId<>(value);
+  public static <I, Q> QuestionId<I, Q> of(String value) {
+    return new QuestionId<>(value);
   }
 
   @Override

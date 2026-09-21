@@ -38,7 +38,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final Lattice<A> lattice;
   private final Map<DestinationId, Destination<A>> destinations;
   private final Map<String, Derivation<A, ?, ?>> derivations;
-  private final Map<String, Check<A, ?, ?>> checks;
+  private final Map<String, Question<A, ?, ?>> questions;
   private final Map<String, Fold<A, ?, ?>> folds;
   private final boolean explainRefusals;
   private final Auditor auditor;
@@ -65,13 +65,13 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
     this.derivations = Collections.unmodifiableMap(byName);
-    Map<String, Check<A, ?, ?>> byCheck = new LinkedHashMap<>();
-    for (Check<A, ?, ?> check : config.checks()) {
-      if (byCheck.put(check.id().value(), check) != null) {
-        throw new IllegalStateException("two checks are registered as '" + check.id() + "'");
+    Map<String, Question<A, ?, ?>> byQuestion = new LinkedHashMap<>();
+    for (Question<A, ?, ?> question : config.questions()) {
+      if (byQuestion.put(question.id().value(), question) != null) {
+        throw new IllegalStateException("two questions are registered as '" + question.id() + "'");
       }
     }
-    this.checks = Collections.unmodifiableMap(byCheck);
+    this.questions = Collections.unmodifiableMap(byQuestion);
     Map<String, Fold<A, ?, ?>> byFold = new LinkedHashMap<>();
     for (Fold<A, ?, ?> fold : config.folds()) {
       if (byFold.put(fold.id().value(), fold) != null) {
@@ -219,13 +219,13 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public <I, Q> Answer check(Handle<I> held, CheckId<I, Q> id, Q question, AccessContext context) {
+  public <I, Q> Answer ask(Handle<I> held, QuestionId<I, Q> id, Q against, AccessContext context) {
     AccessContext asking = asking(context);
     AtomicReference<A> label = new AtomicReference<>();
-    Answer answer = checking(held, id, question, asking, label);
+    Answer answer = answering(held, id, against, asking, label);
     if (answer instanceof Answer.Refused refused) {
       audit(
-          AuditRecord.Operation.CHECK,
+          AuditRecord.Operation.ASK,
           held.id(),
           id.value(),
           AuditRecord.Outcome.REFUSED,
@@ -237,18 +237,18 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @SuppressWarnings("unchecked")
-  private <I, Q> Answer checking(
+  private <I, Q> Answer answering(
       Handle<I> held,
-      CheckId<I, Q> id,
-      Q question,
+      QuestionId<I, Q> id,
+      Q against,
       AccessContext context,
       AtomicReference<A> refused) {
-    Check<A, I, Q> check = (Check<A, I, Q>) checks.get(id.value());
-    if (check == null) {
+    Question<A, I, Q> asked = (Question<A, I, Q>) questions.get(id.value());
+    if (asked == null) {
       return new Answer.Refused(
-          Answer.Reason.NO_SUCH_CHECK, "no check is registered as '" + id + "'");
+          Answer.Reason.NO_SUCH_QUESTION, "no question is registered as '" + id + "'");
     }
-    if (!check.availableTo(context)) {
+    if (!asked.availableTo(context)) {
       return new Answer.Refused(
           Answer.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
@@ -258,13 +258,13 @@ public final class DefaultLoch<A> implements Loch<A> {
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
     refused.set(entry.label());
-    if (!entry.typeName().equals(nameOf(check.inputType()))) {
+    if (!entry.typeName().equals(nameOf(asked.inputType()))) {
       return new Answer.Refused(
           Answer.Reason.WRONG_TYPE,
           "'%s' asks about a %s, but %s is a %s"
-              .formatted(id, nameOf(check.inputType()), held.id(), entry.typeName()));
+              .formatted(id, nameOf(asked.inputType()), held.id(), entry.typeName()));
     }
-    Optional<A> ceiling = check.ceiling(context);
+    Optional<A> ceiling = asked.ceiling(context);
     if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
@@ -274,15 +274,15 @@ public final class DefaultLoch<A> implements Loch<A> {
               + "'"
               + explain(entry.label(), ceiling.get()));
     }
-    I subject = storage.value(held.id(), check.inputType()).orElse(null);
+    I subject = storage.value(held.id(), asked.inputType()).orElse(null);
     if (subject == null) {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this loch is not holding " + held.id());
     }
-    boolean answer = check.test(subject, question, context);
-    // The answer, never the question: what was asked can itself be sensitive.
+    boolean answer = asked.test(subject, against, context);
+    // The answer, never what was asked: the argument can itself be sensitive.
     audit(
-        AuditRecord.Operation.CHECK,
+        AuditRecord.Operation.ASK,
         held.id(),
         id.value(),
         AuditRecord.Outcome.ALLOWED,
@@ -332,14 +332,16 @@ public final class DefaultLoch<A> implements Loch<A> {
                             fold.inputType().rawClass().getSimpleName(),
                             fold.outputType().rawClass().getSimpleName()),
                     fold.privileged())));
-    List<Manifest.Entry> theChecks = new ArrayList<>();
-    checks.forEach(
-        (name, check) ->
-            theChecks.add(
+    List<Manifest.Entry> theQuestions = new ArrayList<>();
+    questions.forEach(
+        (name, question) ->
+            theQuestions.add(
                 new Manifest.Entry(
-                    name, "asks about a " + check.inputType().rawClass().getSimpleName(), false)));
+                    name,
+                    "asks about a " + question.inputType().rawClass().getSimpleName(),
+                    false)));
     return new Manifest(
-        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theFolds, theChecks);
+        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theFolds, theQuestions);
   }
 
   @Override

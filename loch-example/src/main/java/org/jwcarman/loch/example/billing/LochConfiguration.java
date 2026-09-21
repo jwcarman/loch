@@ -34,10 +34,10 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
 import org.jwcarman.loch.Auditor;
-import org.jwcarman.loch.Check;
 import org.jwcarman.loch.Derivations;
 import org.jwcarman.loch.Destinations;
 import org.jwcarman.loch.Loch;
+import org.jwcarman.loch.Question;
 import org.jwcarman.loch.jdbc.Compression;
 import org.jwcarman.loch.jdbc.JdbcLoch;
 import org.jwcarman.loch.jdbc.StorageCodec;
@@ -124,8 +124,8 @@ public class LochConfiguration {
                         .build())
 
                 // ---- questions answered without handing the value over ------------------
-                .check(
-                    Check.<BillingLabels, Domain.Mail, String>of(
+                .question(
+                    Question.<BillingLabels, Domain.Mail, String>of(
                             Billing.MAIL_MENTIONS,
                             Domain.Mail.class,
                             (mail, text) -> mail.body().toLowerCase().contains(text.toLowerCase()))
