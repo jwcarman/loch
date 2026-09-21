@@ -39,10 +39,39 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 public final class MemoryStorage<A> implements Storage<A> {
 
+  private final java.util.List<AuditRecord> audit =
+      java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+  /** Everything recorded so far, oldest first. The in-memory equivalent of the audit table. */
+  public java.util.List<AuditRecord> audit() {
+    return java.util.List.copyOf(audit);
+  }
+
+  /** Just the lines for one kind of operation, oldest first. */
+  public java.util.List<AuditRecord> audit(AuditRecord.Operation operation) {
+    return audit().stream().filter(entry -> entry.operation() == operation).toList();
+  }
+
+  /**
+   * Forgets the trail so far.
+   *
+   * <p>For tests that want to watch one operation without the setup that preceded it. A durable
+   * loch has no equivalent, and deliberately: the trail is the thing that must not be erasable.
+   */
+  public void clearAudit() {
+    audit.clear();
+  }
+
+  @Override
+  public void record(AuditRecord entry) {
+    audit.add(entry);
+  }
+
   private final Map<String, StoredValue<A>> values = new ConcurrentHashMap<>();
 
   @Override
-  public void put(String id, StoredValue<A> value) {
+  public void put(String id, StoredValue<A> value, AuditRecord record) {
+    record(record);
     values.put(id, value);
   }
 

@@ -40,7 +40,6 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final List<DerivationSpec<A, ?>> derivations;
   private final List<QuerySpec<A, ?, ?>> queries;
   private final boolean explainRefusals;
-  private final Auditor auditor;
   private final java.util.function.Supplier<AccessContext> ambient;
   private final java.util.Set<String> callerMayContribute;
   private final java.util.function.BiPredicate<A, AccessContext> mayErase;
@@ -67,7 +66,6 @@ public final class DefaultLoch<A> implements Loch<A> {
     this.derivations = List.copyOf(config.derivations());
     this.queries = List.copyOf(config.queries());
     this.explainRefusals = config.explainsRefusals();
-    this.auditor = config.auditor();
     this.ambient = config.ambient();
     this.callerMayContribute = config.callerMayContribute();
     this.mayErase = config.mayErase();
@@ -111,11 +109,18 @@ public final class DefaultLoch<A> implements Loch<A> {
           "INLET_CANNOT_LABEL", "'" + source + "' could not say what it labels values");
     }
     String id = freshId();
-    // Recorded before it is stored, for the reason given in hold(...): an auditor that throws must
-    // leave nothing behind. The source is named, so the record says which door this came in
-    // through.
-    audit(AuditRecord.Operation.HOLD, id, source, AuditRecord.Outcome.ALLOWED, null, label, asking);
-    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
+    // One act: the value and the record that it arrived. The source is named, so the record says
+    // which door it came in through.
+    AuditRecord entry =
+        entry(
+            AuditRecord.Operation.HOLD,
+            id,
+            source,
+            AuditRecord.Outcome.ALLOWED,
+            null,
+            label,
+            asking);
+    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()), entry);
     return new Surrogate<>(id);
   }
 
@@ -173,6 +178,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    * <p>A control whose log is silently dropping entries still produces the report, so an access
    * that cannot be audited does not happen.
    */
+  /** Writes the record. There is no way to turn this off, which is the point of it. */
   private void audit(
       AuditRecord.Operation operation,
       String value,
@@ -181,16 +187,26 @@ public final class DefaultLoch<A> implements Loch<A> {
       String reason,
       A label,
       AccessContext context) {
-    auditor.record(
-        new AuditRecord(
-            Instant.now(),
-            operation,
-            value,
-            Optional.ofNullable(target),
-            outcome,
-            Optional.ofNullable(reason),
-            Optional.ofNullable(label).map(Object::toString),
-            context.attributes()));
+    storage.record(entry(operation, value, target, outcome, reason, label, context));
+  }
+
+  private AuditRecord entry(
+      AuditRecord.Operation operation,
+      String value,
+      String target,
+      AuditRecord.Outcome outcome,
+      String reason,
+      A label,
+      AccessContext context) {
+    return new AuditRecord(
+        Instant.now(),
+        operation,
+        value,
+        Optional.ofNullable(target),
+        outcome,
+        Optional.ofNullable(reason),
+        Optional.ofNullable(label).map(Object::toString),
+        context.attributes());
   }
 
   private <T> Dereferenced<T> denied(
@@ -538,18 +554,20 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     String newId = freshId();
-    audit(
-        AuditRecord.Operation.DERIVE,
-        newId,
-        id,
-        AuditRecord.Outcome.ALLOWED,
-        reasonFor(spec, joined, parentIds.size()),
-        label,
-        context);
+    AuditRecord entry =
+        entry(
+            AuditRecord.Operation.DERIVE,
+            newId,
+            id,
+            AuditRecord.Outcome.ALLOWED,
+            reasonFor(spec, joined, parentIds.size()),
+            label,
+            context);
     storage.put(
         newId,
         new StoredValue<>(
-            produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)));
+            produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
+        entry);
     return new Derived.Made<>(new Surrogate<>(newId));
   }
 

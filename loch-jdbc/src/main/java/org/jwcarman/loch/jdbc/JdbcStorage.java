@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch.jdbc;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +36,7 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.loch.AuditRecord;
 import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.StoredMetadata;
@@ -56,6 +59,12 @@ import org.jwcarman.loch.StoredValue;
  * so erasing a value and everything made from it is one indexed query.
  */
 public final class JdbcStorage<A> implements Storage<A> {
+
+  private static final String INSERT_AUDIT =
+      """
+      INSERT INTO loch_audit (at, operation, value_id, target, outcome, reason, label, who)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      """;
 
   private static final String INSERT_VALUE =
       """
@@ -125,13 +134,14 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public void put(String id, StoredValue<A> value) {
+  public void put(String id, StoredValue<A> value, AuditRecord record) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
       try {
         insertValue(connection, id, value);
         insertLineage(connection, id, value.lineage());
+        insertAudit(connection, record);
         connection.commit();
       } catch (SQLException | RuntimeException e) {
         connection.rollback();
@@ -141,6 +151,36 @@ public final class JdbcStorage<A> implements Storage<A> {
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not store " + id, e);
+    }
+  }
+
+  @Override
+  public void record(AuditRecord entry) {
+    try (Connection connection = dataSource.getConnection()) {
+      insertAudit(connection, entry);
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not record " + entry.operation(), e);
+    }
+  }
+
+  /**
+   * Writes one line of the trail.
+   *
+   * <p>The label is encrypted and everything else is not, for the reason set out in the schema: a
+   * trail nobody can query is a tape backup, and a label names a tenant.
+   */
+  private void insertAudit(Connection connection, AuditRecord entry) throws SQLException {
+    try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
+      statement.setTimestamp(1, Timestamp.from(entry.at()));
+      statement.setString(2, entry.operation().name());
+      statement.setString(3, entry.value());
+      statement.setString(4, entry.target().orElse(null));
+      statement.setString(5, entry.outcome().name());
+      statement.setString(6, entry.reason().orElse(null));
+      statement.setBytes(
+          7, entry.label().map(label -> storageCodec.encode(label.getBytes(UTF_8))).orElse(null));
+      statement.setString(8, entry.context().toString());
+      statement.executeUpdate();
     }
   }
 

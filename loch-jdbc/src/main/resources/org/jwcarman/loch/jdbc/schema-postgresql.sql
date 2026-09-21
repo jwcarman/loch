@@ -35,3 +35,30 @@ CREATE TABLE IF NOT EXISTS loch_lineage_closure (
 
 CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
   ON loch_lineage_closure (descendant_id);
+
+-- Every access, allowed or refused, written in the same transaction as the value it concerns.
+--
+-- Deliberately NOT a child of loch_value: no foreign key, no cascade. Erasing a customer removes
+-- their values and everything derived from them, and the record that it happened has to survive
+-- that, or the system cannot prove it did the thing it was legally required to do. The audit
+-- outlives what it describes.
+--
+-- Most of this is in the clear, unlike loch_value. An audit trail nobody can query is a tape
+-- backup: answering "who touched this value", "what did this user do", "how many refusals in the
+-- last hour" needs indexes on real columns. The label is the exception and is encrypted like the
+-- one on loch_value, for the same reason -- a label names a tenant, and the label column would
+-- otherwise describe every value in the system to anyone who could read this table.
+CREATE TABLE IF NOT EXISTS loch_audit (
+  entry_id    BIGSERIAL PRIMARY KEY,
+  at          TIMESTAMPTZ NOT NULL,
+  operation   TEXT        NOT NULL,
+  value_id    TEXT,
+  target      TEXT,
+  outcome     TEXT        NOT NULL,
+  reason      TEXT,
+  label       BYTEA,
+  who         TEXT        NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS loch_audit_value ON loch_audit (value_id);
+CREATE INDEX IF NOT EXISTS loch_audit_at ON loch_audit (at);

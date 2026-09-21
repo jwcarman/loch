@@ -20,7 +20,6 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.LochConfig;
 import org.jwcarman.loch.lattice.Lattice;
 
@@ -94,18 +93,6 @@ public final class JdbcLochConfig<A, D> extends LochConfig<A, D> {
   @Override
   public JdbcLochConfig<A, D> lattice(Lattice<A> lattice) {
     super.lattice(lattice);
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A, D> auditor(Auditor auditor) {
-    super.auditor(auditor);
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A, D> withoutAudit() {
-    super.withoutAudit();
     return this;
   }
 

@@ -27,7 +27,6 @@ import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Query;
@@ -76,8 +75,7 @@ public class LochConfiguration {
   private final Derivation<Domain.Invoice, Domain.Last4> cardLast4;
   private final Query<Domain.Mail, String> mailMentions;
 
-  public LochConfiguration(
-      DataSource dataSource, StorageCodec storageCodec, Auditor auditor, Invoices invoices) {
+  public LochConfiguration(DataSource dataSource, StorageCodec storageCodec, Invoices invoices) {
 
     // The domain bound is the second parameter. Source<String> would not compile.
     JdbcLochConfig<BillingLabels, Domain.BillingValue> c = new JdbcLochConfig<>();
@@ -85,7 +83,6 @@ public class LochConfiguration {
         .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
         .storedThrough(storageCodec)
         .lattice(BillingLabels.LATTICE)
-        .auditor(auditor)
         .askingWhoIsAsking(CurrentAccess::get);
 
     // ---- how values get in -----------------------------------------------------

@@ -60,10 +60,7 @@ class LabellingWhatArrivesTest {
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
   private final LochConfig<Labels, Object> config =
-      new LochConfig<Labels, Object>()
-          .lattice(Labels.LATTICE)
-          .withoutAudit()
-          .askingWhoIsAsking(edge::get);
+      new LochConfig<Labels, Object>().lattice(Labels.LATTICE).askingWhoIsAsking(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final SurrogateSource<Mail> mail =

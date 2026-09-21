@@ -21,7 +21,6 @@ import javax.crypto.spec.SecretKeySpec;
 import org.jwcarman.codec.crypto.EnvelopeCodec;
 import org.jwcarman.codec.crypto.JceDataKeyProvider;
 import org.jwcarman.codec.transform.compress.GzipCodec;
-import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.jdbc.Compression;
 import org.jwcarman.loch.jdbc.StorageCodec;
 import org.slf4j.Logger;
@@ -43,12 +42,6 @@ import org.springframework.context.annotation.Configuration;
 public class StorageConfiguration {
 
   private static final Logger log = LoggerFactory.getLogger(StorageConfiguration.class);
-
-  /** Every access, allowed or refused, ends up here. */
-  @Bean
-  public Auditor auditor() {
-    return record -> log.info("[loch] {}", record);
-  }
 
   @Bean
   public StorageCodec storageCodec(@Value("${billing.key}") String key) {

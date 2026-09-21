@@ -17,8 +17,6 @@ package org.jwcarman.loch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayList;
-import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.loch.lattice.Exact;
@@ -38,10 +36,10 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A policy that cannot decide")
 class PolicyThatCannotDecideTest {
 
-  private final List<AuditRecord> audit = new ArrayList<>();
+  private final MemoryStorage<Exact<String>> storage = new MemoryStorage<>();
 
   private final LochConfig<Exact<String>, Object> config =
-      new LochConfig<Exact<String>, Object>().lattice(Lattices.exact()).auditor(audit::add);
+      new LochConfig<Exact<String>, Object>().lattice(Lattices.exact());
 
   private final SurrogateSource<String> source =
       config.source("source", String.class, ctx -> Exact.of("acme"));
@@ -81,7 +79,7 @@ class PolicyThatCannotDecideTest {
           .acceptingAnything()
           .mint();
 
-  private final Loch<Exact<String>> loch = MemoryLoch.create(config);
+  private final Loch<Exact<String>> loch = new DefaultLoch<>(config, storage);
 
   private final Surrogate<String> held = source.exchange("secret");
 
@@ -143,14 +141,14 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("that fails after reading the value still leaves a line in the record")
   void that_fails_after_reading_still_leaves_a_line() {
-    audit.clear();
+    storage.clearAudit();
 
     Derived<String> result = functionThrows.derive(held);
 
     assertThat(result.made()).isEmpty();
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.DECLINED);
-    assertThat(audit).isNotEmpty();
-    assertThat(audit)
+    assertThat(storage.audit()).isNotEmpty();
+    assertThat(storage.audit())
         .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }
 
@@ -158,7 +156,7 @@ class PolicyThatCannotDecideTest {
   @Test
   @DisplayName("is recorded as a refusal, never raised as an exception")
   void is_recorded_as_a_refusal() {
-    audit.clear();
+    storage.clearAudit();
 
     sinkWhoseCeilingThrows.exchange(held);
     queryWhoseCeilingThrows.ask(held, "secret");
@@ -166,8 +164,8 @@ class PolicyThatCannotDecideTest {
     derivationWhoseCeilingThrows.derive(held);
     loweringThrows.derive(held);
 
-    assertThat(audit).hasSize(5);
-    assertThat(audit)
+    assertThat(storage.audit()).hasSize(5);
+    assertThat(storage.audit())
         .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }
 }

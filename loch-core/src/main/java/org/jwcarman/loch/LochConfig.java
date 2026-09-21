@@ -34,7 +34,6 @@ public class LochConfig<A, D> {
 
   private Lattice<A> lattice;
   private boolean explainRefusals;
-  private Auditor auditor;
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
@@ -585,23 +584,6 @@ public class LochConfig<A, D> {
   }
 
   /**
-   * Where the record of every access goes. Required, or say {@link #withoutAudit()}.
-   *
-   * <p>There is no default. A governance control that quietly keeps no record still produces the
-   * report, which is worse than not having it, so which of the two you want is a decision rather
-   * than an omission.
-   */
-  public LochConfig<A, D> auditor(Auditor auditor) {
-    this.auditor = Objects.requireNonNull(auditor, "an auditor must not be null");
-    return this;
-  }
-
-  /** Keeps no record, on purpose and in writing. */
-  public LochConfig<A, D> withoutAudit() {
-    return auditor(Auditors.discarding());
-  }
-
-  /**
    * Where a loch finds out who is asking, when a caller has not said.
    *
    * <p>Identity is known at the edge -- a request, a message, a session -- and needed at the gate,
@@ -678,15 +660,6 @@ public class LochConfig<A, D> {
 
   java.util.function.BiPredicate<A, AccessContext> mayErase() {
     return mayErase;
-  }
-
-  Auditor auditor() {
-    if (auditor == null) {
-      throw new IllegalStateException(
-          "a loch needs an auditor: call auditor(...) with somewhere to record accesses, or"
-              + " withoutAudit() if you really mean to keep no record");
-    }
-    return auditor;
   }
 
   Lattice<A> lattice() {

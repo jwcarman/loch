@@ -61,7 +61,6 @@ class ErasingAcrossTenantsTest {
     LochConfig<Labels, Object> config =
         new LochConfig<Labels, Object>()
             .lattice(Labels.LATTICE)
-            .withoutAudit()
             .askingWhoIsAsking(edge::get)
             .mayErase(
                 (label, ctx) ->

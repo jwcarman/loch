@@ -61,10 +61,7 @@ class WritingAtAnothersLabelTest {
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
   private final LochConfig<Labels, Value> config =
-      new LochConfig<Labels, Value>()
-          .lattice(Labels.LATTICE)
-          .withoutAudit()
-          .askingWhoIsAsking(edge::get);
+      new LochConfig<Labels, Value>().lattice(Labels.LATTICE).askingWhoIsAsking(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final SurrogateSource<Note> notes =

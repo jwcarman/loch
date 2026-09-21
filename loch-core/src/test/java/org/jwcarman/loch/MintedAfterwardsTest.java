@@ -48,7 +48,7 @@ class MintedAfterwardsTest {
   record Token(String value) implements Value {}
 
   private final LochConfig<Exact<String>, Value> config =
-      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact()).withoutAudit();
+      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   private final SurrogateSource<Token> acmeTokens =
       config.source("acme-tokens", Token.class, ctx -> Exact.of("acme"));

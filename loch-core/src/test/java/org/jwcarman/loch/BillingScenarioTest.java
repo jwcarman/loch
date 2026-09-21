@@ -174,7 +174,7 @@ class BillingScenarioTest {
   private static final String DECLINES = "DisputeClaim.alwaysDeclines";
   private static final String WISHFUL = "DisputeClaim.invoiceNumber.trustMe";
 
-  private final Auditors.Recording audit = Auditors.recording();
+  private final MemoryStorage<Billing> storage = new MemoryStorage<>();
 
   /**
    * Standing in for the edge: a request, a message header, a session.
@@ -187,10 +187,7 @@ class BillingScenarioTest {
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
   private final LochConfig<Billing, Object> config =
-      new LochConfig<Billing, Object>()
-          .lattice(Billing.LATTICE)
-          .auditor(audit)
-          .askingWhoIsAsking(edge::get);
+      new LochConfig<Billing, Object>().lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -376,7 +373,7 @@ class BillingScenarioTest {
           .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
           .mint();
 
-  private final Loch<Billing> loch = MemoryLoch.create(config);
+  private final Loch<Billing> loch = new DefaultLoch<>(config, storage);
 
   /** Every access in this system is made on behalf of a tenant, established at the edge. */
   private AccessContext acme() {
@@ -962,7 +959,7 @@ class BillingScenarioTest {
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
       LochConfig<Billing, Object> choosyConfig = new LochConfig<>();
-      choosyConfig.lattice(Billing.LATTICE).withoutAudit().askingWhoIsAsking(edge::get);
+      choosyConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
       SurrogateSource<Account> secretAccounts =
           choosyConfig.source(
               "secret-accounts",
@@ -1009,11 +1006,7 @@ class BillingScenarioTest {
     @DisplayName("unless the application asks for the explanation")
     void unless_the_application_asks_for_the_explanation() {
       LochConfig<Billing, Object> chattyConfig = new LochConfig<>();
-      chattyConfig
-          .lattice(Billing.LATTICE)
-          .withoutAudit()
-          .askingWhoIsAsking(edge::get)
-          .explainRefusals();
+      chattyConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get).explainRefusals();
       SurrogateSource<String> chattyMail =
           chattyConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
       SurrogateSink<String> chattyVendorLlm =
@@ -1036,7 +1029,7 @@ class BillingScenarioTest {
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
       LochConfig<Billing, Object> fragileConfig = new LochConfig<>();
-      fragileConfig.lattice(Billing.LATTICE).withoutAudit().askingWhoIsAsking(edge::get);
+      fragileConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
       SurrogateSource<String> fragileMail =
           fragileConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
       SurrogateSink<String> broken =
@@ -1066,7 +1059,7 @@ class BillingScenarioTest {
     void says_who_reached_what_and_never_the_value() {
       quarantinedLlmText.exchange(customerEmail(), acme());
 
-      AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED);
       assertThat(entry.target()).contains("quarantined-llm");
       assertThat(entry.context()).containsEntry("tenant", "acme");
@@ -1079,7 +1072,7 @@ class BillingScenarioTest {
     void records_refusals_as_carefully_as_permissions() {
       vendorLlmText.exchange(customerEmail(), acme());
 
-      AuditRecord entry = audit.of(AuditRecord.Operation.DEREFERENCE).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
       assertThat(entry.reason()).contains("ABOVE_CEILING");
     }
@@ -1089,7 +1082,7 @@ class BillingScenarioTest {
     void records_holding() {
       Surrogate<String> email = customerEmail();
 
-      assertThat(audit.of(AuditRecord.Operation.HOLD))
+      assertThat(storage.audit(AuditRecord.Operation.HOLD))
           .anySatisfy(entry -> assertThat(entry.value()).isEqualTo(email.id()));
     }
 
@@ -1104,7 +1097,7 @@ class BillingScenarioTest {
 
       ownedBy.ask(account, "someone@acme.example", acme());
 
-      AuditRecord entry = audit.of(AuditRecord.Operation.ASK).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.ASK).getLast();
       assertThat(entry.reason()).contains("answered true");
       assertThat(entry.toString()).doesNotContain("someone@acme.example");
     }
@@ -1121,7 +1114,7 @@ class BillingScenarioTest {
 
       cardLast4.derive(token, acme("tool", "prepare_approval"));
 
-      AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.reason()).hasValueSatisfying(r -> assertThat(r).startsWith("weakened from"));
       assertThat(entry.target()).contains("Card.last4");
     }
@@ -1137,7 +1130,7 @@ class BillingScenarioTest {
 
       claimedInvoice.derive(claim, acme());
 
-      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
+      assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
     }
 
     @Test
@@ -1150,42 +1143,59 @@ class BillingScenarioTest {
 
       summarise.fold(java.util.List.of(first, second), acme());
 
-      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason())
+      assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().reason())
           .contains("combined from 2 values");
     }
 
     /**
-     * A control whose log is quietly failing still produces the report.
+     * A control whose record is quietly failing still produces the report.
      *
-     * <p>And nothing is left behind: the record is written before the value is stored, because the
-     * other order commits a secret durably under an id the caller never receives.
+     * <p>Nothing is left behind either. The value and the line saying it arrived are written as one
+     * act, so a store that cannot record leaves no value. The other outcome -- a secret committed
+     * durably under an id nobody received, that nothing can reach, read or erase -- is the one this
+     * is here to prevent.
      */
     @Test
-    @DisplayName("an access that cannot be audited does not happen, and stores nothing")
-    void an_access_that_cannot_be_audited_does_not_happen() {
-      LochConfig<Billing, Object> unloggableConfig = new LochConfig<>();
-      unloggableConfig
-          .lattice(Billing.LATTICE)
-          .askingWhoIsAsking(edge::get)
-          .auditor(
-              record -> {
-                throw new IllegalStateException("the audit sink is down");
-              });
-      unloggableConfig.sink(
-          "quarantined-llm",
-          String.class,
-          ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
-      Loch<Billing> unloggable = MemoryLoch.create(unloggableConfig);
-
-      LochConfig<Billing, Object> watchedConfig =
-          configuredTo(
-              record -> {
-                throw new IllegalStateException("the audit sink is down");
-              });
+    @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
+    void an_access_that_cannot_be_recorded_does_not_happen() {
+      LochConfig<Billing, Object> watchedConfig = new LochConfig<>();
+      watchedConfig.lattice(Billing.LATTICE).askingWhoIsAsking(edge::get);
       SurrogateSource<String> watchedMail =
           watchedConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
-      MemoryStorage<Billing> storage = new MemoryStorage<>();
-      Loch<Billing> watched = new DefaultLoch<>(watchedConfig, storage);
+      MemoryStorage<Billing> kept = new MemoryStorage<>();
+      Storage<Billing> broken =
+          new Storage<>() {
+            @Override
+            public void put(String id, StoredValue<Billing> value, AuditRecord record) {
+              throw new IllegalStateException("the record could not be written");
+            }
+
+            @Override
+            public void record(AuditRecord record) {
+              kept.record(record);
+            }
+
+            @Override
+            public java.util.Optional<StoredMetadata<Billing>> metadata(String id) {
+              return kept.metadata(id);
+            }
+
+            @Override
+            public <T> java.util.Optional<T> value(String id, org.jwcarman.codec.spi.TypeRef<T> t) {
+              return kept.value(id, t);
+            }
+
+            @Override
+            public boolean contains(String id) {
+              return kept.contains(id);
+            }
+
+            @Override
+            public int erase(String root) {
+              return kept.erase(root);
+            }
+          };
+      Loch<Billing> watched = new DefaultLoch<>(watchedConfig, broken);
 
       assertThatThrownBy(
               () ->
@@ -1195,24 +1205,24 @@ class BillingScenarioTest {
                       "anything"))
           .isInstanceOf(IllegalStateException.class);
 
-      // Nothing was written. The other order leaves a secret nobody can reach, read or erase.
-      assertThat(storage.everything()).isEmpty();
+      assertThat(watched.holds("anything")).isFalse();
+      assertThat(kept.everything()).isEmpty();
     }
 
+    /**
+     * There is no longer anything to say.
+     *
+     * <p>Keeping no record used to be a thing you could configure, and this asserted that you had
+     * to say so out loud rather than omit an auditor. Both are gone: the record is written by the
+     * store, so there is no switch to leave off and nothing to declare.
+     */
     @Test
-    @DisplayName("keeping no record is something you say, not something you omit")
-    void keeping_no_record_is_something_you_say() {
-      assertThatThrownBy(() -> MemoryLoch.<Billing, Object>create(c -> c.lattice(Billing.LATTICE)))
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("withoutAudit");
+    @DisplayName("keeping no record is not something you can ask for")
+    void keeping_no_record_is_not_something_you_can_ask_for() {
+      assertThat(LochConfig.class.getMethods())
+          .isNotEmpty()
+          .noneSatisfy(method -> assertThat(method.getName()).contains("udit"));
     }
-  }
-
-  /** Builds the same policy this test uses, with a chosen auditor. */
-  private LochConfig<Billing, Object> configuredTo(Auditor auditor) {
-    LochConfig<Billing, Object> config = new LochConfig<>();
-    config.lattice(Billing.LATTICE).auditor(auditor).askingWhoIsAsking(edge::get);
-    return config;
   }
 
   @Nested
@@ -1236,11 +1246,11 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a derivation that declined is recorded, because it saw the value first")
     void a_derivation_that_declined_is_recorded() {
-      audit.clear();
+      storage.clearAudit();
 
       declines.derive(claim(), acme());
 
-      assertThat(audit.of(AuditRecord.Operation.DERIVE))
+      assertThat(storage.audit(AuditRecord.Operation.DERIVE))
           .isNotEmpty()
           .anySatisfy(
               entry -> {
@@ -1259,11 +1269,11 @@ class BillingScenarioTest {
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
               cardTokens,
               "tok_1P9xyz4821");
-      audit.clear();
+      storage.clearAudit();
 
       cardLast4.derive(token, acme());
 
-      AuditRecord entry = audit.of(AuditRecord.Operation.DERIVE).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
       assertThat(entry.reason()).contains("NOT_AVAILABLE_HERE");
       assertThat(entry.label()).isEmpty();
@@ -1273,11 +1283,11 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a refusal that came after reading the value records its label")
     void a_refusal_after_reading_records_its_label() {
-      audit.clear();
+      storage.clearAudit();
 
       declines.derive(claim(), acme());
 
-      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().label())
+      assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().label())
           .hasValueSatisfying(label -> assertThat(label).contains("UNENDORSED"));
     }
 
@@ -1288,17 +1298,17 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a refused check is recorded")
     void a_refused_check_is_recorded() {
-      audit.clear();
+      storage.clearAudit();
 
       Surrogate<Account> acmeAccount =
           holdAs(
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
               accounts,
               new Account("ACC-1", "someone@acme.example"));
-      audit.clear();
+      storage.clearAudit();
       ownedBy.ask(acmeAccount, "x", globex());
 
-      assertThat(audit.of(AuditRecord.Operation.ASK))
+      assertThat(storage.audit(AuditRecord.Operation.ASK))
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -1309,11 +1319,11 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a fold refused at the gate is recorded")
     void a_fold_refused_at_the_gate_is_recorded() {
-      audit.clear();
+      storage.clearAudit();
 
       summarise.fold(java.util.List.of(), acme());
 
-      assertThat(audit.of(AuditRecord.Operation.DERIVE))
+      assertThat(storage.audit(AuditRecord.Operation.DERIVE))
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -1324,11 +1334,11 @@ class BillingScenarioTest {
     @Test
     @DisplayName("and a refusal never says what the value was")
     void a_refusal_never_says_what_the_value_was() {
-      audit.clear();
+      storage.clearAudit();
 
       declines.derive(claim(), acme());
 
-      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().toString())
+      assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().toString())
           .doesNotContain("charged twice")
           .doesNotContain("INV-4471");
     }

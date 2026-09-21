@@ -31,8 +31,22 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 public interface Storage<A> {
 
-  /** Keeps a value. */
-  void put(String id, StoredValue<A> value);
+  /**
+   * Keeps a value, and the record that it was kept, as one indivisible act.
+   *
+   * <p>Together on purpose. Written separately, a failure between them leaves either a value
+   * nothing accounts for or an account of a value that does not exist, and the second is worse: it
+   * is evidence of something that never happened.
+   */
+  void put(String id, StoredValue<A> value, AuditRecord record);
+
+  /**
+   * Keeps a record of something that stored no value: a read, a question, anything refused.
+   *
+   * <p>Most of the trail is this. A refusal produces no value at all, and refusals are what an
+   * auditor came to look at.
+   */
+  void record(AuditRecord record);
 
   /** The label, the lineage and what it was stored as -- without decoding the value. */
   Optional<StoredMetadata<A>> metadata(String id);

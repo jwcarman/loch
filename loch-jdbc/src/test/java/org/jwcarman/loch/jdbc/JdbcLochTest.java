@@ -35,7 +35,6 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.Auditors;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.Surrogate;
@@ -150,7 +149,8 @@ class JdbcLochTest {
     dataSource = pg;
     try (Connection connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
-      statement.execute("DROP TABLE IF EXISTS loch_lineage_closure, loch_lineage, loch_value");
+      statement.execute(
+          "DROP TABLE IF EXISTS loch_audit, loch_lineage_closure, loch_lineage, loch_value");
     }
 
     KeyGenerator generator = KeyGenerator.getInstance("AES");
@@ -173,8 +173,7 @@ class JdbcLochTest {
         .mayErase(
             (label, ctx) ->
                 ctx.has("role", "compliance")
-                    && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent())
-        .auditor(Auditors.discarding());
+                    && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
 
     // One source: everything this test holds is acme's cardholder data.
     cards =
@@ -336,8 +335,7 @@ class JdbcLochTest {
                         c ->
                             c.dataSource(dataSource)
                                 .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-                                .lattice(Billing.LATTICE)
-                                .withoutAudit())))
+                                .lattice(Billing.LATTICE))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("storedPlainly");
   }
@@ -346,6 +344,57 @@ class JdbcLochTest {
   private boolean dereferenceAs(String tenant, Surrogate<Card> card) {
     edge.set(AccessContext.of("tenant", tenant));
     return paymentProcessor.exchange(card).allowed();
+  }
+
+  /** The trail goes to the database, in the same transaction as the thing it describes. */
+  @Test
+  @DisplayName("writes the record beside the value it is about")
+  void writes_the_record_beside_the_value() throws SQLException {
+    assertThat(rowCount("loch_audit")).isZero();
+
+    Surrogate<Card> card = card();
+    paymentProcessor.exchange(card, acme());
+
+    // One line for taking it in, one for handing it over.
+    assertThat(rowCount("loch_audit")).isEqualTo(2);
+    assertThat(auditColumn("operation")).containsExactly("HOLD", "DEREFERENCE");
+    assertThat(auditColumn("outcome")).containsOnly("ALLOWED");
+  }
+
+  /**
+   * The trail outlives what it describes, and that is the whole point of it.
+   *
+   * <p>Erasing a customer takes their values and everything derived from them. The record that it
+   * happened has to survive that, or the system cannot prove it did the thing it was required to
+   * do. So loch_audit has no foreign key to loch_value and nothing cascades into it.
+   */
+  @Test
+  @DisplayName("and keeps it after the value it is about has been erased")
+  void keeps_the_record_after_erasure() throws SQLException {
+    Surrogate<Card> card = card();
+    cardLast4.derive(card, acme());
+    int before = rowCount("loch_audit");
+
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
+    loch.erase(card);
+
+    assertThat(rowCount("loch_value")).isZero();
+    assertThat(rowCount("loch_audit")).isGreaterThanOrEqualTo(before);
+    assertThat(auditColumn("operation")).contains("ERASE");
+  }
+
+  private java.util.List<String> auditColumn(String column) throws SQLException {
+    java.util.List<String> values = new java.util.ArrayList<>();
+    try (Connection connection = dataSource.getConnection();
+        ResultSet rows =
+            connection
+                .createStatement()
+                .executeQuery("SELECT " + column + " FROM loch_audit ORDER BY entry_id")) {
+      while (rows.next()) {
+        values.add(rows.getString(1));
+      }
+    }
+    return values;
   }
 
   private int rowCount(String table) throws SQLException {

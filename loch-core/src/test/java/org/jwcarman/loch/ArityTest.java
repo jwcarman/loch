@@ -38,7 +38,7 @@ class ArityTest {
   record Note(String text) implements Value {}
 
   private final LochConfig<Exact<String>, Value> config =
-      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact()).withoutAudit();
+      new LochConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   private final SurrogateSource<Note> notes =
       config.source("notes", Note.class, ctx -> Exact.of("acme"));
