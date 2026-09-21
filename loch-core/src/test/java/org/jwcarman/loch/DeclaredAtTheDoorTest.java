@@ -63,7 +63,7 @@ class DeclaredAtTheDoorTest {
   private final SurrogateSource<SessionToken> tokens =
       config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Exact.of("acme"));
 
-  private final SurrogateStoreConfig.Destination<Exact<String>, Value> processor =
+  private final SurrogateDestination<Value> processor =
       config
           .destination("payment-processor", ctx -> Exact.of("acme"))
           .type(cardType)

@@ -195,7 +195,7 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** Registers the destination and hands it back. */
-    public Destination<A, D> mint() {
+    public SurrogateDestination<D> mint() {
       if (reads.isEmpty()) {
         throw new IllegalStateException(
             "'"
@@ -207,41 +207,25 @@ public class SurrogateStoreConfig<A, D> {
       config.destination(Destinations.varying(name, ceiling));
       // Declaration order, not hash order: this list ends up in an error message somebody has to
       // read, and "[last4, card]" changing to "[card, last4]" between runs helps nobody.
-      return new Destination<>(
+      return new Door<A, D>(
           name,
           java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(reads)),
           config.binding("destination '" + name + "'"));
     }
   }
 
-  /**
-   * Somewhere values may go, and the readers for it.
-   *
-   * <p>Holds no configuration and cannot declare anything new. Everything it enforces was settled
-   * when it was constructed, so a reader it mints is a typed view and not a grant: mint one where
-   * you need it, keep it or drop it.
-   */
-  public static final class Destination<A, D> {
+  /** The implementation of a destination: a name, what it reads, and what it is attached to. */
+  private record Door<A, D>(String name, java.util.Set<String> reads, Binding<A> binding)
+      implements SurrogateDestination<D> {
 
-    private final String name;
-    private final java.util.Set<String> reads;
-    private final Binding<A> binding;
-
-    private Destination(String name, java.util.Set<String> reads, Binding<A> binding) {
-      this.name = name;
-      this.reads = reads;
-      this.binding = binding;
-    }
-
-    /** A reader for one of the types this destination was declared to read. */
+    @Override
     public <T extends D> SurrogateSink<T> reading(SurrogateType<T> type) {
       Objects.requireNonNull(type, "a reader needs to say what comes out of it");
-      String wanted = type.name();
-      if (!reads.contains(wanted)) {
+      if (!reads.contains(type.name())) {
         throw new IllegalStateException(
-            ("'%s' does not read %s. It was declared to read %s, and a reader cannot add to"
-                    + " that list.")
-                .formatted(name, wanted, reads));
+            ("'%s' does not read %s. It was declared to read %s, and a reader cannot add to that"
+                    + " list.")
+                .formatted(name, type.name(), reads));
       }
       String door = name;
       Binding<A> bound = binding;
@@ -268,10 +252,6 @@ public class SurrogateStoreConfig<A, D> {
       };
     }
   }
-
-  /** The same, for a type with no generic parameters of its own. */
-  /** An sink whose ceiling does not depend on who is asking. */
-  // ------------------------------------------------------------------ derivations and folds
 
   /**
    * Mints the authority to make one value from one other. Configuration time only.
