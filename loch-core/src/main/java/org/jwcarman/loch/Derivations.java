@@ -87,6 +87,16 @@ public final class Derivations {
   /** A derivation that may decline -- a lookup that finds nothing, a check that fails. */
   public static <A, I, O> Builder<A, I, O> checking(
       DerivationId<I, O> id,
+      TypeRef<I> inputType,
+      TypeRef<O> outputType,
+      BiFunction<I, AccessContext, Optional<O>> function) {
+    return new Builder<>(
+        id, inputType, outputType, (inputs, context) -> function.apply(only(inputs), context));
+  }
+
+  /** A derivation that may decline -- a lookup that finds nothing, a check that fails. */
+  public static <A, I, O> Builder<A, I, O> checking(
+      DerivationId<I, O> id,
       Class<I> inputType,
       Class<O> outputType,
       BiFunction<I, AccessContext, Optional<O>> function) {

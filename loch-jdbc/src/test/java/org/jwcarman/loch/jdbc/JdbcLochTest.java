@@ -170,7 +170,14 @@ class JdbcLochTest {
                     .lattice(Billing.LATTICE)
                     .askingWhoIsAsking(edge::get)
                     // Erasure is the one operation a label cannot decide, so it is named here.
-                    .mayErase(ctx -> ctx.has("role", "compliance"))
+                    .mayErase(
+                        (label, ctx) ->
+                            ctx.has("role", "compliance")
+                                && label
+                                    .tenant()
+                                    .resolved()
+                                    .filter(t -> ctx.has("tenant", t))
+                                    .isPresent())
                     .auditor(Auditors.discarding())
                     .destination(
                         Destinations.varying(

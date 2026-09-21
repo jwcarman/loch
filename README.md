@@ -181,7 +181,14 @@ derivation function sees the access context while the key did not, a second call
 first caller's answer without the function running at all, across tenants. Saving a row was not
 worth a rule with an exception in it.
 
-**Erasure is refused until you say who may.** Every other gate decides whether a value may be
+**Erasure is refused until you say who may erase what.** The policy sees the label of the value
+being destroyed as well as who is asking — because who alone is not enough, and a rule that only
+checks the caller's role lets one tenant's compliance officer destroy another tenant's records.
+(That was a real hole here for about an hour, introduced while fixing the previous one.) Descendants
+go regardless of their own labels, which is what erasure means: a value derived from two customers
+dies with either of them.
+
+**And erasure is refused until you say who may.** Every other gate decides whether a value may be
 *disclosed* somewhere, and a label has nothing to say about whether it may be *destroyed* —
 "possession is not authority" is a rule about reading. So the authority to erase is named
 separately, with `mayErase(...)`, or it is not granted. An application that never erases says

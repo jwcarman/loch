@@ -107,7 +107,13 @@ public interface Question<A, I, Q> {
 
   /** Declares one that also reads the access context. */
   static <A, I, Q> Builder<A, I, Q> of(QuestionId<I, Q> id, Class<I> inputType, Asking<I, Q> test) {
-    return new Builder<>(id, TypeRef.of(inputType), test);
+    return of(id, TypeRef.of(inputType), test);
+  }
+
+  /** One that reads the access context, about a generic container. */
+  static <A, I, Q> Builder<A, I, Q> of(
+      QuestionId<I, Q> id, TypeRef<I> inputType, Asking<I, Q> test) {
+    return new Builder<>(id, inputType, test);
   }
 
   /** A question that also reads the access context. */

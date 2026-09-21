@@ -43,7 +43,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final Auditor auditor;
   private final java.util.function.Supplier<AccessContext> ambient;
   private final java.util.Set<String> callerMayContribute;
-  private final java.util.function.Predicate<AccessContext> mayErase;
+  private final java.util.function.BiPredicate<A, AccessContext> mayErase;
   private final Storage<A> storage;
 
   public DefaultLoch(LochConfig<A> config, Storage<A> storage) {
@@ -215,7 +215,11 @@ public final class DefaultLoch<A> implements Loch<A> {
   @Override
   public int erase(Handle<?> root, AccessContext context) {
     AccessContext asking = asking(context);
-    if (!mayErase.test(asking)) {
+    StoredMetadata<A> entry = storage.metadata(root.id()).orElse(null);
+    if (entry == null) {
+      return 0;
+    }
+    if (!mayErase.test(entry.label(), asking)) {
       audit(
           AuditRecord.Operation.ERASE,
           root.id(),

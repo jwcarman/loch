@@ -34,7 +34,7 @@ public class LochConfig<A> {
   private Auditor auditor;
   private java.util.function.Supplier<AccessContext> ambient = AccessContext::empty;
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
-  private java.util.function.Predicate<AccessContext> mayErase = context -> false;
+  private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Question<A, ?, ?>> questions = new ArrayList<>();
@@ -158,22 +158,33 @@ public class LochConfig<A> {
   }
 
   /**
-   * Who may erase a value and everything derived from it.
+   * Who may erase what.
+   *
+   * <p>Takes the label of the value being erased as well as who is asking, because who alone is not
+   * enough: a policy that only asks the caller's role lets one tenant's compliance officer destroy
+   * another tenant's records. Whatever the rule, it has to see what is about to be destroyed.
+   *
+   * <pre>{@code
+   * .mayErase((label, ctx) ->
+   *     ctx.has("role", "compliance") && LATTICE.permits(label, everythingIMayRead(ctx)))
+   * }</pre>
    *
    * <p>Refuses everyone until this says otherwise, because erasure is the one operation a label
-   * does not govern. Every other gate asks whether a value may be <i>disclosed</i> to somewhere; a
-   * label has nothing to say about whether it may be <i>destroyed</i>, and "possession is not
-   * authority" is a rule about reading. So the authority to erase is named separately or not
-   * granted.
+   * does not govern on its own. Every other gate asks whether a value may be <i>disclosed</i>
+   * somewhere; a label has nothing to say about whether it may be <i>destroyed</i>, and "possession
+   * is not authority" is a rule about reading. An application that never erases says nothing and
+   * keeps a loch that cannot.
    *
-   * <p>An application that never erases says nothing and keeps a loch that cannot.
+   * <p><b>Descendants go regardless.</b> The check is against the root, and everything derived from
+   * it is removed whether or not it is labelled more constrained -- which is what erasure means. A
+   * value derived from two customers dies with either of them.
    */
-  public LochConfig<A> mayErase(java.util.function.Predicate<AccessContext> mayErase) {
+  public LochConfig<A> mayErase(java.util.function.BiPredicate<A, AccessContext> mayErase) {
     this.mayErase = Objects.requireNonNull(mayErase, "an erasure policy must not be null");
     return this;
   }
 
-  java.util.function.Predicate<AccessContext> mayErase() {
+  java.util.function.BiPredicate<A, AccessContext> mayErase() {
     return mayErase;
   }
 

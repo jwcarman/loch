@@ -72,15 +72,23 @@ public record AuditRecord(
     context = Map.copyOf(context);
   }
 
+  /**
+   * One readable line, including who asked.
+   *
+   * <p>It used to drop the label and the context, so an application whose auditor simply logged the
+   * record kept a trail that never said who did anything -- which is most of what an audit is for.
+   */
   @Override
   public String toString() {
-    return "%s %s %s%s %s%s"
+    return "%s %s %s%s %s%s%s%s"
         .formatted(
             at,
             operation,
             value,
             target.map(" -> "::concat).orElse(""),
             outcome,
-            reason.map(": "::concat).orElse(""));
+            reason.map(": "::concat).orElse(""),
+            label.map(" [%s]"::formatted).orElse(""),
+            context.isEmpty() ? "" : " by " + context);
   }
 }
