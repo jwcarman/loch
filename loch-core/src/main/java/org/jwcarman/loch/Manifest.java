@@ -31,7 +31,11 @@ import java.util.List;
  * should be few enough to read in one sitting.
  */
 public record Manifest(
-    String bottom, List<Entry> destinations, List<Entry> derivations, List<Entry> checks) {
+    String bottom,
+    List<Entry> destinations,
+    List<Entry> derivations,
+    List<Entry> folds,
+    List<Entry> checks) {
 
   /**
    * One line of the report.
@@ -43,12 +47,20 @@ public record Manifest(
   public Manifest {
     destinations = List.copyOf(destinations);
     derivations = List.copyOf(derivations);
+    folds = List.copyOf(folds);
     checks = List.copyOf(checks);
   }
 
-  /** The operations that can weaken a label: the ones a reviewer is actually looking for. */
+  /**
+   * Every operation that can weaken a label: the ones a reviewer is actually looking for.
+   *
+   * <p>Folds count. A fold that lowers is as privileged as a derivation that lowers, and leaving
+   * them out of this list was a way of saying so and not meaning it.
+   */
   public List<Entry> weakening() {
-    return derivations.stream().filter(Entry::weakens).toList();
+    return java.util.stream.Stream.concat(derivations.stream(), folds.stream())
+        .filter(Entry::weakens)
+        .toList();
   }
 
   @Override
@@ -64,6 +76,7 @@ public record Manifest(
           "    (ceilings shown for an access naming nobody; some allow more to some callers)");
     }
     section(lines, "derivations", derivations, "  no value can be made from another");
+    section(lines, "folds", folds, "  no value can be made from several others");
     section(lines, "checks", checks, "  no question can be asked without taking the value");
     lines.add("");
     List<Entry> weakening = weakening();

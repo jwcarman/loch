@@ -9,8 +9,11 @@ the holder of the check does not control.
 
 Built on Denning's lattice model.
 
-> **Status: early.** The lattice, the handle and the gate work and are tested. Derivation, lineage,
-> durable storage and encryption are not written yet.
+> **Status: early but real.** The lattice, handles, the gate, derivation, folds, lineage, checks,
+> the audit trail, erasure, and durable encrypted storage on Postgres all work and are tested,
+> against a Spring Boot service as well as in isolation. Not yet: transaction participation (a
+> `hold` inside `@Transactional` will not roll back with it), a Spring Boot starter, and key
+> rotation is untested.
 
 ## The problem
 
@@ -25,11 +28,14 @@ to read it. Turning it back into a value is the one checked operation, and it al
 the value is going.
 
 ```java
-Handle<String> body = loch.hold(message.body(), String.class, new Billing(ACME, UNENDORSED, AMBER, PII));
+Handle<String> body =
+    loch.hold(mail.body(), String.class, BillingLabels.of("acme", UNENDORSED, PERSONAL));
 
-loch.dereference(body, VENDOR_LLM, onBehalfOf(ACME));       // Denied: above ceiling
-loch.dereference(body, QUARANTINED_LLM, onBehalfOf(ACME));  // Allowed
+loch.dereference(body, VENDOR_LLM);        // Denied: above that endpoint's ceiling
+loch.dereference(body, QUARANTINED_LLM);   // Allowed
 ```
+
+Who is asking comes from the edge, not from the call — see below — so nothing is threaded through.
 
 ## What it rests on
 
@@ -98,6 +104,9 @@ identity, that `permits` agrees with `join`, and value semantics.
 The last two matter most. `permits` is defined through `equals`, so a label type with identity-based
 equality doesn't fail loudly — it silently permits everything, or silently permits nothing.
 
+`LatticeTck` currently lives in `loch-core`'s test sources, so extending it from outside this repo
+needs a published test-jar or a `loch-testing` module — neither exists yet.
+
 ```java
 class ClearanceLatticeTest extends LatticeTck<Clearance> {
   protected Lattice<Clearance> lattice() {
@@ -161,8 +170,10 @@ and records which with one leading byte. Worst case is one byte instead of a thr
 describes what the ciphertext is; and labels are short, structured and guessable, which is where
 compress-then-encrypt leaks most.
 
-**Decompression is bounded.** `CompressionStreamCodec` caps the decoded size, so a corrupt or
-malicious row cannot expand into an out-of-memory error.
+**Bound your decompression.** The codec library's `CompressionStreamCodec` takes a maximum decoded
+size, and since the bytes being decompressed come from a database, a corrupt or hostile row should
+not be able to expand into an out-of-memory error. That is a property of the compressor you supply,
+not something Loch imposes — `Compression.whenItHelps` wraps whatever you hand it.
 
 **Every derivation makes a new value.** There is no deduplication and no "deterministic" flag. An
 earlier version keyed reproducible derivations on their parents and reused the result — and since a
@@ -176,8 +187,8 @@ is a closure table rather than a materialised path, whose rows would multiply at
 
 Anything Loch stores must round-trip through your codec, which is why its own label types are plain
 records rather than sealed hierarchies: a sealed type needs polymorphic type information that every
-codec has to be told about separately, and `loch-core` depends on nothing and so cannot annotate
-itself for any of them.
+codec has to be told about separately, and `loch-core` depends only on the codec *contract* and so
+cannot annotate itself for any particular one.
 
 ## Combining values, and the thing that makes it matter
 

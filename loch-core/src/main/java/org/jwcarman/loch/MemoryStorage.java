@@ -60,6 +60,11 @@ public final class MemoryStorage<A> implements Storage<A> {
     return Optional.ofNullable(values.get(id)).map(stored -> type.rawClass().cast(stored.value()));
   }
 
+  /** Everything currently held, for tests that need to prove something was not stored. */
+  public java.util.Set<HandleId> everything() {
+    return java.util.Set.copyOf(values.keySet());
+  }
+
   @Override
   public boolean contains(HandleId id) {
     return values.containsKey(id);

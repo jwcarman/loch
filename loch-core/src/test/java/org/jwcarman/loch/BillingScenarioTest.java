@@ -233,6 +233,15 @@ class BillingScenarioTest {
                               InvoiceNumber.class,
                               (claim, ctx) -> java.util.Optional.empty())
                           .build())
+                  // A fold that lowers is as privileged as a derivation that lowers.
+                  .fold(
+                      Fold.<Billing, String, Report>of(
+                              SUMMARISE_FOR_RELEASE,
+                              String.class,
+                              Report.class,
+                              notes -> new Report("redacted summary of " + notes.size()))
+                          .lowering(joined -> joined.withDataClass(DataClass.NONE))
+                          .build())
                   // The whole account never leaves the loch to answer one question about it.
                   .check(
                       Check.<Billing, Account, String>of(
@@ -258,6 +267,8 @@ class BillingScenarioTest {
   record Report(String text) {}
 
   static final FoldId<String, Report> SUMMARISE = FoldId.of("notes.summarise");
+  static final FoldId<String, Report> SUMMARISE_FOR_RELEASE =
+      FoldId.of("notes.summarise.forRelease");
 
   static final CheckId<Account, String> OWNED_BY = CheckId.of("Account.ownedBy");
 
@@ -719,6 +730,30 @@ class BillingScenarioTest {
           .doesNotContain("DisputeClaim.invoiceNumber");
     }
 
+    /**
+     * A fold that lowers is as privileged as a derivation that lowers. Leaving folds out of the
+     * list was a way of claiming the manifest is complete and not meaning it.
+     */
+    @Test
+    @DisplayName("including folds, which used to weaken labels invisibly")
+    void including_folds() {
+      assertThat(loch.manifest().weakening())
+          .extracting(Manifest.Entry::name)
+          .contains(SUMMARISE_FOR_RELEASE.value())
+          .doesNotContain(SUMMARISE.value());
+      assertThat(loch.manifest().toString()).contains("folds (2)");
+    }
+
+    /** A document meant to be diffed between reviews cannot reorder itself every restart. */
+    @Test
+    @DisplayName("and the report keeps the order everything was registered in")
+    void the_report_keeps_registration_order() {
+      Manifest manifest = loch.manifest();
+
+      assertThat(manifest.toString()).isEqualTo(loch.manifest().toString());
+      assertThat(manifest.destinations()).extracting(Manifest.Entry::name).startsWith("vendor-llm");
+    }
+
     @Test
     @DisplayName("and is readable, which is the whole point of it")
     void and_is_readable() {
@@ -950,9 +985,14 @@ class BillingScenarioTest {
       assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
     }
 
-    /** A control whose log is quietly failing still produces the report. */
+    /**
+     * A control whose log is quietly failing still produces the report.
+     *
+     * <p>And nothing is left behind: the record is written before the value is stored, because the
+     * other order commits a secret durably under an id the caller never receives.
+     */
     @Test
-    @DisplayName("an access that cannot be audited does not happen")
+    @DisplayName("an access that cannot be audited does not happen, and stores nothing")
     void an_access_that_cannot_be_audited_does_not_happen() {
       Loch<Billing> unloggable =
           MemoryLoch.create(
@@ -967,13 +1007,25 @@ class BillingScenarioTest {
                           tenantScoped(
                               QUARANTINED_LLM, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII)));
 
+      MemoryStorage<Billing> storage = new MemoryStorage<>();
+      Loch<Billing> watched =
+          new DefaultLoch<>(
+              configuredTo(
+                  record -> {
+                    throw new IllegalStateException("the audit sink is down");
+                  }),
+              storage);
+
       assertThatThrownBy(
               () ->
-                  unloggable.hold(
+                  watched.hold(
                       "anything",
                       String.class,
                       Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)))
           .isInstanceOf(IllegalStateException.class);
+
+      // Nothing was written. The other order leaves a secret nobody can reach, read or erase.
+      assertThat(storage.everything()).isEmpty();
     }
 
     @Test
@@ -983,6 +1035,13 @@ class BillingScenarioTest {
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("withoutAudit");
     }
+  }
+
+  /** Builds the same policy this test uses, with a chosen auditor. */
+  private LochConfig<Billing> configuredTo(Auditor auditor) {
+    LochConfig<Billing> config = new LochConfig<>();
+    config.lattice(Billing.LATTICE).auditor(auditor).askingWhoIsAsking(edge::get);
+    return config;
   }
 
   @Nested

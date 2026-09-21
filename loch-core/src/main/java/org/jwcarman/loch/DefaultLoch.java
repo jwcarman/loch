@@ -17,7 +17,7 @@ package org.jwcarman.loch;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +56,7 @@ public final class DefaultLoch<A> implements Loch<A> {
             "two destinations are registered as '" + destination.id() + "'");
       }
     }
-    this.destinations = Map.copyOf(new HashMap<>(byId));
+    this.destinations = Collections.unmodifiableMap(byId);
     Map<String, Derivation<A, ?, ?>> byName = new LinkedHashMap<>();
     for (Derivation<A, ?, ?> derivation : config.derivations()) {
       if (byName.put(derivation.id().value(), derivation) != null) {
@@ -64,21 +64,21 @@ public final class DefaultLoch<A> implements Loch<A> {
             "two derivations are registered as '" + derivation.id() + "'");
       }
     }
-    this.derivations = Map.copyOf(new HashMap<>(byName));
+    this.derivations = Collections.unmodifiableMap(byName);
     Map<String, Check<A, ?, ?>> byCheck = new LinkedHashMap<>();
     for (Check<A, ?, ?> check : config.checks()) {
       if (byCheck.put(check.id().value(), check) != null) {
         throw new IllegalStateException("two checks are registered as '" + check.id() + "'");
       }
     }
-    this.checks = Map.copyOf(new HashMap<>(byCheck));
+    this.checks = Collections.unmodifiableMap(byCheck);
     Map<String, Fold<A, ?, ?>> byFold = new LinkedHashMap<>();
     for (Fold<A, ?, ?> fold : config.folds()) {
       if (byFold.put(fold.id().value(), fold) != null) {
         throw new IllegalStateException("two folds are registered as '" + fold.id() + "'");
       }
     }
-    this.folds = Map.copyOf(new HashMap<>(byFold));
+    this.folds = Collections.unmodifiableMap(byFold);
     this.explainRefusals = config.explainsRefusals();
     this.auditor = config.auditor();
     this.ambient = config.ambient();
@@ -168,7 +168,9 @@ public final class DefaultLoch<A> implements Loch<A> {
               + " particular'");
     }
     HandleId id = HandleId.fresh();
-    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
+    // Recorded before it is stored, not after. An auditor that throws must leave nothing behind;
+    // the other order commits a value durably under an id the caller never receives, which is a
+    // secret nothing can reach, read or erase.
     audit(
         AuditRecord.Operation.HOLD,
         id,
@@ -177,6 +179,7 @@ public final class DefaultLoch<A> implements Loch<A> {
         null,
         label,
         AccessContext.empty());
+    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
     return new Handle<>(id, type);
   }
 
@@ -318,6 +321,17 @@ public final class DefaultLoch<A> implements Loch<A> {
                             derivation.inputType().rawClass().getSimpleName(),
                             derivation.outputType().rawClass().getSimpleName()),
                     derivation.privileged())));
+    List<Manifest.Entry> theFolds = new ArrayList<>();
+    folds.forEach(
+        (name, fold) ->
+            theFolds.add(
+                new Manifest.Entry(
+                    name,
+                    "many %s -> %s"
+                        .formatted(
+                            fold.inputType().rawClass().getSimpleName(),
+                            fold.outputType().rawClass().getSimpleName()),
+                    fold.privileged())));
     List<Manifest.Entry> theChecks = new ArrayList<>();
     checks.forEach(
         (name, check) ->
@@ -325,7 +339,7 @@ public final class DefaultLoch<A> implements Loch<A> {
                 new Manifest.Entry(
                     name, "asks about a " + check.inputType().rawClass().getSimpleName(), false)));
     return new Manifest(
-        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theChecks);
+        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theFolds, theChecks);
   }
 
   @Override
@@ -415,10 +429,6 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     HandleId newId = HandleId.fresh();
-    storage.put(
-        newId,
-        new StoredValue<>(
-            produced.get(), fold.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
     audit(
         AuditRecord.Operation.DERIVE,
         newId,
@@ -427,6 +437,10 @@ public final class DefaultLoch<A> implements Loch<A> {
         fold.privileged() ? "weakened from " + joined : "folded " + parentIds.size() + " values",
         label,
         context);
+    storage.put(
+        newId,
+        new StoredValue<>(
+            produced.get(), fold.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
     return new Derived.Made<>(new Handle<>(newId, fold.outputType()));
   }
 
@@ -507,13 +521,6 @@ public final class DefaultLoch<A> implements Loch<A> {
     }
 
     HandleId newId = HandleId.fresh();
-    storage.put(
-        newId,
-        new StoredValue<>(
-            produced.get(),
-            derivation.outputType(),
-            label,
-            Lineage.derivedFrom(parents, id.value())));
     audit(
         AuditRecord.Operation.DERIVE,
         newId,
@@ -522,6 +529,13 @@ public final class DefaultLoch<A> implements Loch<A> {
         derivation.privileged() ? "weakened from " + joined : null,
         label,
         context);
+    storage.put(
+        newId,
+        new StoredValue<>(
+            produced.get(),
+            derivation.outputType(),
+            label,
+            Lineage.derivedFrom(parents, id.value())));
     return new Derived.Made<>(new Handle<>(newId, derivation.outputType()));
   }
 
