@@ -774,7 +774,51 @@ public final class Charter {
    * the system can do; it is not a way to do any of it.
    */
   public Manifest manifest() {
-    return engineOf(lifecycle, "this charter").manifest();
+    Configuration configuration = configuration();
+    List<Manifest.Entry> doors = new ArrayList<>();
+    for (DestinationSpec destination : configuration.destinations()) {
+      doors.add(
+          new Manifest.Entry(destination.name(), "accepts up to " + accepts(destination), false));
+    }
+    List<Manifest.Entry> derivations = new ArrayList<>();
+    for (DerivationSpec<?> derivation : configuration.derivations()) {
+      derivations.add(
+          new Manifest.Entry(
+              derivation.name(),
+              "%s -> %s".formatted(reads(derivation), derivation.outputType().name()),
+              derivation.privileged()));
+    }
+    List<Manifest.Entry> questions = new ArrayList<>();
+    for (QuerySpec<?, ?> query : configuration.queries()) {
+      questions.add(
+          new Manifest.Entry(query.name(), "asks about " + query.inputType().name(), false));
+    }
+    return new Manifest(String.valueOf(Label.nothing()), doors, derivations, questions);
+  }
+
+  /**
+   * What a door accepts, for the manifest only.
+   *
+   * <p>Evaluated against an empty access, because a manifest is a statement about the system rather
+   * than about one request. A ceiling that reads a tenant will refuse to answer that, and saying so
+   * is more honest than printing what it would allow nobody.
+   */
+  private static String accepts(DestinationSpec destination) {
+    try {
+      Ceiling ceiling = destination.ceiling(AccessContext.empty());
+      return ceiling == null ? "(its ceiling could not be evaluated)" : ceiling.toString();
+    } catch (RuntimeException e) {
+      return "(its ceiling could not be evaluated)";
+    }
+  }
+
+  /** How a derivation's parents read: positionally, or as many of one type. */
+  private static String reads(DerivationSpec<?> spec) {
+    String types =
+        spec.inputTypes().stream()
+            .map(SurrogateType::name)
+            .collect(java.util.stream.Collectors.joining(", "));
+    return spec.fold() ? "many " + types : types;
   }
 
   /** How a value is labelled. For a report or an operator, never for a decision. */

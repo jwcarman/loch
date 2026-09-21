@@ -266,14 +266,6 @@ final class Engine {
   }
 
   /** How a derivation's parents read in the manifest: positionally, or as many of one type. */
-  private static String reads(DerivationSpec<?> spec) {
-    String types =
-        spec.inputTypes().stream()
-            .map(SurrogateType::name)
-            .collect(java.util.stream.Collectors.joining(", "));
-    return spec.fold() ? "many " + types : types;
-  }
-
   /** What a refusal is allowed to say about labels, which by default is nothing. */
   /**
    * What the record says about a refusal, and what the caller never hears.
@@ -429,31 +421,6 @@ final class Engine {
 
   public Lineage lineage(String id) {
     return metadataOf(id).lineage();
-  }
-
-  public Manifest manifest() {
-    List<Manifest.Entry> theDestinations = new ArrayList<>();
-    destinations.forEach(
-        (id, destination) -> {
-          Ceiling ceiling = ceilingOf(destination, AccessContext.empty());
-          theDestinations.add(
-              new Manifest.Entry(
-                  id,
-                  "accepts up to "
-                      + (ceiling == null ? "(its ceiling could not be evaluated)" : ceiling),
-                  false));
-        });
-    List<Manifest.Entry> theDerivations = new ArrayList<>();
-    derivations.forEach(
-        derivation ->
-            theDerivations.add(
-                new Manifest.Entry(
-                    derivation.name(),
-                    "%s -> %s".formatted(reads(derivation), derivation.outputType().name()),
-                    derivation.privileged())));
-    List<Manifest.Entry> theQuestions = new ArrayList<>();
-    return new Manifest(
-        String.valueOf(Label.nothing()), theDestinations, theDerivations, theQuestions);
   }
 
   /**
