@@ -81,4 +81,23 @@ public interface Lattice<T> {
   default boolean permits(T value, T ceiling) {
     return join(value, ceiling).equals(ceiling);
   }
+
+  /**
+   * Whether a label says everything it is required to say.
+   *
+   * <p>Bottom means "constrains nothing", and on some axes that is also what "nobody said" looks
+   * like -- an {@link Exact} that nobody set, a set of contributing sources that is empty. Those
+   * two readings are opposites in a security order. A value labelled with an unsaid tenant is not
+   * private to nobody; it is readable by everybody, because bottom is below every ceiling.
+   *
+   * <p>So an axis can be marked {@code required}, and a label that leaves one at bottom is not a
+   * legitimate resting place for stored data. Only the write needs checking: a derived label is the
+   * join of its parents and join only moves up, so completeness is preserved downstream, and a
+   * ceiling left at bottom already refuses everything rather than admitting it.
+   *
+   * <p>Defaults to true, because a lattice with no notion of axes has nothing to leave unsaid.
+   */
+  default boolean complete(T label) {
+    return true;
+  }
 }

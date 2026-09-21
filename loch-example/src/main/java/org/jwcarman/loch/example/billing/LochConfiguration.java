@@ -176,17 +176,13 @@ public class LochConfiguration {
   /**
    * A label for this access: the tenant comes from the request, never from the caller.
    *
-   * <p><b>No tenant means no label, not an empty one.</b> Returning {@code Exact.none()} here would
-   * be the obvious thing to write and would be a cross-tenant leak: none is the bottom of the
-   * lattice, so it constrains nothing, so a value labelled with it is readable by every tenant. Not
-   * knowing who is asking has to constrain everything, not nothing. Returning null makes a source
-   * refuse to write and a sink refuse to read, both of them audited.
+   * <p>{@code Exact.none()} for a missing tenant would be a cross-tenant leak on its own -- none is
+   * the bottom of the order, so it constrains nothing, so the value would be readable by every
+   * tenant. It is safe here only because the tenant axis is declared required, which makes the loch
+   * refuse the write rather than store something anybody can read.
    */
   private static BillingLabels label(
       AccessContext ctx, BillingLabels.Integrity integrity, BillingLabels.Sensitivity sensitivity) {
-    if (ctx.get("tenant").filter(tenant -> !tenant.isBlank()).isEmpty()) {
-      return null;
-    }
     return new BillingLabels(
         ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
         integrity,

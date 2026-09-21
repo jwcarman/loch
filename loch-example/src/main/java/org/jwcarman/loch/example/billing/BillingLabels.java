@@ -59,7 +59,11 @@ public record BillingLabels(Exact<String> tenant, Integrity integrity, Sensitivi
   public static final Lattice<BillingLabels> LATTICE =
       Lattices.product(
           BillingLabels::new,
-          Lattices.axis(BillingLabels::tenant, Lattices.exact()),
+          // Required: an unsaid tenant is the bottom of its order, which sits below every
+          // ceiling, so a value labelled with one would be readable by every tenant.
+          Lattices.<BillingLabels, org.jwcarman.loch.lattice.Exact<String>>axis(
+                  BillingLabels::tenant, Lattices.exact())
+              .required(),
           Lattices.axis(BillingLabels::integrity, Integrity.LATTICE),
           Lattices.axis(BillingLabels::sensitivity, Sensitivity.LATTICE));
 

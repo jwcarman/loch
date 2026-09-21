@@ -106,7 +106,25 @@ public final class DefaultLoch<A> implements Loch<A> {
           null,
           asking);
       throw new AccessDeniedException(
-          "INLET_CANNOT_LABEL", "'" + source + "' could not say what it labels values");
+          "SOURCE_CANNOT_LABEL", "'" + source + "' could not say what it labels values");
+    }
+    // The only door an incomplete label can come in through. A derived label is the join of its
+    // parents and join only moves up, so nothing downstream can lose what was said here.
+    if (!lattice.complete(label)) {
+      audit(
+          AuditRecord.Operation.HOLD,
+          freshId(),
+          source,
+          AuditRecord.Outcome.REFUSED,
+          "the label leaves a required axis unsaid",
+          label,
+          asking);
+      throw new AccessDeniedException(
+          "INCOMPLETE_LABEL",
+          ("'%s' produced a label that leaves a required axis unsaid. Unsaid is the bottom of its"
+                  + " order, which is below every ceiling, so the value would have been readable"
+                  + " by everyone.")
+              .formatted(source));
     }
     String id = freshId();
     // One act: the value and the record that it arrived. The source is named, so the record says

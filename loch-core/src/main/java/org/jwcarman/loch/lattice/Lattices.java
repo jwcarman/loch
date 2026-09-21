@@ -131,16 +131,47 @@ public final class Lattices {
    * @param read pulls this axis out of the whole label
    * @param lattice the order over that axis alone
    */
-  public record Axis<A, T>(java.util.function.Function<A, T> read, Lattice<T> lattice) {
+  public static final class Axis<A, T> {
+
+    private final java.util.function.Function<A, T> read;
+    private final Lattice<T> lattice;
+    private final boolean required;
+
+    private Axis(java.util.function.Function<A, T> read, Lattice<T> lattice, boolean required) {
+      this.read = read;
+      this.lattice = lattice;
+      this.required = required;
+    }
+
+    Lattice<T> lattice() {
+      return lattice;
+    }
 
     T join(A left, A right) {
       return lattice.join(read.apply(left), read.apply(right));
+    }
+
+    /**
+     * Says that leaving this axis at bottom is not a label, but a gap.
+     *
+     * <p>Only meaningful where bottom means "nobody said": an {@link Exact} nobody set, an empty
+     * set of sources. Do not mark a ladder required -- {@code ladder(ENDORSED, UNENDORSED)} has
+     * {@code ENDORSED} at the bottom, which is a real and common value, and requiring it would
+     * forbid endorsed data entirely. Nothing can check this for you: the framework cannot tell a
+     * "nobody said" bottom from a meaningful one, so the judgement is yours and it is per axis.
+     */
+    public Axis<A, T> required() {
+      return new Axis<>(read, lattice, true);
+    }
+
+    boolean unsaid(A label) {
+      return required && lattice.bottom().equals(read.apply(label));
     }
   }
 
   /** Names an axis of a label and the order it lives in. */
   public static <A, T> Axis<A, T> axis(java.util.function.Function<A, T> read, Lattice<T> lattice) {
-    return new Axis<>(read, lattice);
+    return new Axis<>(read, lattice, false);
   }
 
   /** Builds a label out of two axes. */
@@ -203,6 +234,11 @@ public final class Lattices {
       public A bottom() {
         return build.build(a1.lattice().bottom(), a2.lattice().bottom());
       }
+
+      @Override
+      public boolean complete(A label) {
+        return !a1.unsaid(label) && !a2.unsaid(label);
+      }
     };
   }
 
@@ -218,6 +254,11 @@ public final class Lattices {
       @Override
       public A bottom() {
         return build.build(a1.lattice().bottom(), a2.lattice().bottom(), a3.lattice().bottom());
+      }
+
+      @Override
+      public boolean complete(A label) {
+        return !a1.unsaid(label) && !a2.unsaid(label) && !a3.unsaid(label);
       }
     };
   }
@@ -243,6 +284,11 @@ public final class Lattices {
             a2.lattice().bottom(),
             a3.lattice().bottom(),
             a4.lattice().bottom());
+      }
+
+      @Override
+      public boolean complete(A label) {
+        return !a1.unsaid(label) && !a2.unsaid(label) && !a3.unsaid(label) && !a4.unsaid(label);
       }
     };
   }
@@ -274,6 +320,15 @@ public final class Lattices {
             a3.lattice().bottom(),
             a4.lattice().bottom(),
             a5.lattice().bottom());
+      }
+
+      @Override
+      public boolean complete(A label) {
+        return !a1.unsaid(label)
+            && !a2.unsaid(label)
+            && !a3.unsaid(label)
+            && !a4.unsaid(label)
+            && !a5.unsaid(label);
       }
     };
   }
