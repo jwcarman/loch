@@ -22,15 +22,15 @@ import org.jwcarman.codec.spi.CodecFactory;
 /**
  * What a database-backed store needs that has nothing to do with policy.
  *
- * <p>Deliberately not a kind of {@link org.jwcarman.loch.SurrogateStoreConfig}. An application
- * declares what it allows -- the labels, the doors, who may reach them -- without knowing or caring
- * where the values end up, and the code declaring portals should compile against the generic thing.
- * This is the other half: where the tables are, how bytes are serialised, and how they are sealed.
- * Both are handed to {@link JdbcSurrogateStore#create} and it builds itself.
+ * <p>Deliberately not a kind of {@link org.jwcarman.loch.Charter}. An application declares what it
+ * allows -- the labels, the doors, who may reach them -- without knowing or caring where the values
+ * end up, and the code declaring portals should compile against the generic thing. This is the
+ * other half: where the tables are, how bytes are serialised, and how they are sealed. Both are
+ * handed to {@link JdbcSurrogateStore#create} and it builds itself.
  *
  * @param <A> the application's label type, which is stored encrypted like any other value
  */
-public final class JdbcSurrogateStoreConfig {
+public final class JdbcStorageConfig {
 
   private DataSource dataSource;
   private CodecFactory codecs;
@@ -38,19 +38,19 @@ public final class JdbcSurrogateStoreConfig {
   private boolean migrate = true;
 
   /** Where the tables are. */
-  public JdbcSurrogateStoreConfig dataSource(DataSource dataSource) {
+  public JdbcStorageConfig dataSource(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "a durable store needs a data source");
     return this;
   }
 
   /** How values become bytes. */
-  public JdbcSurrogateStoreConfig codecs(CodecFactory codecs) {
+  public JdbcStorageConfig codecs(CodecFactory codecs) {
     this.codecs = Objects.requireNonNull(codecs, "a durable store needs codecs");
     return this;
   }
 
   /** What happens to those bytes before they are written: compression, encryption, both. */
-  public JdbcSurrogateStoreConfig storedThrough(StorageCodec storageCodec) {
+  public JdbcStorageConfig storedThrough(StorageCodec storageCodec) {
     this.storageCodec = Objects.requireNonNull(storageCodec, "a storage codec must not be null");
     return this;
   }
@@ -61,7 +61,7 @@ public final class JdbcSurrogateStoreConfig {
    * <p>Said out loud rather than fallen into. Everything this keeps is something somebody decided
    * was worth keeping behind a door, so storing it in the clear is a decision.
    */
-  public JdbcSurrogateStoreConfig storedPlainly() {
+  public JdbcStorageConfig storedPlainly() {
     this.storageCodec =
         StorageCodec.of(
             new StorageCodec() {
@@ -79,7 +79,7 @@ public final class JdbcSurrogateStoreConfig {
   }
 
   /** Leaves the tables alone, for somewhere that manages its own schema. */
-  public JdbcSurrogateStoreConfig withoutMigration() {
+  public JdbcStorageConfig withoutMigration() {
     this.migrate = false;
     return this;
   }
@@ -110,5 +110,20 @@ public final class JdbcSurrogateStoreConfig {
       throw new IllegalStateException(said);
     }
     return value;
+  }
+
+  /**
+   * The storage a charter with these axes is sealed to.
+   *
+   * <p>The only way to build one, so that what happens to the bytes on the way to disk stays a
+   * decision somebody made rather than a default they inherited.
+   */
+  public JdbcStorage storage(java.util.List<org.jwcarman.loch.lattice.Axis<?>> axes) {
+    JdbcStorage storage =
+        JdbcStorage.of(dataSourceOrFail(), codecsOrFail(), storageCodecOrFail(), axes);
+    if (migrates()) {
+      storage.migrate();
+    }
+    return storage;
   }
 }

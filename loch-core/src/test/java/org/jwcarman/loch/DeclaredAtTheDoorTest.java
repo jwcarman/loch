@@ -53,7 +53,7 @@ class DeclaredAtTheDoorTest {
 
   record SessionToken(String token) implements Value {}
 
-  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
+  private final Charter config = new Charter(TENANT);
 
   // Declared once, named by the strategy: card, last4, session-token.
   private final SurrogateType<Card> cardType = SurrogateType.of(Card.class);
@@ -73,7 +73,9 @@ class DeclaredAtTheDoorTest {
           cardType,
           last4Type);
 
-  private final SurrogateStore store = MemorySurrogateStore.create(config);
+  {
+    config.seal(new MemoryStorage());
+  }
 
   @Test
   @DisplayName("reads the types it was declared to read")
@@ -108,7 +110,7 @@ class DeclaredAtTheDoorTest {
   void a_value_it_was_never_meant_to_see_stays_out_of_reach() {
     Surrogate<SessionToken> token = tokens.conceal(new SessionToken("sess_abc"));
 
-    assertThat(store.label(token.id())).isEqualTo(Label.of(TENANT, "acme"));
+    assertThat(config.label(token.id())).isEqualTo(Label.of(TENANT, "acme"));
     assertThatThrownBy(() -> processor.reading(tokenType))
         .isInstanceOf(IllegalStateException.class);
   }

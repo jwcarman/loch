@@ -25,11 +25,11 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jwcarman.loch.AccessContext;
+import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Query;
 import org.jwcarman.loch.Reveal;
-import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;
 import org.jwcarman.loch.lattice.Label;
@@ -61,9 +61,8 @@ public class SurrogateStoreConfiguration {
    * application onto a different backing store changes no line in this file.
    */
   @Bean
-  public SurrogateStoreConfig surrogateStoreConfig() {
-    return new SurrogateStoreConfig()
-        .axes(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
+  public Charter surrogateStoreConfig() {
+    return new Charter(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
   }
 
   /**
@@ -73,7 +72,7 @@ public class SurrogateStoreConfiguration {
    * when it is, and none of these is used before the context is ready.
    */
   @Bean
-  public DisputeService disputeService(SurrogateStoreConfig config, Invoices invoices) {
+  public DisputeService disputeService(Charter config, Invoices invoices) {
 
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another

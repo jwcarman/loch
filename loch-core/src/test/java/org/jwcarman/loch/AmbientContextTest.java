@@ -52,13 +52,12 @@ class AmbientContextTest {
    * <p>Capabilities are attached when the store is built, so they have to be minted first. A record
    * keeps the three together without every test repeating the order.
    */
-  record Wired(SurrogateStore store, Conceal<String> cards, Reveal<String> card) {}
+  record Wired(Charter store, Conceal<String> cards, Reveal<String> card) {}
 
   private static Wired wire(
-      java.util.function.Consumer<SurrogateStoreConfig> settings,
+      java.util.function.Consumer<Charter> settings,
       java.util.function.Function<AccessContext, Clearance> ceiling) {
-    SurrogateStoreConfig config = new SurrogateStoreConfig();
-    config.axes(CLEARANCE);
+    Charter config = new Charter(CLEARANCE);
     settings.accept(config);
     Conceal<String> cards =
         config.source("cards", STRING_TYPE, ctx -> Label.of(CLEARANCE, Clearance.FINANCE));
@@ -69,7 +68,8 @@ class AmbientContextTest {
                 ctx -> Ceiling.of(CLEARANCE, Constraint.atMost(ceiling.apply(ctx))),
                 STRING_TYPE)
             .reading(STRING_TYPE);
-    return new Wired(MemorySurrogateStore.create(config), cards, card);
+    config.seal(new MemoryStorage());
+    return new Wired(config, cards, card);
   }
 
   // Said once. A ThreadLocal, a ScopedValue, a SecurityContextHolder -- SurrogateStore does not

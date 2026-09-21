@@ -52,8 +52,8 @@ class TypeNamesTest {
 
   private static final Axis<String> TENANT = Axis.matching("tenant");
 
-  private SurrogateStoreConfig config() {
-    return new SurrogateStoreConfig().axes(TENANT);
+  private Charter config() {
+    return new Charter(TENANT);
   }
 
   @Test

@@ -35,12 +35,11 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
+import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Surrogate;
-import org.jwcarman.loch.SurrogateStore;
-import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.SurrogateType;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
@@ -101,7 +100,7 @@ class JdbcSurrogateStoreTest {
   private static final SurrogateType<Last4> LAST4 = SurrogateType.of(Last4.class);
 
   private DataSource dataSource;
-  private SurrogateStore store;
+  private Charter store;
   private Derivation<Card, Last4> cardLast4;
   private Conceal<Card> cards;
   private Reveal<Card> vendorLlm;
@@ -157,7 +156,7 @@ class JdbcSurrogateStoreTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    SurrogateStoreConfig c = new SurrogateStoreConfig();
+    Charter c = new Charter(TENANT, INTEGRITY, DATA);
     // Containers have to be named: their raw type is java.util.List, which is not ours to
     // annotate and would collide with every other list.
     SurrogateType<List<Card>> cardList =
@@ -166,8 +165,8 @@ class JdbcSurrogateStoreTest {
         SurrogateType.of("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
 
     // The application composes its own pipeline: squeeze, then seal.
-    JdbcSurrogateStoreConfig jdbc =
-        new JdbcSurrogateStoreConfig()
+    JdbcStorageConfig jdbc =
+        new JdbcStorageConfig()
             .dataSource(dataSource)
             .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
             .storedThrough(
@@ -177,8 +176,7 @@ class JdbcSurrogateStoreTest {
                             EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
                                 .build())));
 
-    c.axes(TENANT, INTEGRITY, DATA)
-        .currentAccess(edge::get)
+    c.currentAccess(edge::get)
         // Erasure is the one operation a label cannot decide, so it is named here.
         .mayErase(
             (label, ctx) ->
@@ -232,7 +230,8 @@ class JdbcSurrogateStoreTest {
             .lowering(joined -> joined.with(DATA, DataClass.PII))
             .mint();
 
-    store = JdbcSurrogateStore.create(c, jdbc);
+    c.seal(jdbc.storage(c.axes()));
+    store = c;
   }
 
   private Surrogate<Card> card() {
@@ -352,11 +351,10 @@ class JdbcSurrogateStoreTest {
     assertThat(
             org.assertj.core.api.Assertions.catchThrowable(
                 () ->
-                    JdbcSurrogateStore.create(
-                        new SurrogateStoreConfig().axes(TENANT, INTEGRITY, DATA),
-                        new JdbcSurrogateStoreConfig()
-                            .dataSource(dataSource)
-                            .codecs(new JacksonCodecFactory(JsonMapper.builder().build())))))
+                    new JdbcStorageConfig()
+                        .dataSource(dataSource)
+                        .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+                        .storage(List.of(TENANT, INTEGRITY, DATA))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("storedPlainly");
   }

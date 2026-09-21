@@ -56,9 +56,8 @@ class ErasingAcrossTenantsTest {
   void is_refused_even_for_a_compliance_officer() {
     AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-    SurrogateStoreConfig config =
-        new SurrogateStoreConfig()
-            .axes(TENANT, LEVEL)
+    Charter config =
+        new Charter(TENANT, LEVEL)
             .currentAccess(edge::get)
             .mayErase(
                 (label, ctx) ->
@@ -77,14 +76,14 @@ class ErasingAcrossTenantsTest {
             RECORD_TYPE,
             ctx -> Label.of(TENANT, "globex").with(LEVEL, Level.HIGH));
 
-    SurrogateStore store = MemorySurrogateStore.create(config);
+    config.seal(new MemoryStorage());
 
     Surrogate<Record> globexRecord = globexRecords.conceal(new Record("globex's records"));
 
     edge.set(AccessContext.of(Map.of("tenant", "acme", "role", "compliance")));
 
-    assertThat(catchThrowable(() -> store.erase(globexRecord)))
+    assertThat(catchThrowable(() -> config.erase(globexRecord)))
         .isInstanceOf(AccessDeniedException.class);
-    assertThat(store.holds(globexRecord.id())).isTrue();
+    assertThat(config.holds(globexRecord.id())).isTrue();
   }
 }

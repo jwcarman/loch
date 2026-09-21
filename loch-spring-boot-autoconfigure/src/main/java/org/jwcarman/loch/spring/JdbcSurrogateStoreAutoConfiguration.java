@@ -19,10 +19,9 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.AccessContextProvider;
-import org.jwcarman.loch.SurrogateStore;
-import org.jwcarman.loch.SurrogateStoreConfig;
-import org.jwcarman.loch.jdbc.JdbcSurrogateStore;
-import org.jwcarman.loch.jdbc.JdbcSurrogateStoreConfig;
+import org.jwcarman.loch.Charter;
+import org.jwcarman.loch.jdbc.JdbcStorage;
+import org.jwcarman.loch.jdbc.JdbcStorageConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +41,9 @@ import tools.jackson.databind.json.JsonMapper;
  * nothing. So the build must come last, after every bean that declares a portal has been
  * constructed -- which by hand means one class orchestrating the whole startup.
  *
- * <p>Here it is Spring's job. Declare a {@link JdbcSurrogateStoreConfig} bean saying what your
- * application allows, take it as a parameter wherever you declare portals, and this supplies the
- * plumbing and builds the store once the context has finished making singletons.
+ * <p>Here it is Spring's job. Declare a {@link JdbcStorageConfig} bean saying what your application
+ * allows, take it as a parameter wherever you declare portals, and this supplies the plumbing and
+ * builds the store once the context has finished making singletons.
  *
  * <p>Everything it supplies is {@link ConditionalOnMissingBean}, so any of it can be replaced by
  * declaring your own: the serialisation, the encryption, or the data source itself.
@@ -54,7 +53,7 @@ import tools.jackson.databind.json.JsonMapper;
     // Named rather than referenced: Boot 4 moved this into its own module, and naming it keeps
     // that module off our compile path.
     afterName = "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration")
-@ConditionalOnClass({JdbcSurrogateStore.class, DataSource.class})
+@ConditionalOnClass({JdbcStorage.class, DataSource.class})
 public class JdbcSurrogateStoreAutoConfiguration {
 
   private static final Logger log =
@@ -78,9 +77,9 @@ public class JdbcSurrogateStoreAutoConfiguration {
    * policy to build a store from, and guessing one would be the worst thing this could do.
    */
   @Bean
-  @ConditionalOnBean({SurrogateStoreConfig.class, StorageCodec.class})
+  @ConditionalOnBean({Charter.class, StorageCodec.class})
   public SmartInitializingSingleton surrogateStoreBuilder(
-      SurrogateStoreConfig config,
+      Charter config,
       java.util.Optional<AccessContextProvider> access,
       DataSource dataSource,
       CodecFactory codecs,
@@ -94,27 +93,23 @@ public class JdbcSurrogateStoreAutoConfiguration {
     return () -> build(config, dataSource, codecs, storageCodec, properties);
   }
 
-  /** Captures the wildcard so the label type and the storage settings line up. */
+  /** Seals the charter the application wrote to the storage this module supplies. */
   private static void build(
-      SurrogateStoreConfig config,
+      Charter charter,
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
       SurrogateStoreProperties properties) {
     // The application said what it allows; this says where it goes. Neither knows the other.
-    JdbcSurrogateStoreConfig jdbc =
-        new JdbcSurrogateStoreConfig()
-            .dataSource(dataSource)
-            .codecs(codecs)
-            .storedThrough(storageCodec);
+    JdbcStorageConfig jdbc =
+        new JdbcStorageConfig().dataSource(dataSource).codecs(codecs).storedThrough(storageCodec);
     if (!properties.isMigrate()) {
       jdbc.withoutMigration();
     }
-    // Built, and then let go of. Building is what attaches every capability declared above; the
-    // object itself is of no use to an application, so nothing is given a way to reach it.
-    SurrogateStore store = JdbcSurrogateStore.create(config, jdbc);
+    // One transition, and every portal the application is already holding comes into force.
+    charter.seal(jdbc.storage(charter.axes()));
     if (properties.isLogManifest()) {
-      log.info("\n{}", store.manifest());
+      log.info("\n{}", charter.manifest());
     }
   }
 }

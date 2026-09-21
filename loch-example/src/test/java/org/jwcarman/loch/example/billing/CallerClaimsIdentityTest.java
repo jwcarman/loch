@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.SurrogateStore;
+import org.jwcarman.loch.Charter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -54,9 +54,9 @@ class CallerClaimsIdentityTest {
    * added back for a test fixture and never removed.
    */
   @Test
-  @DisplayName("cannot create a value through the store, because nothing there creates values")
-  void cannot_create_a_value_through_the_loch() {
-    assertThat(SurrogateStore.class.getMethods())
+  @DisplayName("cannot create a value through the charter, because nothing there creates values")
+  void cannot_create_a_value_through_the_charter() {
+    assertThat(Charter.class.getMethods())
         .isNotEmpty()
         .noneSatisfy(
             method ->
@@ -84,7 +84,7 @@ class CallerClaimsIdentityTest {
   @Test
   @DisplayName("can obtain the configuration, because declaring a portal is what it is for")
   void can_obtain_the_configuration() {
-    assertThat(context.getBeanNamesForType(org.jwcarman.loch.SurrogateStoreConfig.class))
+    assertThat(context.getBeanNamesForType(org.jwcarman.loch.Charter.class))
         .containsExactly("surrogateStoreConfig");
   }
 

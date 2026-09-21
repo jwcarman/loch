@@ -34,7 +34,7 @@ import org.jwcarman.loch.lattice.Label;
  * store and a durable one cannot disagree about who may see what. Storage implementations keep
  * bytes; this decides.
  */
-public final class DefaultSurrogateStore implements SurrogateStore {
+final class DefaultSurrogateStore {
 
   private final List<Axis<?>> axes;
   private final Map<String, DestinationSpec> destinations;
@@ -44,9 +44,9 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
 
-  public DefaultSurrogateStore(SurrogateStoreConfig config, Storage storage) {
+  DefaultSurrogateStore(List<Axis<?>> axes, Charter.Configuration config, Storage storage) {
     this.storage = storage;
-    this.axes = config.declaredAxes();
+    this.axes = axes;
     Map<String, DestinationSpec> byId = new LinkedHashMap<>();
     for (DestinationSpec destination : config.destinations()) {
       if (byId.put(destination.name(), destination) != null) {
@@ -64,11 +64,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     }
     this.derivations = List.copyOf(config.derivations());
     this.queries = List.copyOf(config.queries());
-    this.ambient = config.ambient();
+    this.ambient = config.currentAccess();
     this.mayErase = config.mayErase();
-    // Last, and only once everything above succeeded: capabilities minted during configuration
-    // reach this store through the config, and one that half-built must not be reachable at all.
-    config.bind(this);
   }
 
   /**
@@ -295,7 +292,6 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return because == null || because.isEmpty() ? reason : reason + ": " + because;
   }
 
-  @Override
   public Label label(String id) {
     return metadataOf(id).label();
   }
@@ -318,12 +314,10 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return "sur_" + java.util.UUID.randomUUID();
   }
 
-  @Override
   public boolean holds(String id) {
     return storage.contains(id);
   }
 
-  @Override
   public int erase(Surrogate<?> root) {
     AccessContext asking = asking();
     StoredMetadata entry = storage.metadata(root.id()).orElse(null);
@@ -433,12 +427,10 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return new Answer.Answered(answer);
   }
 
-  @Override
   public Lineage lineage(String id) {
     return metadataOf(id).lineage();
   }
 
-  @Override
   public Manifest manifest() {
     List<Manifest.Entry> theDestinations = new ArrayList<>();
     destinations.forEach(

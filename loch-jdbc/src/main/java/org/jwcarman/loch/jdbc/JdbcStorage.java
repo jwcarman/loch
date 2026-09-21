@@ -62,6 +62,20 @@ import org.jwcarman.loch.lattice.Label;
  */
 public final class JdbcStorage implements Storage {
 
+  /**
+   * Durable storage for a charter with these axes.
+   *
+   * <p>The axes are the charter's, passed rather than restated: a label is stored one axis at a
+   * time and keyed by name, so reading one back needs to know which axes the charter declares.
+   */
+  static JdbcStorage of(
+      javax.sql.DataSource dataSource,
+      CodecFactory codecs,
+      StorageCodec storageCodec,
+      java.util.List<Axis<?>> axes) {
+    return new JdbcStorage(dataSource, codecs, storageCodec, axes);
+  }
+
   private static final String INSERT_AUDIT =
       """
       INSERT INTO loch_audit (at, operation, value_id, target, outcome, reason, label, who)
@@ -113,7 +127,7 @@ public final class JdbcStorage implements Storage {
   private final java.util.List<Axis<?>> axes;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
 
-  JdbcStorage(
+  private JdbcStorage(
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,

@@ -58,8 +58,7 @@ class WritingAtAnothersLabelTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig config =
-      new SurrogateStoreConfig().axes(TENANT, INTEGRITY).currentAccess(edge::get);
+  private final Charter config = new Charter(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final Conceal<Note> notes =
@@ -84,7 +83,9 @@ class WritingAtAnothersLabelTest {
               NOTE_TYPE)
           .reading(NOTE_TYPE);
 
-  private final SurrogateStore store = MemorySurrogateStore.create(config);
+  {
+    config.seal(new MemoryStorage());
+  }
 
   // read `.tenant()` off the stored label is re-expressed against Label.toString(), which is
   // documented for rendering only. Deviation from PRESERVE-exactly, flagged for James: there is no
@@ -97,7 +98,7 @@ class WritingAtAnothersLabelTest {
     Surrogate<Note> written = notes.conceal(new Note("globex owes us 1,000,000"));
 
     // Acme wrote it and acme owns it. There was no argument through which to claim otherwise.
-    assertThat(store.label(written.id()).says(TENANT, "acme")).isTrue();
+    assertThat(config.label(written.id()).says(TENANT, "acme")).isTrue();
 
     // And globex does not read it as its own.
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
@@ -111,7 +112,7 @@ class WritingAtAnothersLabelTest {
 
     Surrogate<Note> mine = notes.conceal(new Note("our own note"));
 
-    assertThat(store.holds(mine.id())).isTrue();
+    assertThat(config.holds(mine.id())).isTrue();
     assertThat(reporting.reveal(mine).granted()).contains(new Note("our own note"));
   }
 }

@@ -57,8 +57,7 @@ class RequiredAxisTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig config =
-      new SurrogateStoreConfig().axes(TENANT, LEVEL).currentAccess(edge::get);
+  private final Charter config = new Charter(TENANT, LEVEL).currentAccess(edge::get);
 
   /** Exactly what an application would naturally write, including the part that was the leak. */
   private final Conceal<Note> notes =
@@ -83,7 +82,9 @@ class RequiredAxisTest {
               NOTE_TYPE)
           .reading(NOTE_TYPE);
 
-  private final SurrogateStore store = MemorySurrogateStore.create(config);
+  {
+    config.seal(new MemoryStorage());
+  }
 
   // that used to read `.tenant()` / `.level()` off a stored label are re-expressed against
   // Label.toString(), which is documented for rendering only ("Never for a decision"). This is a
@@ -96,7 +97,7 @@ class RequiredAxisTest {
 
     Surrogate<Note> note = notes.conceal(new Note("ours"));
 
-    assertThat(store.label(note.id()).says(TENANT, "acme")).isTrue();
+    assertThat(config.label(note.id()).says(TENANT, "acme")).isTrue();
   }
 
   /** The whole point: a value nobody can attribute is a value everybody can read. */
@@ -114,8 +115,7 @@ class RequiredAxisTest {
   @Test
   @DisplayName("and says so in the record")
   void and_says_so_in_the_record() {
-    SurrogateStoreConfig own =
-        new SurrogateStoreConfig().axes(TENANT, LEVEL).currentAccess(edge::get);
+    Charter own = new Charter(TENANT, LEVEL).currentAccess(edge::get);
     Conceal<Note> watched =
         own.source(
             "notes",
@@ -126,13 +126,13 @@ class RequiredAxisTest {
                     .orElseGet(Label::nothing)
                     .with(LEVEL, Level.HIGH));
     MemoryStorage storage = new MemoryStorage();
-    SurrogateStore unused = new DefaultSurrogateStore(own, storage);
+    own.seal(storage);
     edge.set(AccessContext.empty());
 
     assertThatThrownBy(() -> watched.conceal(new Note("orphan")))
         .isInstanceOf(AccessDeniedException.class);
 
-    assertThat(unused.holds("nothing")).isFalse();
+    assertThat(own.holds("nothing")).isFalse();
     assertThat(storage.everything()).isEmpty();
     assertThat(storage.audit(AuditRecord.Operation.HOLD))
         .isNotEmpty()
@@ -144,12 +144,12 @@ class RequiredAxisTest {
   @DisplayName("does not constrain an axis whose bottom means something")
   void does_not_constrain_an_axis_whose_bottom_means_something() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
-    SurrogateStoreConfig own = new SurrogateStoreConfig().axes(TENANT, LEVEL);
+    Charter own = new Charter(TENANT, LEVEL);
     Conceal<Note> low =
         own.source("low", NOTE_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
-    SurrogateStore other = MemorySurrogateStore.create(own);
+    own.seal(new MemoryStorage());
 
-    assertThat(other.label(low.conceal(new Note("fine")).id()).says(LEVEL, Level.LOW)).isTrue();
+    assertThat(own.label(low.conceal(new Note("fine")).id()).says(LEVEL, Level.LOW)).isTrue();
   }
 
   @Test

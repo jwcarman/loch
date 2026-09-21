@@ -171,8 +171,8 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig config =
-      new SurrogateStoreConfig().axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
+  private final Charter config =
+      new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -379,7 +379,9 @@ class BillingScenarioTest {
           .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
           .mint();
 
-  private final SurrogateStore store = new DefaultSurrogateStore(config, storage);
+  {
+    config.seal(storage);
+  }
 
   /** Every access in this system is made on behalf of a tenant, established at the edge. */
   private AccessContext acme() {
@@ -401,10 +403,10 @@ class BillingScenarioTest {
    * Holds a value at exactly the label given, by encoding it into the ambient context a door's
    * generic {@link #labelFrom} reads back out, then restoring whatever the edge held before.
    *
-   * <p>This is the plumbing equivalent of the old {@code store.hold(value, type, label)}: the label
-   * is still asserted by trusted code at a boundary, not computed, and still fixed before the value
-   * is stored. What changed is the mechanism -- there is no method left that takes a label as an
-   * argument, so the label has to travel through the one channel a door reads.
+   * <p>This is the plumbing equivalent of the old {@code config.hold(value, type, label)}: the
+   * label is still asserted by trusted code at a boundary, not computed, and still fixed before the
+   * value is stored. What changed is the mechanism -- there is no method left that takes a label as
+   * an argument, so the label has to travel through the one channel a door reads.
    */
   private <T> Surrogate<T> holdAs(
       String tenant,
@@ -573,7 +575,7 @@ class BillingScenarioTest {
       acme();
       Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote)).orThrow();
 
-      assertThat(store.label(report).says(TENANT, "acme")).isFalse();
+      assertThat(config.label(report).says(TENANT, "acme")).isFalse();
       acme();
       assertThat(vendorLlmReports.reveal(report).allowed()).isFalse();
       acme();
@@ -583,7 +585,7 @@ class BillingScenarioTest {
       AccessContext.of("tenant", "globex");
       assertThat(vendorLlmReports.reveal(report).allowed()).isFalse();
       // It exists, and it remembers where it came from.
-      assertThat(store.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
+      assertThat(config.lineage(report).parents()).containsExactly(acmeNote.id(), globexNote.id());
     }
 
     @Test
@@ -620,7 +622,7 @@ class BillingScenarioTest {
       acme();
       Surrogate<Report> report = summarise.fold(List.of(ordinary, personal)).orThrow();
 
-      assertThat(store.label(report).says(DATA_CLASS, DataClass.PII)).isTrue();
+      assertThat(config.label(report).says(DATA_CLASS, DataClass.PII)).isTrue();
       acme();
       assertThat(vendorLlmReports.reveal(report).allowed()).isFalse();
       acme();
@@ -681,7 +683,7 @@ class BillingScenarioTest {
     }
 
     /**
-     * This used to invent a destination name and assert the store refused it. There is no longer a
+     * This used to invent a destination name and assert the config refused it. There is no longer a
      * method that takes one: a door is reached by holding the sink, and outlets are minted during
      * configuration. What is worth asserting is that the door really is gone, because it is exactly
      * the sort of thing that gets added back for a test fixture and left there.
@@ -689,7 +691,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses a destination nobody registered")
     void refuses_a_destination_nobody_registered() {
-      assertThat(SurrogateStore.class.getMethods())
+      assertThat(Charter.class.getMethods())
           .isNotEmpty()
           .noneSatisfy(method -> assertThat(method.getReturnType()).isEqualTo(Revealed.class));
     }
@@ -745,7 +747,7 @@ class BillingScenarioTest {
       acme();
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim()).orThrow();
 
-      assertThat(store.label(number))
+      assertThat(config.label(number))
           .isEqualTo(label("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
       acme();
       assertThat(quarantinedLlmInvoice.reveal(number).granted())
@@ -761,7 +763,7 @@ class BillingScenarioTest {
       acme();
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim()).orThrow();
 
-      assertThat(store.label(number).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
+      assertThat(config.label(number).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
     }
 
     @Test
@@ -772,9 +774,9 @@ class BillingScenarioTest {
       acme();
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(parent).orThrow();
 
-      assertThat(store.lineage(number).parents()).containsExactly(parent.id());
-      assertThat(store.lineage(number).derivation()).contains(CLAIMED_INVOICE);
-      assertThat(store.lineage(parent).asserted()).isTrue();
+      assertThat(config.lineage(number).parents()).containsExactly(parent.id());
+      assertThat(config.lineage(number).derivation()).contains(CLAIMED_INVOICE);
+      assertThat(config.lineage(parent).asserted()).isTrue();
     }
 
     /**
@@ -796,8 +798,8 @@ class BillingScenarioTest {
       Surrogate<InvoiceNumber> twice = claimedInvoice.derive(parent).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
-      assertThat(store.lineage(once).parents()).containsExactly(parent.id());
-      assertThat(store.lineage(twice).parents()).containsExactly(parent.id());
+      assertThat(config.lineage(once).parents()).containsExactly(parent.id());
+      assertThat(config.lineage(twice).parents()).containsExactly(parent.id());
     }
 
     @Test
@@ -809,37 +811,34 @@ class BillingScenarioTest {
     }
 
     /**
-     * This used to invent a name and assert the store refused it. The name no longer buys anything
+     * This used to invent a name and assert the config refused it. The name no longer buys anything
      * -- there is no method that takes one -- so what is worth asserting is the property that
      * replaced it, and it is the stronger one: a derivation cannot be run unless somebody handed
-     * you the capability, and a capability minted after the store was built was handed nothing.
+     * you the portal, and a sealed charter constitutes no more of them.
      *
-     * <p>Not a policy. There is no check to disable: a late capability is attached to no store, so
-     * there is nothing for it to act on.
+     * <p>Not a policy. There is no check to disable: the authority graph of a sealed charter cannot
+     * grow, so there is nothing to hand out.
      */
     @Test
-    @DisplayName("a derivation minted after the store was built is attached to nothing")
-    void a_derivation_minted_afterwards_is_attached_to_nothing() {
-      Derivation<DisputeClaim, InvoiceNumber> invented =
-          config
-              .derivation(
-                  "whatever-i-like",
-                  DISPUTE_CLAIM_TYPE,
-                  INVOICE_NUMBER_TYPE,
-                  c -> new InvoiceNumber(c.invoiceNumber()))
-              .accepting(
-                  ctx ->
-                      Ceiling.of(TENANT, Constraint.any())
-                          .with(INTEGRITY, Constraint.any())
-                          .with(TLP, Constraint.any())
-                          .with(DATA_CLASS, Constraint.any()))
-              .mint();
-      Surrogate<DisputeClaim> claim = claim();
-
-      acme();
-      assertThatThrownBy(() -> invented.derive(claim))
+    @DisplayName("a derivation cannot be declared after the charter was sealed")
+    void a_derivation_cannot_be_declared_after_sealing() {
+      assertThatThrownBy(
+              () ->
+                  config
+                      .derivation(
+                          "whatever-i-like",
+                          DISPUTE_CLAIM_TYPE,
+                          INVOICE_NUMBER_TYPE,
+                          c -> new InvoiceNumber(c.invoiceNumber()))
+                      .accepting(
+                          ctx ->
+                              Ceiling.of(TENANT, Constraint.any())
+                                  .with(INTEGRITY, Constraint.any())
+                                  .with(TLP, Constraint.any())
+                                  .with(DATA_CLASS, Constraint.any()))
+                      .mint())
           .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("attached to no store");
+          .hasMessageContaining("has been sealed");
     }
   }
 
@@ -862,7 +861,7 @@ class BillingScenarioTest {
       preparingApproval();
       Surrogate<Last4> last4 = cardLast4.derive(token()).orThrow();
 
-      assertThat(store.label(last4).says(DATA_CLASS, DataClass.PII)).isTrue();
+      assertThat(config.label(last4).says(DATA_CLASS, DataClass.PII)).isTrue();
       acme("clearance", "finance");
       assertThat(approvalCardLast4.reveal(last4).granted()).contains(new Last4("4821"));
     }
@@ -873,8 +872,8 @@ class BillingScenarioTest {
       preparingApproval();
       Surrogate<Last4> last4 = cardLast4.derive(token()).orThrow();
 
-      assertThat(store.label(last4).says(TENANT, "acme")).isTrue();
-      assertThat(store.label(last4).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
+      assertThat(config.label(last4).says(TENANT, "acme")).isTrue();
+      assertThat(config.label(last4).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
     }
 
     /**
@@ -887,8 +886,8 @@ class BillingScenarioTest {
       acme();
       Surrogate<Last4> partly = cardLast4Partial.derive(token()).orThrow();
 
-      assertThat(store.label(partly).says(DATA_CLASS, DataClass.PII)).isTrue();
-      assertThat(store.label(partly).says(TLP, Tlp.RED)).isTrue();
+      assertThat(config.label(partly).says(DATA_CLASS, DataClass.PII)).isTrue();
+      assertThat(config.label(partly).says(TLP, Tlp.RED)).isTrue();
       acme("clearance", "finance");
       assertThat(approvalCardLast4.reveal(partly).allowed()).isFalse();
     }
@@ -926,7 +925,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("the manifest names every operation that can weaken a label")
     void the_manifest_names_every_weakening_operation() {
-      Manifest manifest = store.manifest();
+      Manifest manifest = config.manifest();
 
       assertThat(manifest.weakening()).isNotEmpty();
       assertThat(manifest.weakening())
@@ -942,7 +941,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("including ones that read several values, which used to weaken labels invisibly")
     void including_ones_that_read_several_values() {
-      assertThat(store.manifest().weakening())
+      assertThat(config.manifest().weakening())
           .extracting(Manifest.Entry::name)
           .contains(SUMMARISE_FOR_RELEASE)
           .doesNotContain(SUMMARISE);
@@ -952,16 +951,16 @@ class BillingScenarioTest {
     @Test
     @DisplayName("and the report keeps the order everything was registered in")
     void the_report_keeps_registration_order() {
-      Manifest manifest = store.manifest();
+      Manifest manifest = config.manifest();
 
-      assertThat(manifest.toString()).isEqualTo(store.manifest().toString());
+      assertThat(manifest.toString()).isEqualTo(config.manifest().toString());
       assertThat(manifest.destinations()).extracting(Manifest.Entry::name).startsWith("vendor-llm");
     }
 
     @Test
     @DisplayName("and is readable, which is the whole point of it")
     void and_is_readable() {
-      String report = store.manifest().toString();
+      String report = config.manifest().toString();
 
       System.out.println(report);
       assertThat(report)
@@ -1018,8 +1017,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
-      SurrogateStoreConfig choosyConfig = new SurrogateStoreConfig();
-      choosyConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
+      Charter choosyConfig = new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS);
+      choosyConfig.currentAccess(edge::get);
       Conceal<Account> secretAccounts =
           choosyConfig.source(
               "secret-accounts",
@@ -1030,7 +1029,7 @@ class BillingScenarioTest {
               .query("Account.ownedBy", ACCOUNT_TYPE, String.class, (account, sender, ctx) -> true)
               .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
               .mint();
-      SurrogateStore choosy = MemorySurrogateStore.create(choosyConfig);
+      choosyConfig.seal(new MemoryStorage());
       Surrogate<Account> secret = secretAccounts.conceal(new Account("ACC-2", "x@y.example"));
 
       acme();
@@ -1097,8 +1096,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
-      SurrogateStoreConfig fragileConfig = new SurrogateStoreConfig();
-      fragileConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
+      Charter fragileConfig = new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS);
+      fragileConfig.currentAccess(edge::get);
       Conceal<String> fragileMail =
           fragileConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       Reveal<String> broken =
@@ -1110,7 +1109,7 @@ class BillingScenarioTest {
                   },
                   STRING_TYPE)
               .reading(STRING_TYPE);
-      SurrogateStore fragile = MemorySurrogateStore.create(fragileConfig);
+      fragileConfig.seal(new MemoryStorage());
       Surrogate<String> held =
           holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, fragileMail, "x");
 
@@ -1238,15 +1237,15 @@ class BillingScenarioTest {
      * A control whose record is quietly failing still produces the report.
      *
      * <p>Nothing is left behind either. The value and the line saying it arrived are written as one
-     * act, so a store that cannot record leaves no value. The other outcome -- a secret committed
+     * act, so a config that cannot record leaves no value. The other outcome -- a secret committed
      * durably under an id nobody received, that nothing can reach, read or erase -- is the one this
      * is here to prevent.
      */
     @Test
     @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
     void an_access_that_cannot_be_recorded_does_not_happen() {
-      SurrogateStoreConfig watchedConfig = new SurrogateStoreConfig();
-      watchedConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
+      Charter watchedConfig = new Charter(TENANT, INTEGRITY, TLP, DATA_CLASS);
+      watchedConfig.currentAccess(edge::get);
       Conceal<String> watchedMail =
           watchedConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       MemoryStorage kept = new MemoryStorage();
@@ -1282,7 +1281,7 @@ class BillingScenarioTest {
               return kept.erase(root);
             }
           };
-      SurrogateStore watched = new DefaultSurrogateStore(watchedConfig, broken);
+      watchedConfig.seal(broken);
 
       assertThatThrownBy(
               () ->
@@ -1295,7 +1294,7 @@ class BillingScenarioTest {
                       "anything"))
           .isInstanceOf(IllegalStateException.class);
 
-      assertThat(watched.holds("anything")).isFalse();
+      assertThat(watchedConfig.holds("anything")).isFalse();
       assertThat(kept.everything()).isEmpty();
     }
 
@@ -1304,12 +1303,12 @@ class BillingScenarioTest {
      *
      * <p>Keeping no record used to be a thing you could configure, and this asserted that you had
      * to say so out loud rather than omit an auditor. Both are gone: the record is written by the
-     * store, so there is no switch to leave off and nothing to declare.
+     * config, so there is no switch to leave off and nothing to declare.
      */
     @Test
     @DisplayName("keeping no record is not something you can ask for")
     void keeping_no_record_is_not_something_you_can_ask_for() {
-      assertThat(SurrogateStoreConfig.class.getMethods())
+      assertThat(Charter.class.getMethods())
           .isNotEmpty()
           .noneSatisfy(method -> assertThat(method.getName()).contains("udit"));
     }

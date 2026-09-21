@@ -44,7 +44,7 @@ class ArityTest {
 
   private static final Axis<String> TENANT = Axis.matching("tenant");
 
-  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
+  private final Charter config = new Charter(TENANT);
 
   private final Conceal<Note> notes = config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
 
@@ -58,7 +58,9 @@ class ArityTest {
           .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
           .mint();
 
-  private final SurrogateStore store = MemorySurrogateStore.create(config);
+  {
+    config.seal(new MemoryStorage());
+  }
 
   private final Surrogate<Note> first = notes.conceal(new Note("a"));
   private final Surrogate<Note> second = notes.conceal(new Note("b"));
@@ -86,6 +88,6 @@ class ArityTest {
   void carries_the_join_of_every_parents_label() {
     Surrogate<Note> result = joined.fold(List.of(first, second)).orThrow();
 
-    assertThat(store.label(result.id())).isEqualTo(Label.of(TENANT, "acme"));
+    assertThat(config.label(result.id())).isEqualTo(Label.of(TENANT, "acme"));
   }
 }

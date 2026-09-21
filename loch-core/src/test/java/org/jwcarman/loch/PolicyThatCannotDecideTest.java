@@ -44,7 +44,7 @@ class PolicyThatCannotDecideTest {
 
   private final MemoryStorage storage = new MemoryStorage();
 
-  private final SurrogateStoreConfig config = new SurrogateStoreConfig().axes(TENANT);
+  private final Charter config = new Charter(TENANT);
 
   private final Conceal<String> source =
       config.source("source", STRING_TYPE, ctx -> Label.of(TENANT, "acme"));
@@ -84,7 +84,9 @@ class PolicyThatCannotDecideTest {
           .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
           .mint();
 
-  private final SurrogateStore store = new DefaultSurrogateStore(config, storage);
+  {
+    config.seal(storage);
+  }
 
   private final Surrogate<String> held = source.conceal("secret");
 

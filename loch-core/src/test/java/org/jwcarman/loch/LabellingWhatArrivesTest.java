@@ -55,8 +55,7 @@ class LabellingWhatArrivesTest {
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig config =
-      new SurrogateStoreConfig().axes(TENANT, INTEGRITY).currentAccess(edge::get);
+  private final Charter config = new Charter(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final Conceal<Mail> mail =
@@ -71,7 +70,9 @@ class LabellingWhatArrivesTest {
                       INTEGRITY,
                       message.senderVerified() ? Integrity.ENDORSED : Integrity.UNENDORSED));
 
-  private final SurrogateStore store = MemorySurrogateStore.create(config);
+  {
+    config.seal(new MemoryStorage());
+  }
 
   // there is no direct way left to ask what a stored label says on a given axis. Label.toString()
   // is the only supported path back to a per-axis value, and it is documented for rendering only
@@ -87,8 +88,8 @@ class LabellingWhatArrivesTest {
     Surrogate<Mail> verified = mail.conceal(new Mail("known@acme.example", "hello", true));
     Surrogate<Mail> anonymous = mail.conceal(new Mail("who@nowhere.example", "hello", false));
 
-    assertThat(store.label(verified.id()).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
-    assertThat(store.label(anonymous.id()).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
+    assertThat(config.label(verified.id()).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
+    assertThat(config.label(anonymous.id()).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
   }
 
   /** The rest of the label is still the access's business, and the value cannot touch it. */
@@ -98,6 +99,6 @@ class LabellingWhatArrivesTest {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
     Surrogate<Mail> acmeMail = mail.conceal(new Mail("x@y.example", "globex globex globex", true));
 
-    assertThat(store.label(acmeMail.id()).says(TENANT, "acme")).isTrue();
+    assertThat(config.label(acmeMail.id()).says(TENANT, "acme")).isTrue();
   }
 }
