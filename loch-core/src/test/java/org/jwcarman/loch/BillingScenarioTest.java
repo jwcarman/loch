@@ -572,7 +572,8 @@ class BillingScenarioTest {
               notes,
               "globex disputes INV-2");
 
-      Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
+      acme();
+      Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote)).orThrow();
 
       assertThat(store.label(report).says(TENANT, "acme")).isFalse();
       acme();
@@ -595,7 +596,8 @@ class BillingScenarioTest {
       Surrogate<String> second =
           holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "second note");
 
-      Surrogate<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
+      acme();
+      Surrogate<Report> report = summarise.fold(List.of(first, second)).orThrow();
 
       acme();
       assertThat(vendorLlmReports.reveal(report).granted())
@@ -617,7 +619,8 @@ class BillingScenarioTest {
               notes,
               "and their home address");
 
-      Surrogate<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
+      acme();
+      Surrogate<Report> report = summarise.fold(List.of(ordinary, personal)).orThrow();
 
       assertThat(store.label(report).says(DATA_CLASS, DataClass.PII)).isTrue();
       acme();
@@ -629,7 +632,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a fold with nothing to fold is refused")
     void a_fold_with_nothing_to_fold_is_refused() {
-      assertThat(summarise.fold(List.of(), acme()))
+      acme();
+      assertThat(summarise.fold(List.of()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NO_PARENTS));
@@ -740,7 +744,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a projection inherits its parent's labels exactly")
     void a_projection_inherits_its_parents_labels() {
-      Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
+      acme();
+      Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim()).orThrow();
 
       assertThat(store.label(number))
           .isEqualTo(label("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
@@ -755,7 +760,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("extracting a field does not make it trustworthy")
     void extracting_a_field_does_not_make_it_trustworthy() {
-      Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
+      acme();
+      Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim()).orThrow();
 
       assertThat(store.label(number).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
     }
@@ -765,7 +771,8 @@ class BillingScenarioTest {
     void records_what_it_came_from() {
       Surrogate<DisputeClaim> parent = claim();
 
-      Surrogate<InvoiceNumber> number = claimedInvoice.derive(parent, acme()).orThrow();
+      acme();
+      Surrogate<InvoiceNumber> number = claimedInvoice.derive(parent).orThrow();
 
       assertThat(store.lineage(number).parents()).containsExactly(parent.id());
       assertThat(store.lineage(number).derivation()).contains(CLAIMED_INVOICE);
@@ -785,8 +792,10 @@ class BillingScenarioTest {
     void deriving_twice_makes_two_values() {
       Surrogate<DisputeClaim> parent = claim();
 
-      Surrogate<InvoiceNumber> once = claimedInvoice.derive(parent, acme()).orThrow();
-      Surrogate<InvoiceNumber> twice = claimedInvoice.derive(parent, acme()).orThrow();
+      acme();
+      Surrogate<InvoiceNumber> once = claimedInvoice.derive(parent).orThrow();
+      acme();
+      Surrogate<InvoiceNumber> twice = claimedInvoice.derive(parent).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
       assertThat(store.lineage(once).parents()).containsExactly(parent.id());
@@ -796,8 +805,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("two different parents give two different handles")
     void two_different_parents_give_two_different_handles() {
-      assertThat(claimedInvoice.derive(claim(), acme()).orThrow().id())
-          .isNotEqualTo(claimedInvoice.derive(claim(), acme()).orThrow().id());
+      acme();
+      assertThat(claimedInvoice.derive(claim()).orThrow().id())
+          .isNotEqualTo(claimedInvoice.derive(claim()).orThrow().id());
     }
 
     /**
@@ -828,7 +838,8 @@ class BillingScenarioTest {
               .mint();
       Surrogate<DisputeClaim> claim = claim();
 
-      assertThatThrownBy(() -> invented.derive(claim, acme()))
+      acme();
+      assertThatThrownBy(() -> invented.derive(claim))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("attached to no store");
     }
@@ -850,7 +861,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("truncating a card lowers it to PII, which a person may then see")
     void truncating_a_card_lowers_it_to_pii() {
-      Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
+      preparingApproval();
+      Surrogate<Last4> last4 = cardLast4.derive(token()).orThrow();
 
       assertThat(store.label(last4).says(DATA_CLASS, DataClass.PII)).isTrue();
       acme("clearance", "finance");
@@ -860,7 +872,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("and lowers nothing it did not name: still acme's, still endorsed")
     void lowers_nothing_it_did_not_name() {
-      Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
+      preparingApproval();
+      Surrogate<Last4> last4 = cardLast4.derive(token()).orThrow();
 
       assertThat(store.label(last4).says(TENANT, "acme")).isTrue();
       assertThat(store.label(last4).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
@@ -873,7 +886,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("lowering only one dimension leaves the other still blocking")
     void lowering_only_one_dimension_leaves_the_other_blocking() {
-      Surrogate<Last4> partly = cardLast4Partial.derive(token(), acme()).orThrow();
+      acme();
+      Surrogate<Last4> partly = cardLast4Partial.derive(token()).orThrow();
 
       assertThat(store.label(partly).says(DATA_CLASS, DataClass.PII)).isTrue();
       assertThat(store.label(partly).says(TLP, Tlp.RED)).isTrue();
@@ -884,7 +898,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("is offered only where it was declared to be")
     void is_offered_only_where_declared() {
-      assertThat(cardLast4.derive(token(), acme()))
+      acme();
+      assertThat(cardLast4.derive(token()))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NOT_AVAILABLE_HERE));
@@ -903,7 +918,8 @@ class BillingScenarioTest {
               disputeClaims,
               new DisputeClaim("INV-1", "x"));
 
-      assertThat(wishful.derive(endorsed, acme()))
+      acme();
+      assertThat(wishful.derive(endorsed))
           .isInstanceOfSatisfying(
               Derived.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Derived.Reason.NOT_A_LOWERING));
@@ -976,8 +992,10 @@ class BillingScenarioTest {
     void answers_without_the_account_leaving() {
       Surrogate<Account> account = account();
 
-      assertThat(ownedBy.ask(account, "someone@acme.example", acme()).isTrue()).isTrue();
-      assertThat(ownedBy.ask(account, "attacker@elsewhere.example", acme()).isFalse()).isTrue();
+      acme();
+      assertThat(ownedBy.ask(account, "someone@acme.example").isTrue()).isTrue();
+      acme();
+      assertThat(ownedBy.ask(account, "attacker@elsewhere.example").isFalse()).isTrue();
     }
 
     /**
@@ -991,7 +1009,8 @@ class BillingScenarioTest {
       // nobody registered, which is the only kind of refusal there is now.
       Surrogate<Account> acmeAccount = account();
 
-      Answer answer = ownedBy.ask(acmeAccount, "x", globex());
+      globex();
+      Answer answer = ownedBy.ask(acmeAccount, "x");
 
       assertThat(answer.isTrue()).isFalse();
       assertThat(answer.isFalse()).isFalse();
@@ -1016,7 +1035,8 @@ class BillingScenarioTest {
       SurrogateStore choosy = MemorySurrogateStore.create(choosyConfig);
       Surrogate<Account> secret = secretAccounts.conceal(new Account("ACC-2", "x@y.example"));
 
-      assertThat(secretOwnedBy.ask(secret, "x@y.example", acme()))
+      acme();
+      assertThat(secretOwnedBy.ask(secret, "x@y.example"))
           .isInstanceOfSatisfying(
               Answer.Refused.class,
               refused -> assertThat(refused.reason()).isEqualTo(Answer.Reason.ABOVE_CEILING));
@@ -1152,7 +1172,8 @@ class BillingScenarioTest {
               accounts,
               new Account("ACC-1", "someone@acme.example"));
 
-      ownedBy.ask(account, "someone@acme.example", acme());
+      acme();
+      ownedBy.ask(account, "someone@acme.example");
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.ASK).getLast();
       assertThat(entry.reason()).contains("answered true");
@@ -1172,7 +1193,8 @@ class BillingScenarioTest {
               cardTokens,
               "tok_1P9xyz4821");
 
-      cardLast4.derive(token, acme("tool", "prepare_approval"));
+      acme("tool", "prepare_approval");
+      cardLast4.derive(token);
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.reason()).hasValueSatisfying(r -> assertThat(r).startsWith("weakened from"));
@@ -1191,7 +1213,8 @@ class BillingScenarioTest {
               disputeClaims,
               new DisputeClaim("INV-4471", "charged twice"));
 
-      claimedInvoice.derive(claim, acme());
+      acme();
+      claimedInvoice.derive(claim);
 
       assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
     }
@@ -1204,7 +1227,8 @@ class BillingScenarioTest {
       Surrogate<String> second =
           holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "b");
 
-      summarise.fold(java.util.List.of(first, second), acme());
+      acme();
+      summarise.fold(java.util.List.of(first, second));
 
       assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().reason())
           .contains("combined from 2 values");
@@ -1317,7 +1341,8 @@ class BillingScenarioTest {
     void a_derivation_that_declined_is_recorded() {
       storage.clearAudit();
 
-      declines.derive(claim(), acme());
+      acme();
+      declines.derive(claim());
 
       assertThat(storage.audit(AuditRecord.Operation.DERIVE))
           .isNotEmpty()
@@ -1343,7 +1368,8 @@ class BillingScenarioTest {
               "tok_1P9xyz4821");
       storage.clearAudit();
 
-      cardLast4.derive(token, acme());
+      acme();
+      cardLast4.derive(token);
 
       AuditRecord entry = storage.audit(AuditRecord.Operation.DERIVE).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
@@ -1357,7 +1383,8 @@ class BillingScenarioTest {
     void a_refusal_after_reading_records_its_label() {
       storage.clearAudit();
 
-      declines.derive(claim(), acme());
+      acme();
+      declines.derive(claim());
 
       assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().label())
           .hasValueSatisfying(label -> assertThat(label).contains("UNENDORSED"));
@@ -1381,7 +1408,8 @@ class BillingScenarioTest {
               accounts,
               new Account("ACC-1", "someone@acme.example"));
       storage.clearAudit();
-      ownedBy.ask(acmeAccount, "x", globex());
+      globex();
+      ownedBy.ask(acmeAccount, "x");
 
       assertThat(storage.audit(AuditRecord.Operation.ASK))
           .anySatisfy(
@@ -1396,7 +1424,8 @@ class BillingScenarioTest {
     void a_fold_refused_at_the_gate_is_recorded() {
       storage.clearAudit();
 
-      summarise.fold(java.util.List.of(), acme());
+      acme();
+      summarise.fold(java.util.List.of());
 
       assertThat(storage.audit(AuditRecord.Operation.DERIVE))
           .anySatisfy(
@@ -1411,7 +1440,8 @@ class BillingScenarioTest {
     void a_refusal_never_says_what_the_value_was() {
       storage.clearAudit();
 
-      declines.derive(claim(), acme());
+      acme();
+      declines.derive(claim());
 
       assertThat(storage.audit(AuditRecord.Operation.DERIVE).getLast().toString())
           .doesNotContain("charged twice")

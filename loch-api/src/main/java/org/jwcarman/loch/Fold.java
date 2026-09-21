@@ -42,7 +42,4 @@ public interface Fold<I, O> {
    * mistake in the caller.
    */
   Derived<O> fold(List<Surrogate<I>> parents);
-
-  /** The same, with attributes the caller is contributing to the decision. */
-  Derived<O> fold(List<Surrogate<I>> parents, AccessContext context);
 }

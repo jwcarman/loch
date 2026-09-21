@@ -287,7 +287,8 @@ class JdbcSurrogateStoreTest {
   void a_derived_value_keeps_its_parentage() {
     Surrogate<Card> card = card();
 
-    Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
+    acme();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
 
     assertThat(store.label(last4).says(DATA, DataClass.PII)).isTrue();
     assertThat(store.lineage(last4).parents()).containsExactly(card.id());
@@ -299,8 +300,10 @@ class JdbcSurrogateStoreTest {
   void deriving_twice_stores_twice() throws SQLException {
     Surrogate<Card> card = card();
 
-    Surrogate<Last4> once = cardLast4.derive(card, acme()).orThrow();
-    Surrogate<Last4> twice = cardLast4.derive(card, acme()).orThrow();
+    acme();
+    Surrogate<Last4> once = cardLast4.derive(card).orThrow();
+    acme();
+    Surrogate<Last4> twice = cardLast4.derive(card).orThrow();
 
     assertThat(once.id()).isNotEqualTo(twice.id());
     assertThat(rowCount("loch_value")).isEqualTo(3);
@@ -311,7 +314,8 @@ class JdbcSurrogateStoreTest {
   @DisplayName("erasing a value takes everything ever derived from it")
   void erasing_takes_everything_derived_from_it() throws SQLException {
     Surrogate<Card> card = card();
-    Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
+    acme();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     int removed = store.erase(card);
@@ -326,7 +330,8 @@ class JdbcSurrogateStoreTest {
   @DisplayName("erasing a derived value leaves its parent alone")
   void erasing_a_derived_value_leaves_its_parent() {
     Surrogate<Card> card = card();
-    Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
+    acme();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     assertThat(store.erase(last4)).isEqualTo(1);
@@ -389,7 +394,8 @@ class JdbcSurrogateStoreTest {
   @DisplayName("and keeps it after the value it is about has been erased")
   void keeps_the_record_after_erasure() throws SQLException {
     Surrogate<Card> card = card();
-    cardLast4.derive(card, acme());
+    acme();
+    cardLast4.derive(card);
     int before = rowCount("loch_audit");
 
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));

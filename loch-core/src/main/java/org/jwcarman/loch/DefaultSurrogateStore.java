@@ -42,7 +42,6 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   private final List<QuerySpec<?, ?>> queries;
   private final boolean explainRefusals;
   private final AccessContextProvider ambient;
-  private final java.util.Set<String> callerMayContribute;
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
 
@@ -68,7 +67,6 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     this.queries = List.copyOf(config.queries());
     this.explainRefusals = config.explainsRefusals();
     this.ambient = config.ambient();
-    this.callerMayContribute = config.callerMayContribute();
     this.mayErase = config.mayErase();
     // Last, and only once everything above succeeded: capabilities minted during configuration
     // reach this store through the config, and one that half-built must not be reachable at all.
@@ -90,7 +88,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     if (value == null) {
       throw new IllegalArgumentException("a store holds values, not nulls");
     }
-    AccessContext asking = asking(AccessContext.empty());
+    AccessContext asking = asking();
     Label label;
     try {
       label = labelling.apply(value, asking);
@@ -198,8 +196,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
    *
    * <p>Resolved once per operation, because an ambient source may be doing real work to answer.
    */
-  private AccessContext asking(AccessContext explicit) {
-    return explicit.contributedTo(ambient.get(), callerMayContribute);
+  private AccessContext asking() {
+    return ambient.get();
   }
 
   /**
@@ -314,8 +312,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
   }
 
   @Override
-  public int erase(Surrogate<?> root, AccessContext context) {
-    AccessContext asking = asking(context);
+  public int erase(Surrogate<?> root) {
+    AccessContext asking = asking();
     StoredMetadata entry = storage.metadata(root.id()).orElse(null);
     if (entry == null) {
       return 0;
@@ -345,8 +343,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return removed;
   }
 
-  <I, Q> Answer askVia(QuerySpec<I, Q> spec, Surrogate<I> about, Q against, AccessContext given) {
-    AccessContext asking = asking(given);
+  <I, Q> Answer askVia(QuerySpec<I, Q> spec, Surrogate<I> about, Q against) {
+    AccessContext asking = asking();
     AtomicReference<Label> label = new AtomicReference<>();
     Answer answer = answering(spec, about, against, asking, label);
     if (answer instanceof Answer.Refused refused) {
@@ -465,9 +463,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
    * be given any type by {@link Surrogate#of}, so what the store wrote remains the only ground
    * truth.
    */
-  <O> Derived<O> deriveVia(
-      DerivationSpec<O> spec, List<Surrogate<?>> parents, AccessContext explicit) {
-    AccessContext asking = asking(explicit);
+  <O> Derived<O> deriveVia(DerivationSpec<O> spec, List<Surrogate<?>> parents) {
+    AccessContext asking = asking();
     AtomicReference<Label> label = new AtomicReference<>();
     Derived<O> result = deriving(spec, parents, asking, label);
     if (result instanceof Derived.Refused<O> refused) {
@@ -593,9 +590,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return new Derived.Made<>(new Surrogate<>(newId));
   }
 
-  <T> Revealed<T> revealVia(
-      Surrogate<T> held, SurrogateType<T> expected, String to, AccessContext context) {
-    context = asking(context);
+  <T> Revealed<T> revealVia(Surrogate<T> held, SurrogateType<T> expected, String to) {
+    AccessContext context = asking();
     DestinationSpec destination = destinations.get(to);
     if (destination == null) {
       return denied(

@@ -70,12 +70,7 @@ public interface SurrogateStore {
    * @return how many values were removed, the root included
    * @throws AccessDeniedException when the erasure policy refuses
    */
-  int erase(Surrogate<?> root, AccessContext context);
-
-  /** Using whatever the store was told about who is asking. */
-  default int erase(Surrogate<?> root) {
-    return erase(root, AccessContext.empty());
-  }
+  int erase(Surrogate<?> root);
 
   /** Whether the store is holding this at all. */
   boolean holds(String id);

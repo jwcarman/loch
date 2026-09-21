@@ -37,7 +37,6 @@ public class SurrogateStoreConfig<D> {
   private List<Axis<?>> axes = List.of();
   private boolean explainRefusals;
   private AccessContextProvider ambient = AccessContextProvider.none();
-  private java.util.Set<String> callerMayContribute = java.util.Set.of();
   private java.util.function.BiPredicate<Label, AccessContext> mayErase = (label, context) -> false;
   private final List<DestinationSpec> destinations = new ArrayList<>();
   private final List<DerivationSpec<?>> derivations = new ArrayList<>();
@@ -225,7 +224,7 @@ public class SurrogateStoreConfig<D> {
 
         @Override
         public Revealed<T> reveal(Surrogate<T> surrogate) {
-          return bound.engine().revealVia(surrogate, type, door, AccessContext.empty());
+          return bound.engine().revealVia(surrogate, type, door);
         }
 
         @Override
@@ -261,12 +260,7 @@ public class SurrogateStoreConfig<D> {
             new Derivation<>() {
               @Override
               public Derived<O> derive(Surrogate<I> parent) {
-                return derive(parent, AccessContext.empty());
-              }
-
-              @Override
-              public Derived<O> derive(Surrogate<I> parent, AccessContext context) {
-                return binding.engine().deriveVia(spec, List.of(parent), context);
+                return binding.engine().deriveVia(spec, List.of(parent));
               }
             });
   }
@@ -294,12 +288,7 @@ public class SurrogateStoreConfig<D> {
             new Derivation<>() {
               @Override
               public Derived<O> derive(Surrogate<I> parent) {
-                return derive(parent, AccessContext.empty());
-              }
-
-              @Override
-              public Derived<O> derive(Surrogate<I> parent, AccessContext context) {
-                return binding.engine().deriveVia(spec, List.of(parent), context);
+                return binding.engine().deriveVia(spec, List.of(parent));
               }
             });
   }
@@ -326,12 +315,7 @@ public class SurrogateStoreConfig<D> {
             new Fold<>() {
               @Override
               public Derived<O> fold(List<Surrogate<I>> parents) {
-                return fold(parents, AccessContext.empty());
-              }
-
-              @Override
-              public Derived<O> fold(List<Surrogate<I>> parents, AccessContext context) {
-                return binding.engine().deriveVia(spec, List.copyOf(parents), context);
+                return binding.engine().deriveVia(spec, List.copyOf(parents));
               }
             });
   }
@@ -502,12 +486,7 @@ public class SurrogateStoreConfig<D> {
       return new Query<>() {
         @Override
         public Answer ask(Surrogate<I> about, Q against) {
-          return ask(about, against, AccessContext.empty());
-        }
-
-        @Override
-        public Answer ask(Surrogate<I> about, Q against, AccessContext context) {
-          return binding.engine().askVia(spec, about, against, context);
+          return binding.engine().askVia(spec, about, against);
         }
       };
     }
@@ -604,25 +583,6 @@ public class SurrogateStoreConfig<D> {
   public SurrogateStoreConfig<D> currentAccess(AccessContextProvider ambient) {
     this.ambient = Objects.requireNonNull(ambient, "an access source must not be null");
     return this;
-  }
-
-  /**
-   * The context keys a call site may contribute, on top of what the edge established.
-   *
-   * <p>Empty by default, deliberately. Anything a caller says about who it is would otherwise be
-   * taken at its word, and code holding a store could name itself whichever tenant or role it
-   * pleased. Identity comes from {@link #currentAccess}; a caller contributes only what the edge
-   * could not know, such as the purpose of an operation.
-   *
-   * <p>Never list an identity key here.
-   */
-  public SurrogateStoreConfig<D> callerMayContribute(String... keys) {
-    this.callerMayContribute = java.util.Set.of(keys);
-    return this;
-  }
-
-  java.util.Set<String> callerMayContribute() {
-    return callerMayContribute;
   }
 
   AccessContextProvider ambient() {

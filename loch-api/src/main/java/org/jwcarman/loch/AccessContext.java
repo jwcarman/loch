@@ -58,35 +58,6 @@ public record AccessContext(Map<String, String> attributes) {
     return Optional.ofNullable(attributes.get(key));
   }
 
-  /**
-   * The ambient facts, plus whichever of these a caller is permitted to contribute.
-   *
-   * <p><b>Ambient wins, always.</b> Identity is established at the edge -- a request, a message, a
-   * session -- and a call site is not entitled to revise it. If a caller could override what the
-   * edge asserted, then any code holding a store could name itself whichever tenant it liked and
-   * the gate would agree, which is not a policy system, it is a formality.
-   *
-   * <p>What a caller legitimately has is something the edge does not know: the purpose of this
-   * operation, which tool is running. So it may <i>add</i> keys, and only keys the application
-   * declared it may add. Everything else it says is ignored rather than refused, because a caller
-   * naming something it should not is a bug in the caller, not an attack the gate should fail over.
-   *
-   * @param permitted the keys a caller is allowed to contribute at all
-   */
-  AccessContext contributedTo(AccessContext ambient, java.util.Set<String> permitted) {
-    if (attributes.isEmpty() || permitted.isEmpty()) {
-      return ambient;
-    }
-    Map<String, String> combined = new java.util.LinkedHashMap<>(ambient.attributes());
-    attributes.forEach(
-        (key, value) -> {
-          if (permitted.contains(key)) {
-            combined.putIfAbsent(key, value);
-          }
-        });
-    return new AccessContext(combined);
-  }
-
   /** Whether an attribute has exactly this value, which is what a ceiling function usually asks. */
   public boolean has(String key, String value) {
     return value.equals(attributes.get(key));
