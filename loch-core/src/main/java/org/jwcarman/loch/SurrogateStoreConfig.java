@@ -224,12 +224,12 @@ public class SurrogateStoreConfig<D> {
         }
 
         @Override
-        public Dereferenced<T> exchange(Surrogate<T> surrogate) {
+        public Revealed<T> exchange(Surrogate<T> surrogate) {
           return exchange(surrogate, AccessContext.empty());
         }
 
         @Override
-        public Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context) {
+        public Revealed<T> exchange(Surrogate<T> surrogate, AccessContext context) {
           return bound.engine().dereference(surrogate, type, door, context);
         }
 

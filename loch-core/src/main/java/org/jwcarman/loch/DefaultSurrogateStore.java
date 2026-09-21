@@ -239,8 +239,8 @@ public final class DefaultSurrogateStore implements SurrogateStore {
         context.attributes());
   }
 
-  private <T> Dereferenced<T> denied(
-      Dereferenced.Reason reason,
+  private <T> Revealed<T> denied(
+      Revealed.Reason reason,
       String detail,
       String value,
       String target,
@@ -254,7 +254,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
         reason.name(),
         label,
         context);
-    return new Dereferenced.Denied<>(reason, detail);
+    return new Revealed.Denied<>(reason, detail);
   }
 
   /**
@@ -330,7 +330,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
           null,
           asking);
       throw new AccessDeniedException(
-          Dereferenced.Reason.ABOVE_CEILING,
+          Revealed.Reason.ABOVE_CEILING,
           "erasing is refused: this store was not told who may erase");
     }
     int removed = storage.erase(root.id());
@@ -593,13 +593,13 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     return new Derived.Made<>(new Surrogate<>(newId));
   }
 
-  <T> Dereferenced<T> dereference(
+  <T> Revealed<T> dereference(
       Surrogate<T> held, SurrogateType<T> expected, String to, AccessContext context) {
     context = asking(context);
     DestinationSpec destination = destinations.get(to);
     if (destination == null) {
       return denied(
-          Dereferenced.Reason.NO_SUCH_DESTINATION,
+          Revealed.Reason.NO_SUCH_DESTINATION,
           "no destination is registered as '" + to + "'",
           held.id(),
           to,
@@ -609,7 +609,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     StoredMetadata entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
       return denied(
-          Dereferenced.Reason.NO_SUCH_VALUE,
+          Revealed.Reason.NO_SUCH_VALUE,
           "this store is not holding " + held.id(),
           held.id(),
           to,
@@ -618,7 +618,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     }
     if (!entry.typeName().equals(expected.name())) {
       return denied(
-          Dereferenced.Reason.WRONG_TYPE,
+          Revealed.Reason.WRONG_TYPE,
           held.id() + " is a " + entry.typeName() + ", not a " + expected.name(),
           held.id(),
           to,
@@ -628,7 +628,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     Ceiling ceiling = ceilingOf(destination, context);
     if (ceiling == null) {
       return denied(
-          Dereferenced.Reason.ABOVE_CEILING,
+          Revealed.Reason.ABOVE_CEILING,
           "'" + to + "' could not say what it accepts, so it does not accept this",
           held.id(),
           to,
@@ -637,7 +637,7 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     }
     if (!ceiling.permits(entry.label())) {
       return denied(
-          Dereferenced.Reason.ABOVE_CEILING,
+          Revealed.Reason.ABOVE_CEILING,
           held.id() + " may not reach '" + to + "'" + explain(entry.label(), ceiling),
           held.id(),
           to,
@@ -655,10 +655,10 @@ public final class DefaultSurrogateStore implements SurrogateStore {
     // The type was confirmed against what the store wrote, so this decodes a verified fact.
     return storage
         .value(held.id(), expected.type())
-        .<Dereferenced<T>>map(Dereferenced.Allowed::new)
+        .<Revealed<T>>map(Revealed.Allowed::new)
         .orElseGet(
             () ->
-                new Dereferenced.Denied<>(
-                    Dereferenced.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id()));
+                new Revealed.Denied<>(
+                    Revealed.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id()));
   }
 }

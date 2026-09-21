@@ -35,7 +35,7 @@ public class AccessDeniedException extends RuntimeException {
     this.reason = reason;
   }
 
-  public AccessDeniedException(Dereferenced.Reason reason, String detail) {
+  public AccessDeniedException(Revealed.Reason reason, String detail) {
     this(reason.name(), detail);
   }
 

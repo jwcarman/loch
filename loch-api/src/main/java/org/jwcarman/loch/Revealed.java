@@ -25,10 +25,10 @@ import java.util.Optional;
  * it as a call that cannot proceed. Throwing would force the first caller to catch in its normal
  * path.
  */
-public sealed interface Dereferenced<T> {
+public sealed interface Revealed<T> {
 
   /** The value, because the gate allowed it. */
-  record Allowed<T>(T value) implements Dereferenced<T> {
+  record Allowed<T>(T value) implements Revealed<T> {
 
     /**
      * Says nothing about the value.
@@ -44,7 +44,7 @@ public sealed interface Dereferenced<T> {
   }
 
   /** No value, and why. */
-  record Denied<T>(Reason reason, String detail) implements Dereferenced<T> {}
+  record Denied<T>(Reason reason, String detail) implements Revealed<T> {}
 
   /** Why a value was not handed over. */
   enum Reason {

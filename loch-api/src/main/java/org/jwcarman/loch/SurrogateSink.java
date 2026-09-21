@@ -62,7 +62,7 @@ public interface SurrogateSink<T> {
    *
    * @throws IllegalStateException if this sink was never bound to a store
    */
-  Dereferenced<T> exchange(Surrogate<T> surrogate);
+  Revealed<T> exchange(Surrogate<T> surrogate);
 
   /**
    * The same, with attributes the caller is contributing to the decision.
@@ -71,5 +71,5 @@ public interface SurrogateSink<T> {
    * wins where the two disagree. A caller that could name its own tenant here would have defeated
    * the whole arrangement.
    */
-  Dereferenced<T> exchange(Surrogate<T> surrogate, AccessContext context);
+  Revealed<T> exchange(Surrogate<T> surrogate, AccessContext context);
 }

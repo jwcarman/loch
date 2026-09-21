@@ -451,13 +451,13 @@ class BillingScenarioTest {
     void never_reaches_a_vendors_model() {
       Surrogate<String> email = customerEmail();
 
-      Dereferenced<String> attempt = vendorLlmText.exchange(email, acme());
+      Revealed<String> attempt = vendorLlmText.exchange(email, acme());
 
       assertThat(attempt.allowed()).isFalse();
       assertThat(attempt)
           .isInstanceOfSatisfying(
-              Dereferenced.Denied.class,
-              denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.ABOVE_CEILING));
+              Revealed.Denied.class,
+              denied -> assertThat(denied.reason()).isEqualTo(Revealed.Reason.ABOVE_CEILING));
     }
 
     @Test
@@ -659,8 +659,8 @@ class BillingScenarioTest {
 
       assertThat(quarantinedLlmText.exchange(invented, acme()))
           .isInstanceOfSatisfying(
-              Dereferenced.Denied.class,
-              denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.NO_SUCH_VALUE));
+              Revealed.Denied.class,
+              denied -> assertThat(denied.reason()).isEqualTo(Revealed.Reason.NO_SUCH_VALUE));
     }
 
     /**
@@ -674,7 +674,7 @@ class BillingScenarioTest {
     void refuses_a_destination_nobody_registered() {
       assertThat(SurrogateStore.class.getMethods())
           .isNotEmpty()
-          .noneSatisfy(method -> assertThat(method.getReturnType()).isEqualTo(Dereferenced.class));
+          .noneSatisfy(method -> assertThat(method.getReturnType()).isEqualTo(Revealed.class));
     }
 
     @Test
@@ -692,16 +692,16 @@ class BillingScenarioTest {
 
       assertThat(quarantinedLlmText.exchange(lying, acme()))
           .isInstanceOfSatisfying(
-              Dereferenced.Denied.class,
-              denied -> assertThat(denied.reason()).isEqualTo(Dereferenced.Reason.WRONG_TYPE));
+              Revealed.Denied.class,
+              denied -> assertThat(denied.reason()).isEqualTo(Revealed.Reason.WRONG_TYPE));
     }
 
     @Test
     @DisplayName("tells you the label and the ceiling when it refuses, without leaking the value")
     void explains_a_refusal_without_leaking() {
-      Dereferenced<String> denied = vendorLlmText.exchange(customerEmail(), acme());
+      Revealed<String> denied = vendorLlmText.exchange(customerEmail(), acme());
 
-      String detail = ((Dereferenced.Denied<String>) denied).detail();
+      String detail = ((Revealed.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("123-45-6789");
     }
   }
@@ -1011,7 +1011,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an allowed result does not print the value it is carrying")
     void an_allowed_result_does_not_print_the_value() {
-      Dereferenced<String> allowed = quarantinedLlmText.exchange(customerEmail(), acme());
+      Revealed<String> allowed = quarantinedLlmText.exchange(customerEmail(), acme());
 
       assertThat(allowed.allowed()).isTrue();
       assertThat(allowed.toString()).doesNotContain("123-45-6789");
@@ -1020,9 +1020,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a refusal names the destination but not the labels")
     void a_refusal_names_the_destination_but_not_the_labels() {
-      Dereferenced<String> denied = vendorLlmText.exchange(customerEmail(), acme());
+      Revealed<String> denied = vendorLlmText.exchange(customerEmail(), acme());
 
-      String detail = ((Dereferenced.Denied<String>) denied).detail();
+      String detail = ((Revealed.Denied<String>) denied).detail();
       assertThat(detail).contains("vendor-llm").doesNotContain("acme").doesNotContain("PII");
     }
 
@@ -1047,9 +1047,9 @@ class BillingScenarioTest {
       Surrogate<String> held =
           holdAs("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII, chattyMail, "x");
 
-      Dereferenced<String> denied = chattyVendorLlm.exchange(held, acme());
+      Revealed<String> denied = chattyVendorLlm.exchange(held, acme());
 
-      assertThat(((Dereferenced.Denied<String>) denied).detail()).contains("PII");
+      assertThat(((Revealed.Denied<String>) denied).detail()).contains("PII");
     }
 
     /** A policy that cannot be evaluated has not said yes. */
@@ -1073,7 +1073,7 @@ class BillingScenarioTest {
       Surrogate<String> held =
           holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, fragileMail, "x");
 
-      Dereferenced<String> result = broken.exchange(held, acme());
+      Revealed<String> result = broken.exchange(held, acme());
 
       assertThat(result.allowed()).isFalse();
     }

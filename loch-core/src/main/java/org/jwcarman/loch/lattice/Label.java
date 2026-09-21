@@ -80,8 +80,7 @@ public final class Label {
    */
   public Label join(Label other) {
     Map<Axis<?>, Object> next = new LinkedHashMap<>(said);
-    other.said.forEach(
-        (axis, value) -> next.merge(axis, value, axis::join));
+    other.said.forEach((axis, value) -> next.merge(axis, value, axis::join));
     return new Label(next);
   }
 
