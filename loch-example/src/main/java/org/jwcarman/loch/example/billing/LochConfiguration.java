@@ -58,9 +58,9 @@ public class LochConfiguration {
 
   private final Loch<BillingLabels> loch;
   private final Inlet<Domain.Mail> customerMail;
-  private final Outlet supportUi;
-  private final Outlet approvalDesk;
-  private final Outlet paymentProcessor;
+  private final Outlet<Domain.Invoice> supportUi;
+  private final Outlet<Domain.Last4> approvalDesk;
+  private final Outlet<Domain.Invoice> paymentProcessor;
 
   public LochConfiguration(
       DataSource dataSource, StorageCodec storageCodec, Auditor auditor, Invoices invoices) {
@@ -87,13 +87,18 @@ public class LochConfiguration {
         c.inlet(Billing.CUSTOMER_MAIL, Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ---------------------------------------------------
-    this.supportUi = c.outlet(Billing.SUPPORT_UI, ctx -> label(ctx, ENDORSED, ORDINARY));
+    this.supportUi =
+        c.outlet(Billing.SUPPORT_UI, Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
     this.approvalDesk =
         c.outlet(
             Billing.APPROVAL_DESK,
+            Domain.Last4.class,
             ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
     this.paymentProcessor =
-        c.outlet(Billing.PAYMENT_PROCESSOR, ctx -> label(ctx, ENDORSED, CARDHOLDER));
+        c.outlet(
+            Billing.PAYMENT_PROCESSOR,
+            Domain.Invoice.class,
+            ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
     // ---- one value from another -----------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
@@ -146,17 +151,17 @@ public class LochConfiguration {
   }
 
   @Bean
-  public Outlet supportUi() {
+  public Outlet<Domain.Invoice> supportUi() {
     return supportUi;
   }
 
   @Bean
-  public Outlet approvalDesk() {
+  public Outlet<Domain.Last4> approvalDesk() {
     return approvalDesk;
   }
 
   @Bean
-  public Outlet paymentProcessor() {
+  public Outlet<Domain.Invoice> paymentProcessor() {
     return paymentProcessor;
   }
 

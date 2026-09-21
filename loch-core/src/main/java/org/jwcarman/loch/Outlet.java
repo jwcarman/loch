@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch;
 
+import org.jwcarman.codec.spi.TypeRef;
+
 /**
  * The authority to take plaintext out of a loch at one particular ceiling.
  *
@@ -34,13 +36,26 @@ package org.jwcarman.loch;
  * not a bypass. What changed is that reaching the door at all is no longer something a caller can
  * decide for itself.
  *
- * <p>Not generic in the value type, because a ceiling is a statement about labels and says nothing
- * about types. One outlet serves every kind of value that may pass it.
+ * <p><b>Narrowed by type as well as by label</b>, because a label alone is a coarse instrument. The
+ * day somebody holds a session token at the same label as an invoice -- not maliciously, just
+ * without thinking about it -- a door that accepts any type reads it. Saying what comes out of a
+ * door is a second, independent narrowing, and the authority this confers is smaller for it.
+ *
+ * <p>It also moves the type check left. {@code Outlet<Invoice>.read(handleToSomeMail)} does not
+ * compile, where naming a destination at a call site accepted any handle and refused at runtime.
+ * The runtime check remains and is not redundant: a {@link HandleId} that arrived as text can be
+ * given any type by {@link Handle#of}, so what the store actually wrote is still the only ground
+ * truth, and it is still what gets compared.
+ *
+ * @param <T> the type of value this outlet will hand over, and no other
  */
-public interface Outlet {
+public interface Outlet<T> {
 
   /** What this door is called in the manifest and in the record. */
   DestinationId id();
+
+  /** What comes out of it. */
+  TypeRef<T> type();
 
   /**
    * Reads the value, if its label is at or below what this outlet accepts.
@@ -51,7 +66,7 @@ public interface Outlet {
    *
    * @throws IllegalStateException if this outlet was never bound to a loch
    */
-  <T> Dereferenced<T> read(Handle<T> held);
+  Dereferenced<T> read(Handle<T> held);
 
   /**
    * The same, with attributes the caller is contributing to the decision.
@@ -60,5 +75,5 @@ public interface Outlet {
    * wins where the two disagree. A caller that could name its own tenant here would have defeated
    * the whole arrangement.
    */
-  <T> Dereferenced<T> read(Handle<T> held, AccessContext context);
+  Dereferenced<T> read(Handle<T> held, AccessContext context);
 }

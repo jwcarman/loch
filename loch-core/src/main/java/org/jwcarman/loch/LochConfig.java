@@ -123,35 +123,49 @@ public class LochConfig<A> {
    * <p>Also registers the destination, so the manifest still enumerates it and audit lines still
    * name it. The id remains what this door is called; it stops being a way to reach it.
    */
-  public Outlet outlet(DestinationId id, java.util.function.Function<AccessContext, A> ceiling) {
+  public <T> Outlet<T> outlet(
+      DestinationId id, TypeRef<T> type, java.util.function.Function<AccessContext, A> ceiling) {
+    Objects.requireNonNull(id, "an outlet needs a name");
+    Objects.requireNonNull(type, "an outlet needs to say what comes out of it");
     destination(Destinations.varying(id, ceiling));
-    return new Outlet() {
+    return new Outlet<>() {
       @Override
       public DestinationId id() {
         return id;
       }
 
       @Override
-      public <T> Dereferenced<T> read(Handle<T> held) {
+      public TypeRef<T> type() {
+        return type;
+      }
+
+      @Override
+      public Dereferenced<T> read(Handle<T> held) {
         return read(held, AccessContext.empty());
       }
 
       @Override
-      public <T> Dereferenced<T> read(Handle<T> held, AccessContext context) {
+      public Dereferenced<T> read(Handle<T> held, AccessContext context) {
         return engine().dereference(held, id, context);
       }
 
       @Override
       public String toString() {
-        return "outlet '" + id + "'";
+        return "outlet '" + id + "' reading " + type.getType().getTypeName();
       }
     };
   }
 
+  /** The same, for a type with no generic parameters of its own. */
+  public <T> Outlet<T> outlet(
+      DestinationId id, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
+    return outlet(id, TypeRef.of(type), ceiling);
+  }
+
   /** An outlet whose ceiling does not depend on who is asking. */
-  public Outlet outlet(DestinationId id, A ceiling) {
+  public <T> Outlet<T> outlet(DestinationId id, Class<T> type, A ceiling) {
     Objects.requireNonNull(ceiling, "an outlet needs a ceiling");
-    return outlet(id, context -> ceiling);
+    return outlet(id, TypeRef.of(type), context -> ceiling);
   }
 
   /**

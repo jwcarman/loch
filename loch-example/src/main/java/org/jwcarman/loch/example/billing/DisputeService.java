@@ -34,18 +34,18 @@ public class DisputeService {
 
   private final Loch<BillingLabels> loch;
   private final Inlet<Domain.Mail> customerMail;
-  private final Outlet supportUi;
-  private final Outlet approvalDesk;
-  private final Outlet paymentProcessor;
+  private final Outlet<Domain.Invoice> supportUi;
+  private final Outlet<Domain.Last4> approvalDesk;
+  private final Outlet<Domain.Invoice> paymentProcessor;
 
   // What this class may do is this list. It was handed three outlets, so it can reach three
   // places; it was handed one inlet, so there is exactly one label it can create a value at.
   public DisputeService(
       Loch<BillingLabels> loch,
       Inlet<Domain.Mail> customerMail,
-      Outlet supportUi,
-      Outlet approvalDesk,
-      Outlet paymentProcessor) {
+      Outlet<Domain.Invoice> supportUi,
+      Outlet<Domain.Last4> approvalDesk,
+      Outlet<Domain.Invoice> paymentProcessor) {
     this.loch = loch;
     this.customerMail = customerMail;
     this.supportUi = supportUi;
