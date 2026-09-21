@@ -24,7 +24,6 @@ import org.jwcarman.loch.Auditor;
 import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.Destination;
 import org.jwcarman.loch.DestinationId;
-import org.jwcarman.loch.Fold;
 import org.jwcarman.loch.LochConfig;
 import org.jwcarman.loch.Question;
 import org.jwcarman.loch.lattice.Lattice;
@@ -141,12 +140,6 @@ public final class JdbcLochConfig<A> extends LochConfig<A> {
   @Override
   public JdbcLochConfig<A> question(Question<A, ?, ?> question) {
     super.question(question);
-    return this;
-  }
-
-  @Override
-  public JdbcLochConfig<A> fold(Fold<A, ?, ?> fold) {
-    super.fold(fold);
     return this;
   }
 

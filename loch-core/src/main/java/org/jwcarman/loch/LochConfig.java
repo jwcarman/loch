@@ -37,7 +37,6 @@ public class LochConfig<A> {
   private final List<Destination<A>> destinations = new ArrayList<>();
   private final List<Derivation<A, ?, ?>> derivations = new ArrayList<>();
   private final List<Question<A, ?, ?>> questions = new ArrayList<>();
-  private final List<Fold<A, ?, ?>> folds = new ArrayList<>();
 
   /** The order over this application's labels. Required. */
   public LochConfig<A> lattice(Lattice<A> lattice) {
@@ -66,16 +65,6 @@ public class LochConfig<A> {
   public LochConfig<A> question(Question<A, ?, ?> question) {
     questions.add(Objects.requireNonNull(question, "a question must not be null"));
     return this;
-  }
-
-  /** A way of making one value out of several. */
-  public LochConfig<A> fold(Fold<A, ?, ?> fold) {
-    folds.add(Objects.requireNonNull(fold, "a fold must not be null"));
-    return this;
-  }
-
-  List<Fold<A, ?, ?>> folds() {
-    return List.copyOf(folds);
   }
 
   List<Question<A, ?, ?>> questions() {

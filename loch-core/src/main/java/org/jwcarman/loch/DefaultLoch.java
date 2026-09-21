@@ -39,7 +39,6 @@ public final class DefaultLoch<A> implements Loch<A> {
   private final Map<DestinationId, Destination<A>> destinations;
   private final Map<String, Derivation<A, ?, ?>> derivations;
   private final Map<String, Question<A, ?, ?>> questions;
-  private final Map<String, Fold<A, ?, ?>> folds;
   private final boolean explainRefusals;
   private final Auditor auditor;
   private final java.util.function.Supplier<AccessContext> ambient;
@@ -72,13 +71,6 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
     this.questions = Collections.unmodifiableMap(byQuestion);
-    Map<String, Fold<A, ?, ?>> byFold = new LinkedHashMap<>();
-    for (Fold<A, ?, ?> fold : config.folds()) {
-      if (byFold.put(fold.id().value(), fold) != null) {
-        throw new IllegalStateException("two folds are registered as '" + fold.id() + "'");
-      }
-    }
-    this.folds = Collections.unmodifiableMap(byFold);
     this.explainRefusals = config.explainsRefusals();
     this.auditor = config.auditor();
     this.ambient = config.ambient();
@@ -150,6 +142,20 @@ public final class DefaultLoch<A> implements Loch<A> {
         label,
         context);
     return new Dereferenced.Denied<>(reason, detail);
+  }
+
+  /**
+   * What a successful derivation's record says beyond the bare fact.
+   *
+   * <p>Weakening a label is the event an auditor is looking for, so it is always said. Combining
+   * several values is worth noting because the result is more constrained than any one parent.
+   * Deriving one value from one is the ordinary case and says nothing extra.
+   */
+  private String reasonFor(Derivation<A, ?, ?> derivation, A joined, int parents) {
+    if (derivation.privileged()) {
+      return "weakened from " + joined;
+    }
+    return parents > 1 ? "combined from " + parents + " values" : null;
   }
 
   /** What a refusal is allowed to say about labels, which by default is nothing. */
@@ -321,17 +327,6 @@ public final class DefaultLoch<A> implements Loch<A> {
                             derivation.inputType().rawClass().getSimpleName(),
                             derivation.outputType().rawClass().getSimpleName()),
                     derivation.privileged())));
-    List<Manifest.Entry> theFolds = new ArrayList<>();
-    folds.forEach(
-        (name, fold) ->
-            theFolds.add(
-                new Manifest.Entry(
-                    name,
-                    "many %s -> %s"
-                        .formatted(
-                            fold.inputType().rawClass().getSimpleName(),
-                            fold.outputType().rawClass().getSimpleName()),
-                    fold.privileged())));
     List<Manifest.Entry> theQuestions = new ArrayList<>();
     questions.forEach(
         (name, question) ->
@@ -341,15 +336,15 @@ public final class DefaultLoch<A> implements Loch<A> {
                     "asks about a " + question.inputType().rawClass().getSimpleName(),
                     false)));
     return new Manifest(
-        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theFolds, theQuestions);
+        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theQuestions);
   }
 
   @Override
   public <I, O> Derived<O> deriveAll(
-      List<Handle<I>> parents, FoldId<I, O> id, AccessContext context) {
+      List<Handle<I>> parents, DerivationId<I, O> id, AccessContext context) {
     AccessContext asking = asking(context);
     AtomicReference<A> label = new AtomicReference<>();
-    Derived<O> result = foldingAll(parents, id, asking, label);
+    Derived<O> result = derivingAll(parents, id, asking, label);
     if (result instanceof Derived.Refused<O> refused) {
       audit(
           AuditRecord.Operation.DERIVE,
@@ -364,23 +359,26 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @SuppressWarnings("unchecked")
-  private <I, O> Derived<O> foldingAll(
-      List<Handle<I>> parents, FoldId<I, O> id, AccessContext context, AtomicReference<A> refused) {
-    Fold<A, I, O> fold = (Fold<A, I, O>) folds.get(id.value());
-    if (fold == null) {
+  private <I, O> Derived<O> derivingAll(
+      List<Handle<I>> parents,
+      DerivationId<I, O> id,
+      AccessContext context,
+      AtomicReference<A> refused) {
+    Derivation<A, I, O> derivation = (Derivation<A, I, O>) derivations.get(id.value());
+    if (derivation == null) {
       return new Derived.Refused<>(
-          Derived.Reason.NO_SUCH_FOLD, "no fold is registered as '" + id + "'");
+          Derived.Reason.NO_SUCH_DERIVATION, "no derivation is registered as '" + id + "'");
     }
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
-          Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value to fold");
+          Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
     }
-    if (!fold.availableTo(context)) {
+    if (!derivation.availableTo(context)) {
       return new Derived.Refused<>(
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
 
-    String expected = nameOf(fold.inputType());
+    String expected = nameOf(derivation.inputType());
     List<I> inputs = new ArrayList<>();
     List<HandleId> parentIds = new ArrayList<>();
     A joined = null;
@@ -396,13 +394,13 @@ public final class DefaultLoch<A> implements Loch<A> {
             "'%s' reads a %s, but %s is a %s"
                 .formatted(id, expected, parent.id(), entry.typeName()));
       }
-      Optional<A> ceiling = fold.ceiling(context);
+      Optional<A> ceiling = derivation.ceiling(context);
       if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
             parent.id() + " may not reach '" + id + "'" + explain(entry.label(), ceiling.get()));
       }
-      I input = storage.value(parent.id(), fold.inputType()).orElse(null);
+      I input = storage.value(parent.id(), derivation.inputType()).orElse(null);
       if (input == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
@@ -414,13 +412,13 @@ public final class DefaultLoch<A> implements Loch<A> {
       refused.set(joined);
     }
 
-    Optional<O> produced = fold.apply(List.copyOf(inputs), context);
+    Optional<O> produced = derivation.apply(List.copyOf(inputs), context);
     if (produced.isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
 
     A label = joined;
-    Optional<java.util.function.UnaryOperator<A>> relabel = fold.relabel();
+    Optional<java.util.function.UnaryOperator<A>> relabel = derivation.relabel();
     if (relabel.isPresent()) {
       label = relabel.get().apply(joined);
       if (!lattice.permits(label, joined)) {
@@ -436,99 +434,7 @@ public final class DefaultLoch<A> implements Loch<A> {
         newId,
         id.value(),
         AuditRecord.Outcome.ALLOWED,
-        fold.privileged() ? "weakened from " + joined : "folded " + parentIds.size() + " values",
-        label,
-        context);
-    storage.put(
-        newId,
-        new StoredValue<>(
-            produced.get(), fold.outputType(), label, Lineage.derivedFrom(parentIds, id.value())));
-    return new Derived.Made<>(new Handle<>(newId, fold.outputType()));
-  }
-
-  @Override
-  public <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> id, AccessContext context) {
-    AccessContext asking = asking(context);
-    AtomicReference<A> label = new AtomicReference<>();
-    Derived<O> result = deriving(parent, id, asking, label);
-    if (result instanceof Derived.Refused<O> refused) {
-      audit(
-          AuditRecord.Operation.DERIVE,
-          parent.id(),
-          id.value(),
-          AuditRecord.Outcome.REFUSED,
-          refused.reason().name(),
-          label.get(),
-          asking);
-    }
-    return result;
-  }
-
-  @SuppressWarnings("unchecked")
-  private <I, O> Derived<O> deriving(
-      Handle<I> parent, DerivationId<I, O> id, AccessContext context, AtomicReference<A> refused) {
-    Derivation<A, I, O> derivation = (Derivation<A, I, O>) derivations.get(id.value());
-    if (derivation == null) {
-      return new Derived.Refused<>(
-          Derived.Reason.NO_SUCH_DERIVATION, "no derivation is registered as '" + id + "'");
-    }
-    if (!derivation.availableTo(context)) {
-      return new Derived.Refused<>(
-          Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
-    }
-    StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
-    if (entry == null) {
-      return new Derived.Refused<>(
-          Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
-    }
-    refused.set(entry.label());
-    if (!entry.typeName().equals(nameOf(derivation.inputType()))) {
-      return new Derived.Refused<>(
-          Derived.Reason.WRONG_TYPE,
-          "'%s' reads a %s, but %s is a %s"
-              .formatted(id, nameOf(derivation.inputType()), parent.id(), entry.typeName()));
-    }
-    // A derivation is handed plaintext, so it is a destination and passes the same gate.
-    Optional<A> ceiling = derivation.ceiling(context);
-    if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
-      return new Derived.Refused<>(
-          Derived.Reason.ABOVE_CEILING,
-          "%s is labelled %s; '%s' accepts %s"
-              .formatted(parent.id(), entry.label(), id, ceiling.get()));
-    }
-
-    List<HandleId> parents = List.of(parent.id());
-    I input = storage.value(parent.id(), derivation.inputType()).orElse(null);
-    if (input == null) {
-      return new Derived.Refused<>(
-          Derived.Reason.NO_SUCH_VALUE, "this loch is not holding " + parent.id());
-    }
-    Optional<O> produced = derivation.apply(input, context);
-    if (produced.isEmpty()) {
-      return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
-    }
-
-    // One parent for now, but the fold is what makes several parents need no special case.
-    A joined = entry.label();
-    A label = joined;
-    Optional<java.util.function.UnaryOperator<A>> relabel = derivation.relabel();
-    if (relabel.isPresent()) {
-      label = relabel.get().apply(joined);
-      if (!lattice.permits(label, joined)) {
-        return new Derived.Refused<>(
-            Derived.Reason.NOT_A_LOWERING,
-            "'%s' relabelled %s as %s, which is not below it; ordinary derivation already raises"
-                .formatted(id, joined, label));
-      }
-    }
-
-    HandleId newId = HandleId.fresh();
-    audit(
-        AuditRecord.Operation.DERIVE,
-        newId,
-        id.value(),
-        AuditRecord.Outcome.ALLOWED,
-        derivation.privileged() ? "weakened from " + joined : null,
+        reasonFor(derivation, joined, parentIds.size()),
         label,
         context);
     storage.put(
@@ -537,8 +443,13 @@ public final class DefaultLoch<A> implements Loch<A> {
             produced.get(),
             derivation.outputType(),
             label,
-            Lineage.derivedFrom(parents, id.value())));
+            Lineage.derivedFrom(parentIds, id.value())));
     return new Derived.Made<>(new Handle<>(newId, derivation.outputType()));
+  }
+
+  @Override
+  public <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> id, AccessContext context) {
+    return deriveAll(List.of(parent), id, context);
   }
 
   @Override

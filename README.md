@@ -196,6 +196,10 @@ cannot annotate itself for any particular one.
 Handle<Report> report = loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE);
 ```
 
+One value or several is the same operation — same ceiling, same lowering, same lineage, same audit
+line — so it is one type with two factories, `of(...)` and `fromAll(...)`. It was two types once,
+and the second was quietly missing from the manifest for exactly as long as nobody looked.
+
 The result carries the join of **every** parent's label. Nobody marked anything as conflicted:
 somebody wrote a perfectly reasonable summariser and gave it perfectly reasonable inputs. But an
 exact-match dimension like tenant joins two different values to a conflict, and a conflict is below

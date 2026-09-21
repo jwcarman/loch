@@ -15,6 +15,7 @@
  */
 package org.jwcarman.loch;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -42,7 +43,45 @@ public final class Derivations {
   public static <A, I, O> Builder<A, I, O> of(
       DerivationId<I, O> id, TypeRef<I> inputType, TypeRef<O> outputType, Function<I, O> function) {
     return new Builder<>(
-        id, inputType, outputType, (input, context) -> Optional.of(function.apply(input)));
+        id, inputType, outputType, (inputs, context) -> Optional.of(function.apply(only(inputs))));
+  }
+
+  /**
+   * A derivation over several values at once: summarising, aggregating, reconciling.
+   *
+   * <p>The result carries the join of every parent's label, so folding two tenants' data yields
+   * something labelled for both -- a conflict, which no destination admits.
+   */
+  public static <A, I, O> Builder<A, I, O> fromAll(
+      DerivationId<I, O> id,
+      Class<I> inputType,
+      Class<O> outputType,
+      Function<List<I>, O> function) {
+    return fromAll(id, TypeRef.of(inputType), TypeRef.of(outputType), function);
+  }
+
+  /** A derivation over several values, into or out of a generic container. */
+  public static <A, I, O> Builder<A, I, O> fromAll(
+      DerivationId<I, O> id,
+      TypeRef<I> inputType,
+      TypeRef<O> outputType,
+      Function<List<I>, O> function) {
+    return new Builder<>(
+        id, inputType, outputType, (inputs, context) -> Optional.of(function.apply(inputs)));
+  }
+
+  /**
+   * The one value a unary derivation was given.
+   *
+   * <p>Arity is enforced by the registered implementation rather than by a second type. Handing a
+   * one-at-a-time derivation several values is a mistake in the caller, and it says so.
+   */
+  private static <I> I only(List<I> inputs) {
+    if (inputs.size() != 1) {
+      throw new IllegalArgumentException(
+          "this derivation reads one value at a time, and was given " + inputs.size());
+    }
+    return inputs.getFirst();
   }
 
   /** A derivation that may decline -- a lookup that finds nothing, a check that fails. */
@@ -51,7 +90,17 @@ public final class Derivations {
       Class<I> inputType,
       Class<O> outputType,
       BiFunction<I, AccessContext, Optional<O>> function) {
-    return new Builder<>(id, TypeRef.of(inputType), TypeRef.of(outputType), function);
+    return new Builder<>(
+        id,
+        TypeRef.of(inputType),
+        TypeRef.of(outputType),
+        (inputs, context) -> function.apply(only(inputs), context));
+  }
+
+  /** What a registered derivation does, once the arity has been dealt with. */
+  @FunctionalInterface
+  private interface Reading<I, O> {
+    Optional<O> apply(List<I> inputs, AccessContext context);
   }
 
   /** Collects the optional parts. Call {@link Builder#build()} last. */
@@ -60,7 +109,7 @@ public final class Derivations {
     private final DerivationId<I, O> id;
     private final TypeRef<I> inputType;
     private final TypeRef<O> outputType;
-    private final BiFunction<I, AccessContext, Optional<O>> function;
+    private final Reading<I, O> function;
     private java.util.function.Function<AccessContext, A> ceiling;
     private UnaryOperator<A> relabel;
     private Predicate<AccessContext> availableTo = context -> true;
@@ -69,7 +118,7 @@ public final class Derivations {
         DerivationId<I, O> id,
         TypeRef<I> inputType,
         TypeRef<O> outputType,
-        BiFunction<I, AccessContext, Optional<O>> function) {
+        Reading<I, O> function) {
       this.id = id;
       this.inputType = inputType;
       this.outputType = outputType;
@@ -127,8 +176,8 @@ public final class Derivations {
         }
 
         @Override
-        public Optional<O> apply(I input, AccessContext context) {
-          return function.apply(input, context);
+        public Optional<O> apply(List<I> inputs, AccessContext context) {
+          return function.apply(inputs, context);
         }
 
         @Override

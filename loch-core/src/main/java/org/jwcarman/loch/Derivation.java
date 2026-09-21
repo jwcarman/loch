@@ -15,12 +15,17 @@
  */
 package org.jwcarman.loch;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
 import org.jwcarman.codec.spi.TypeRef;
 
 /**
- * A registered way to make one value from another.
+ * A registered way to make one value out of one or more others.
+ *
+ * <p><b>The output carries the join of every parent's label.</b> With one parent that is the
+ * parent's label unchanged; with several it is the most constrained of them, which is what makes
+ * combining two tenants' data produce something no destination will accept.
  *
  * <p>Declared at wiring, referenced forever after by {@link DerivationId}. The function runs with
  * the parent's plaintext, so the whole point of registering is that the set of code which ever sees
@@ -38,8 +43,15 @@ public interface Derivation<A, I, O> {
 
   TypeRef<O> outputType();
 
-  /** Produces the new value, or declines. Receives plaintext. */
-  Optional<O> apply(I input, AccessContext context);
+  /**
+   * Produces the new value, or declines. Receives plaintext, in the order it was given.
+   *
+   * <p>A list whatever the arity, because one parent and several are the same operation with the
+   * same ceiling, the same lowering, the same lineage and the same audit line. They were two types
+   * once, and the second one was quietly left out of the manifest for exactly as long as nobody
+   * looked.
+   */
+  Optional<O> apply(List<I> inputs, AccessContext context);
 
   /**
    * The most constrained parent this will accept, if it is choosy.

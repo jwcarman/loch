@@ -129,11 +129,12 @@ public interface Loch<A> {
    * destination admits. The value exists and keeps its lineage; it simply cannot be dereferenced
    * anywhere. Cross-tenant leakage is not forbidden by a rule someone remembered to write.
    */
-  <I, O> Derived<O> deriveAll(List<Handle<I>> parents, FoldId<I, O> fold, AccessContext context);
+  <I, O> Derived<O> deriveAll(
+      List<Handle<I>> parents, DerivationId<I, O> derivation, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default <I, O> Derived<O> deriveAll(List<Handle<I>> parents, FoldId<I, O> fold) {
-    return deriveAll(parents, fold, AccessContext.empty());
+  default <I, O> Derived<O> deriveAll(List<Handle<I>> parents, DerivationId<I, O> derivation) {
+    return deriveAll(parents, derivation, AccessContext.empty());
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */

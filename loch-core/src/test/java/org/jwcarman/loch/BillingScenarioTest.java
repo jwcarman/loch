@@ -217,8 +217,8 @@ class BillingScenarioTest {
                           .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
                           .build())
                   // Several values in, one out. Every parent's label lands on the result.
-                  .fold(
-                      Fold.<Billing, String, Report>of(
+                  .derivation(
+                      Derivations.<Billing, String, Report>fromAll(
                               SUMMARISE,
                               String.class,
                               Report.class,
@@ -234,8 +234,8 @@ class BillingScenarioTest {
                               (claim, ctx) -> java.util.Optional.empty())
                           .build())
                   // A fold that lowers is as privileged as a derivation that lowers.
-                  .fold(
-                      Fold.<Billing, String, Report>of(
+                  .derivation(
+                      Derivations.<Billing, String, Report>fromAll(
                               SUMMARISE_FOR_RELEASE,
                               String.class,
                               Report.class,
@@ -266,9 +266,9 @@ class BillingScenarioTest {
 
   record Report(String text) {}
 
-  static final FoldId<String, Report> SUMMARISE = FoldId.of("notes.summarise");
-  static final FoldId<String, Report> SUMMARISE_FOR_RELEASE =
-      FoldId.of("notes.summarise.forRelease");
+  static final DerivationId<String, Report> SUMMARISE = DerivationId.of("notes.summarise");
+  static final DerivationId<String, Report> SUMMARISE_FOR_RELEASE =
+      DerivationId.of("notes.summarise.forRelease");
 
   static final QuestionId<Account, String> OWNED_BY = QuestionId.of("Account.ownedBy");
 
@@ -735,13 +735,12 @@ class BillingScenarioTest {
      * list was a way of claiming the manifest is complete and not meaning it.
      */
     @Test
-    @DisplayName("including folds, which used to weaken labels invisibly")
-    void including_folds() {
+    @DisplayName("including ones that read several values, which used to weaken labels invisibly")
+    void including_ones_that_read_several_values() {
       assertThat(loch.manifest().weakening())
           .extracting(Manifest.Entry::name)
           .contains(SUMMARISE_FOR_RELEASE.value())
           .doesNotContain(SUMMARISE.value());
-      assertThat(loch.manifest().toString()).contains("folds (2)");
     }
 
     /** A document meant to be diffed between reviews cannot reorder itself every restart. */
@@ -983,6 +982,22 @@ class BillingScenarioTest {
       loch.derive(claim, CLAIMED_INVOICE, acme());
 
       assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("but one made from several values says so, since it is more constrained than any")
+    void one_made_from_several_says_so() {
+      Handle<String> first =
+          loch.hold(
+              "a", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+      Handle<String> second =
+          loch.hold(
+              "b", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
+
+      loch.deriveAll(java.util.List.of(first, second), SUMMARISE, acme());
+
+      assertThat(audit.of(AuditRecord.Operation.DERIVE).getLast().reason())
+          .contains("combined from 2 values");
     }
 
     /**
