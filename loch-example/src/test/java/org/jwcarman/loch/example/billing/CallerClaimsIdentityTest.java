@@ -19,8 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.Handle;
 import org.jwcarman.loch.Loch;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -51,22 +49,21 @@ class CallerClaimsIdentityTest {
    *
    * <p>This service establishes it from the request. Code holding the loch directly, with no
    * request in scope, has no identity -- and saying it is acme does not make it so.
+   *
+   * <p>It cannot even create the value any more, which is a stronger statement than the one this
+   * test was originally written to make. Writing at a label is its own question, and with nobody
+   * acting there is no label this code may write at.
    */
   @Test
-  @DisplayName("does not make it so")
-  void does_not_make_it_so() {
-    // Handle as acme's cardholder data. No ambient context at all here (no HTTP request).
-    Handle<String> token =
-        loch.hold(
-            "tok_live_secret",
-            String.class,
-            BillingLabels.of(
-                "acme", BillingLabels.Integrity.ENDORSED, BillingLabels.Sensitivity.CARDHOLDER));
+  @DisplayName("cannot even create the value, let alone read one")
+  void cannot_even_create_the_value() {
+    BillingLabels asAcme =
+        BillingLabels.of(
+            "acme", BillingLabels.Integrity.ENDORSED, BillingLabels.Sensitivity.CARDHOLDER);
 
-    // A caller that simply says it is acme.
-    var claimed =
-        loch.dereference(token, Billing.PAYMENT_PROCESSOR, AccessContext.of("tenant", "acme"));
-
-    assertThat(claimed.allowed()).isFalse();
+    assertThat(
+            org.assertj.core.api.Assertions.catchThrowable(
+                () -> loch.hold("tok_live_secret", String.class, asAcme)))
+        .isInstanceOf(org.jwcarman.loch.AccessDeniedException.class);
   }
 }
