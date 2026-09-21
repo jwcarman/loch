@@ -27,10 +27,10 @@ import org.jwcarman.codec.spi.TypeRef;
  * Everything the engine needs to run a derivation, flattened to one arity-blind shape.
  *
  * <p>Package-private, and deliberately so. Arity is a property of the capability the application
- * holds, not of the machinery: {@link Derivation2} guarantees two parents of the right types before
- * the engine ever sees them, so what arrives here is a list whose length and element types were
- * already settled by the compiler. That is why {@code function} can take {@code List<Object>}
- * without it being a hole.
+ * holds, not of the machinery: a {@link Derivation} guarantees one parent of the right type and a
+ * {@link Fold} guarantees many of one type, so what arrives here is a list whose length and element
+ * types were already settled by the compiler. That is why {@code function} can take {@code
+ * List<Object>} without it being a hole.
  *
  * @param inputTypes one per parent, positionally; for a fold, exactly one, applying to all of them
  */

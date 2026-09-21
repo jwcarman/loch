@@ -213,37 +213,6 @@ public class LochConfig<A, D> {
             });
   }
 
-  /** From two values of different types. */
-  public <I1 extends D, I2 extends D, O extends D> Minting<A, O, Derivation2<I1, I2, O>> derivation(
-      String name,
-      Class<I1> first,
-      Class<I2> second,
-      Class<O> output,
-      java.util.function.BiFunction<I1, I2, O> function) {
-    return new Minting<>(
-        this,
-        name,
-        List.of(TypeRef.of(first), TypeRef.of(second)),
-        TypeRef.of(output),
-        (values, context) ->
-            Optional.ofNullable(
-                function.apply(first.cast(values.get(0)), second.cast(values.get(1)))),
-        false,
-        (spec, binding) ->
-            new Derivation2<>() {
-              @Override
-              public Derived<O> derive(Surrogate<I1> one, Surrogate<I2> two) {
-                return derive(one, two, AccessContext.empty());
-              }
-
-              @Override
-              public Derived<O> derive(
-                  Surrogate<I1> one, Surrogate<I2> two, AccessContext context) {
-                return binding.engine().deriveVia(spec, List.of(one, two), context);
-              }
-            });
-  }
-
   /**
    * Mints the authority to fold any number of values of one type into a new one.
    *

@@ -19,8 +19,11 @@ package org.jwcarman.loch;
  * The authority to make one new held value from one existing one.
  *
  * <p>The ordinary case, and the overwhelming majority: pulling a field out of a record, formatting,
- * normalising, truncating. {@link Derivation2} through {@link Derivation5} cover parents of
- * different types, and {@link Fold} covers many parents of one type.
+ * normalising, truncating. {@link Fold} covers many parents of one type.
+ *
+ * <p>There is deliberately no fixed-arity form for parents of <i>different</i> types. One was
+ * built, up to five, and nothing ever used it -- not the example, not a test, not even the
+ * two-parent case. When a real one turns up it can be added for the arity it actually needs.
  *
  * <p>Plaintext is read in order to compute and does not leave. The result carries its parent's
  * label unless the derivation was minted with a lowering rule, and a lowering is checked against

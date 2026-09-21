@@ -20,9 +20,7 @@ import java.util.List;
 /**
  * The authority to make one new held value from any number of existing ones, all of the same type.
  *
- * <p>The counterpart to the fixed arities. {@link Derivation2} through {@link Derivation5} cover
- * parents whose types differ and whose number is known when the code is written; a fold covers the
- * other case, where the type is one and the number is whatever arrived. Summarising a mail thread,
+ * <p>Many parents, one type, and the number is whatever arrived: summarising a mail thread,
  * totalling a set of invoices, folding retrieved passages into one context.
  *
  * <p>This split is not invented here. {@code kotlinx.coroutines} gives {@code Flow.combine}
