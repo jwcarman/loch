@@ -90,6 +90,52 @@ public final class Label {
     return axis.unsaid(at(axis));
   }
 
+  /**
+   * What this label says, keyed by axis name, for storage.
+   *
+   * <p>Names rather than positions, which is what stops a schema change from invalidating rows
+   * already written. A record's components are positional: adding a fourth one makes every blob in
+   * the table undecodable.
+   */
+  public Map<String, String> encode() {
+    Map<String, String> encoded = new LinkedHashMap<>();
+    said.forEach((axis, value) -> encoded.put(axis.name(), axis.encode(value)));
+    return encoded;
+  }
+
+  /**
+   * A label read back out of storage, against the axes a store now declares.
+   *
+   * <p><b>An axis in the row that the store no longer declares is refused.</b> Ignoring it would be
+   * the dangerous direction: the row was written under a constraint, and quietly dropping that
+   * constraint makes the value <i>more</i> readable than it was labelled. A store that has stopped
+   * declaring an axis has to reckon with the rows carrying it, and failing loudly on read is how it
+   * finds out.
+   *
+   * <p>The other direction is safe and needs no special handling. An axis declared now but missing
+   * from an older row reads as unsaid, which is the bottom of its order -- and if that matters, the
+   * axis was marked required and the value is refused for being incomplete, by the same rule that
+   * catches a label which never mentioned it in the first place.
+   */
+  public static Label decode(Map<String, String> encoded, Iterable<Axis<?>> declared) {
+    Map<String, Axis<?>> byName = new LinkedHashMap<>();
+    declared.forEach(axis -> byName.put(axis.name(), axis));
+    Map<Axis<?>, Object> said = new LinkedHashMap<>();
+    encoded.forEach(
+        (name, value) -> {
+          Axis<?> axis = byName.get(name);
+          if (axis == null) {
+            throw new IllegalArgumentException(
+                "a stored label says something about '"
+                    + name
+                    + "', which this store no longer declares; dropping it would make the value"
+                    + " readable by more than it was labelled for");
+          }
+          said.put(axis, axis.decode(value));
+        });
+    return new Label(said);
+  }
+
   /** What this label says on one axis, in whatever form the axis keeps. */
   Object at(Axis<?> axis) {
     return said.getOrDefault(axis, axis.bottom());

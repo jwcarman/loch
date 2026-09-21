@@ -198,8 +198,14 @@ pipeline as today.
 
 That is a migration improvement, not just a rearrangement. **Adding an axis stops invalidating stored
 labels.** Today a fourth component on `BillingLabels` breaks the decode of every row already written;
-with names in the blob, an unknown axis is ignorable and a missing one is bottom-or-refused by the
-`required` rule that already exists.
+with names in the blob, a row written before an axis existed simply says nothing about it, and
+saying nothing is a thing a label can already do -- bottom, or refused by the `required` rule if that
+matters.
+
+The other direction is not symmetrical, and an earlier draft of this document had it wrong by calling
+an unknown axis "ignorable". **A row labelled on an axis the store no longer declares is refused.**
+The row was written under a constraint; dropping it silently would make the value readable by more
+than it was ever labelled for, which is a control that stops working without anything failing.
 
 `MemoryStorage` holds references and never serializes, so it loses a type parameter and nothing else.
 

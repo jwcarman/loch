@@ -16,7 +16,10 @@
 package org.jwcarman.loch.lattice;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -170,6 +173,67 @@ class LabelTest {
   @DisplayName("says nothing, legibly, when it was told nothing")
   void says_nothing_legibly() {
     assertThat(Label.nothing().toString()).isEqualTo("{}");
+  }
+
+  @Test
+  @DisplayName("round-trips through storage")
+  void round_trips_through_storage() {
+    Label label = labelled("acme", Integrity.UNENDORSED, Sensitivity.CARDHOLDER);
+
+    Label read = Label.decode(label.encode(), List.of(TENANT, INTEGRITY, SENSITIVITY));
+
+    assertThat(read).isEqualTo(label);
+  }
+
+  /** A mixture is stored honestly, so a row that reaches nobody still reaches nobody tomorrow. */
+  @Test
+  @DisplayName("round-trips a mixture through storage")
+  void round_trips_a_mixture() {
+    Label mixed = Label.of(TENANT, "acme").join(Label.of(TENANT, "globex"));
+
+    Label read = Label.decode(mixed.encode(), List.of(TENANT));
+
+    assertThat(read).isEqualTo(mixed);
+    assertThat(read.toString()).contains("(mixed)");
+  }
+
+  /**
+   * Adding an axis does not invalidate what is already written, which is the point of storing names
+   * rather than positions.
+   *
+   * <p>A record's components are positional, so a fourth one makes every blob in the table
+   * undecodable. An older row simply says nothing about the new axis, and saying nothing is a thing
+   * a label is already able to do.
+   */
+  @Test
+  @DisplayName("still reads a row written before an axis existed")
+  void still_reads_a_row_written_before_an_axis_existed() {
+    Label written = Label.of(TENANT, "acme").with(INTEGRITY, Integrity.ENDORSED);
+
+    Label read = Label.decode(written.encode(), List.of(TENANT, INTEGRITY, SENSITIVITY));
+
+    assertThat(read).isEqualTo(written);
+    assertThat(read.unsaid(SENSITIVITY)).isFalse();
+  }
+
+  /**
+   * And removing one does, on purpose.
+   *
+   * <p>This is the direction that is not symmetrical. The row was written under a constraint, and
+   * quietly dropping it would make the value readable by more than it was ever labelled for -- a
+   * control that stops working without anything failing. A store that has stopped declaring an axis
+   * has rows to reckon with, and this is how it finds out.
+   */
+  @Test
+  @DisplayName("refuses a row labelled on an axis the store no longer declares")
+  void refuses_a_row_on_an_axis_no_longer_declared() {
+    Map<String, String> written =
+        labelled("acme", Integrity.ENDORSED, Sensitivity.CARDHOLDER).encode();
+    List<Axis<?>> nowDeclared = List.of(TENANT, INTEGRITY);
+
+    assertThatThrownBy(() -> Label.decode(written, nowDeclared))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("sensitivity");
   }
 
   /** Two labels saying the same things are the same label, whatever order they were built in. */
