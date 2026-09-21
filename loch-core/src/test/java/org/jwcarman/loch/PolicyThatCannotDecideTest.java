@@ -36,46 +36,48 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A policy that cannot decide")
 class PolicyThatCannotDecideTest {
 
+  private static final SurrogateType<String> STRING_TYPE = SurrogateType.of(String.class);
+
   private final MemoryStorage<Exact<String>> storage = new MemoryStorage<>();
 
   private final SurrogateStoreConfig<Exact<String>, Object> config =
       new SurrogateStoreConfig<Exact<String>, Object>().lattice(Lattices.exact());
 
   private final SurrogateSource<String> source =
-      config.source("source", String.class, ctx -> Exact.of("acme"));
+      config.source("source", STRING_TYPE, ctx -> Exact.of("acme"));
 
   private final SurrogateSink<String> sinkWhoseCeilingThrows =
-      config.sink("anywhere", String.class, ctx -> boom());
+      config.sink("anywhere", STRING_TYPE, ctx -> boom());
 
   private final Query<String, String> queryWhoseCeilingThrows =
       config
-          .query("query-ceiling", String.class, String.class, (v, q, ctx) -> v.equals(q))
+          .query("query-ceiling", STRING_TYPE, String.class, (v, q, ctx) -> v.equals(q))
           .accepting(ctx -> boom())
           .mint();
 
   private final Query<String, String> queryWhoseGateThrows =
       config
-          .query("query-gate", String.class, String.class, (v, q, ctx) -> v.equals(q))
+          .query("query-gate", STRING_TYPE, String.class, (v, q, ctx) -> v.equals(q))
           .acceptingAnything()
           .availableTo(ctx -> boom())
           .mint();
 
   private final Derivation<String, String> derivationWhoseCeilingThrows =
       config
-          .derivation("derivation-ceiling", String.class, String.class, String::toUpperCase)
+          .derivation("derivation-ceiling", STRING_TYPE, STRING_TYPE, String::toUpperCase)
           .accepting(ctx -> boom())
           .mint();
 
   private final Derivation<String, String> loweringThrows =
       config
-          .derivation("lowering", String.class, String.class, String::toUpperCase)
+          .derivation("lowering", STRING_TYPE, STRING_TYPE, String::toUpperCase)
           .acceptingAnything()
           .lowering(joined -> boom())
           .mint();
 
   private final Derivation<String, String> functionThrows =
       config
-          .derivation("function", String.class, String.class, value -> boom())
+          .derivation("function", STRING_TYPE, STRING_TYPE, value -> boom())
           .acceptingAnything()
           .mint();
 

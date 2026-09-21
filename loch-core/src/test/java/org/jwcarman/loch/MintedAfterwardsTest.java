@@ -43,6 +43,8 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A capability minted after the store was built")
 class MintedAfterwardsTest {
 
+  private static final SurrogateType<Token> TOKEN_TYPE = SurrogateType.of(Token.class);
+
   interface Value {}
 
   record Token(String value) implements Value {}
@@ -51,7 +53,7 @@ class MintedAfterwardsTest {
       new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
   private final SurrogateSource<Token> acmeTokens =
-      config.source("acme-tokens", Token.class, ctx -> Exact.of("acme"));
+      config.source("acme-tokens", TOKEN_TYPE, ctx -> Exact.of("acme"));
 
   private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
 
@@ -66,7 +68,7 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a source planting a value at somebody else's label")
   void cannot_be_a_source() {
-    SurrogateSource<Token> forged = config.source("forged", Token.class, ctx -> Exact.of("globex"));
+    SurrogateSource<Token> forged = config.source("forged", TOKEN_TYPE, ctx -> Exact.of("globex"));
 
     assertThatThrownBy(() -> forged.exchange(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
@@ -78,7 +80,7 @@ class MintedAfterwardsTest {
   void cannot_be_a_derivation() {
     Derivation<Token, Token> forged =
         config
-            .derivation("forged", Token.class, Token.class, t -> new Token(t.value()))
+            .derivation("forged", TOKEN_TYPE, TOKEN_TYPE, t -> new Token(t.value()))
             .acceptingAnything()
             .mint();
 
@@ -90,7 +92,7 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a sink with a ceiling of its own choosing")
   void cannot_be_a_sink() {
-    SurrogateSink<Token> forged = config.sink("forged", Token.class, ctx -> Exact.conflict());
+    SurrogateSink<Token> forged = config.sink("forged", TOKEN_TYPE, ctx -> Exact.conflict());
 
     assertThatThrownBy(() -> forged.exchange(secret))
         .isInstanceOf(IllegalStateException.class)
@@ -102,7 +104,7 @@ class MintedAfterwardsTest {
   void cannot_be_a_fold() {
     Fold<Token, Token> forged =
         config
-            .fold("forged-fold", Token.class, Token.class, all -> all.getFirst())
+            .fold("forged-fold", TOKEN_TYPE, TOKEN_TYPE, all -> all.getFirst())
             .acceptingAnything()
             .mint();
 
@@ -118,7 +120,7 @@ class MintedAfterwardsTest {
         config
             .query(
                 "forged-query",
-                Token.class,
+                TOKEN_TYPE,
                 String.class,
                 (token, against, ctx) -> token.value().contains(against))
             .accepting(ctx -> Exact.conflict())

@@ -40,6 +40,15 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A billing system using SurrogateStore")
 class BillingScenarioTest {
 
+  private static final SurrogateType<String> STRING_TYPE = SurrogateType.of(String.class);
+  private static final SurrogateType<DisputeClaim> DISPUTE_CLAIM_TYPE =
+      SurrogateType.of(DisputeClaim.class);
+  private static final SurrogateType<Account> ACCOUNT_TYPE = SurrogateType.of(Account.class);
+  private static final SurrogateType<Report> REPORT_TYPE = SurrogateType.of(Report.class);
+  private static final SurrogateType<InvoiceNumber> INVOICE_NUMBER_TYPE =
+      SurrogateType.of(InvoiceNumber.class);
+  private static final SurrogateType<Last4> LAST4_TYPE = SurrogateType.of(Last4.class);
+
   // ---------------------------------------------------------------- the application's labels
 
   /** Least constrained first, always. The last constant is the one that may go fewest places. */
@@ -192,22 +201,22 @@ class BillingScenarioTest {
   // ---------------------------------------------------------------- doors in
 
   private final SurrogateSource<String> customerMail =
-      config.source("customer-mail", String.class, BillingScenarioTest::labelFrom);
+      config.source("customer-mail", STRING_TYPE, BillingScenarioTest::labelFrom);
 
   private final SurrogateSource<String> cardTokens =
-      config.source("card-tokens", String.class, BillingScenarioTest::labelFrom);
+      config.source("card-tokens", STRING_TYPE, BillingScenarioTest::labelFrom);
 
   private final SurrogateSource<String> notes =
-      config.source("notes", String.class, BillingScenarioTest::labelFrom);
+      config.source("notes", STRING_TYPE, BillingScenarioTest::labelFrom);
 
   private final SurrogateSource<String> last4Digits =
-      config.source("last4-digits", String.class, BillingScenarioTest::labelFrom);
+      config.source("last4-digits", STRING_TYPE, BillingScenarioTest::labelFrom);
 
   private final SurrogateSource<DisputeClaim> disputeClaims =
-      config.source("dispute-claims", DisputeClaim.class, BillingScenarioTest::labelFrom);
+      config.source("dispute-claims", DISPUTE_CLAIM_TYPE, BillingScenarioTest::labelFrom);
 
   private final SurrogateSource<Account> accounts =
-      config.source("accounts", Account.class, BillingScenarioTest::labelFrom);
+      config.source("accounts", ACCOUNT_TYPE, BillingScenarioTest::labelFrom);
 
   // ---------------------------------------------------------------- doors out: one per (door,
   // type) pair. An sink is narrowed by type as well as by label, so a door that used to admit
@@ -219,59 +228,59 @@ class BillingScenarioTest {
   private final SurrogateSink<String> vendorLlmText =
       config.sink(
           "vendor-llm",
-          String.class,
+          STRING_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
   private final SurrogateSink<Report> vendorLlmReports =
       config.sink(
           "vendor-llm-reports",
-          Report.class,
+          REPORT_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
   private final SurrogateSink<InvoiceNumber> vendorLlmInvoice =
       config.sink(
           "vendor-llm-invoice",
-          InvoiceNumber.class,
+          INVOICE_NUMBER_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
   // Ours, on our own hardware. Reads untrusted mail; holds no secrets.
   private final SurrogateSink<String> quarantinedLlmText =
       config.sink(
           "quarantined-llm",
-          String.class,
+          STRING_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
   private final SurrogateSink<Report> quarantinedLlmReports =
       config.sink(
           "quarantined-llm-reports",
-          Report.class,
+          REPORT_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
   private final SurrogateSink<InvoiceNumber> quarantinedLlmInvoice =
       config.sink(
           "quarantined-llm-invoice",
-          InvoiceNumber.class,
+          INVOICE_NUMBER_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
 
   // The only place cardholder data may go, anywhere in the system.
   private final SurrogateSink<String> paymentProcessorText =
       config.sink(
           "payment-processor",
-          String.class,
+          STRING_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
   private final SurrogateSink<Report> paymentProcessorReports =
       config.sink(
           "payment-processor-reports",
-          Report.class,
+          REPORT_TYPE,
           ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
 
   // A person. What they may see depends on who they are.
   private final SurrogateSink<String> approvalCardText =
-      config.sink("approval-card", String.class, approvalCardCeiling());
+      config.sink("approval-card", STRING_TYPE, approvalCardCeiling());
 
   private final SurrogateSink<Last4> approvalCardLast4 =
-      config.sink("approval-card-last4", Last4.class, approvalCardCeiling());
+      config.sink("approval-card-last4", LAST4_TYPE, approvalCardCeiling());
 
   // ---------------------------------------------------------------- derivations and folds
 
@@ -280,8 +289,8 @@ class BillingScenarioTest {
       config
           .derivation(
               CLAIMED_INVOICE,
-              DisputeClaim.class,
-              InvoiceNumber.class,
+              DISPUTE_CLAIM_TYPE,
+              INVOICE_NUMBER_TYPE,
               claim -> new InvoiceNumber(claim.invoiceNumber()))
           .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
           .mint();
@@ -291,8 +300,8 @@ class BillingScenarioTest {
       config
           .derivation(
               CARD_LAST4,
-              String.class,
-              Last4.class,
+              STRING_TYPE,
+              LAST4_TYPE,
               token -> new Last4(token.substring(token.length() - 4)))
           .accepting(
               ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
@@ -307,8 +316,8 @@ class BillingScenarioTest {
       config
           .derivation(
               CARD_LAST4_PARTIAL,
-              String.class,
-              Last4.class,
+              STRING_TYPE,
+              LAST4_TYPE,
               token -> new Last4(token.substring(token.length() - 4)))
           .accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
           .lowering(joined -> joined.withDataClass(DataClass.PII))
@@ -319,8 +328,8 @@ class BillingScenarioTest {
       config
           .derivation(
               WISHFUL,
-              DisputeClaim.class,
-              InvoiceNumber.class,
+              DISPUTE_CLAIM_TYPE,
+              INVOICE_NUMBER_TYPE,
               claim -> new InvoiceNumber(claim.invoiceNumber()))
           .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
           .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
@@ -329,8 +338,7 @@ class BillingScenarioTest {
   // Several values in, one out. Every parent's label lands on the result.
   private final Fold<String, Report> summarise =
       config
-          .fold(
-              SUMMARISE, String.class, Report.class, notes -> new Report(String.join(" / ", notes)))
+          .fold(SUMMARISE, STRING_TYPE, REPORT_TYPE, notes -> new Report(String.join(" / ", notes)))
           // An internal reporting job, entitled to read across tenants. The point
           // of the test below is what happens to what it produces, not whether it
           // may read: a ceiling would refuse the combination earlier, and then
@@ -344,8 +352,8 @@ class BillingScenarioTest {
       config
           .checking(
               DECLINES,
-              DisputeClaim.class,
-              InvoiceNumber.class,
+              DISPUTE_CLAIM_TYPE,
+              INVOICE_NUMBER_TYPE,
               (claim, ctx) -> java.util.Optional.empty())
           .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
           .mint();
@@ -355,8 +363,8 @@ class BillingScenarioTest {
       config
           .fold(
               SUMMARISE_FOR_RELEASE,
-              String.class,
-              Report.class,
+              STRING_TYPE,
+              REPORT_TYPE,
               notes -> new Report("redacted summary of " + notes.size()))
           .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
           .lowering(joined -> joined.withDataClass(DataClass.NONE))
@@ -367,7 +375,7 @@ class BillingScenarioTest {
       config
           .query(
               "Account.ownedBy",
-              Account.class,
+              ACCOUNT_TYPE,
               String.class,
               (account, sender, ctx) -> account.email().equalsIgnoreCase(sender))
           .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
@@ -782,8 +790,8 @@ class BillingScenarioTest {
           config
               .derivation(
                   "whatever-i-like",
-                  DisputeClaim.class,
-                  InvoiceNumber.class,
+                  DISPUTE_CLAIM_TYPE,
+                  INVOICE_NUMBER_TYPE,
                   c -> new InvoiceNumber(c.invoiceNumber()))
               .acceptingAnything()
               .mint();
@@ -963,11 +971,11 @@ class BillingScenarioTest {
       SurrogateSource<Account> secretAccounts =
           choosyConfig.source(
               "secret-accounts",
-              Account.class,
+              ACCOUNT_TYPE,
               Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
       Query<Account, String> secretOwnedBy =
           choosyConfig
-              .query("Account.ownedBy", Account.class, String.class, (account, sender, ctx) -> true)
+              .query("Account.ownedBy", ACCOUNT_TYPE, String.class, (account, sender, ctx) -> true)
               .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
               .mint();
       SurrogateStore<Billing> choosy = MemorySurrogateStore.create(choosyConfig);
@@ -1008,11 +1016,11 @@ class BillingScenarioTest {
       SurrogateStoreConfig<Billing, Object> chattyConfig = new SurrogateStoreConfig<>();
       chattyConfig.lattice(Billing.LATTICE).currentAccess(edge::get).explainRefusals();
       SurrogateSource<String> chattyMail =
-          chattyConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
+          chattyConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       SurrogateSink<String> chattyVendorLlm =
           chattyConfig.sink(
               "vendor-llm",
-              String.class,
+              STRING_TYPE,
               ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
       SurrogateStore<Billing> chatty = MemorySurrogateStore.create(chattyConfig);
       Surrogate<String> held =
@@ -1031,11 +1039,11 @@ class BillingScenarioTest {
       SurrogateStoreConfig<Billing, Object> fragileConfig = new SurrogateStoreConfig<>();
       fragileConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
       SurrogateSource<String> fragileMail =
-          fragileConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
+          fragileConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       SurrogateSink<String> broken =
           fragileConfig.sink(
               "broken",
-              String.class,
+              STRING_TYPE,
               ctx -> {
                 throw new IllegalStateException("policy service is down");
               });
@@ -1161,7 +1169,7 @@ class BillingScenarioTest {
       SurrogateStoreConfig<Billing, Object> watchedConfig = new SurrogateStoreConfig<>();
       watchedConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
       SurrogateSource<String> watchedMail =
-          watchedConfig.source("mail", String.class, BillingScenarioTest::labelFrom);
+          watchedConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       MemoryStorage<Billing> kept = new MemoryStorage<>();
       Storage<Billing> broken =
           new Storage<>() {

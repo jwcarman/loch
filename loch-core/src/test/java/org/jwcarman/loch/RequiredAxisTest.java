@@ -40,6 +40,8 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A required axis")
 class RequiredAxisTest {
 
+  private static final SurrogateType<Note> NOTE_TYPE = SurrogateType.of(Note.class);
+
   enum Level {
     LOW,
     HIGH
@@ -65,7 +67,7 @@ class RequiredAxisTest {
   private final SurrogateSource<Note> notes =
       config.source(
           "notes",
-          Note.class,
+          NOTE_TYPE,
           ctx ->
               new Labels(
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
@@ -74,7 +76,7 @@ class RequiredAxisTest {
   private final SurrogateSink<Note> reporting =
       config.sink(
           "reporting",
-          Note.class,
+          NOTE_TYPE,
           ctx ->
               new Labels(
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
@@ -112,7 +114,7 @@ class RequiredAxisTest {
     SurrogateSource<Note> watched =
         own.source(
             "notes",
-            Note.class,
+            NOTE_TYPE,
             ctx ->
                 new Labels(
                     ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
@@ -139,7 +141,7 @@ class RequiredAxisTest {
     SurrogateStoreConfig<Labels, Object> own =
         new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE);
     SurrogateSource<Note> low =
-        own.source("low", Note.class, ctx -> new Labels(Exact.of("acme"), Level.LOW));
+        own.source("low", NOTE_TYPE, ctx -> new Labels(Exact.of("acme"), Level.LOW));
     SurrogateStore<Labels> other = MemorySurrogateStore.create(own);
 
     assertThat(other.label(low.exchange(new Note("fine")).id()).level()).isEqualTo(Level.LOW);

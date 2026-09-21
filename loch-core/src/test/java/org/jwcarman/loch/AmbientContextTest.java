@@ -31,6 +31,8 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("Who is asking")
 class AmbientContextTest {
 
+  private static final SurrogateType<String> STRING_TYPE = SurrogateType.of(String.class);
+
   enum Clearance {
     NONE,
     FINANCE
@@ -53,8 +55,8 @@ class AmbientContextTest {
     SurrogateStoreConfig<Clearance, Object> config = new SurrogateStoreConfig<>();
     config.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE));
     settings.accept(config);
-    SurrogateSource<String> cards = config.source("cards", String.class, ctx -> Clearance.FINANCE);
-    SurrogateSink<String> card = config.sink("card", String.class, ceiling);
+    SurrogateSource<String> cards = config.source("cards", STRING_TYPE, ctx -> Clearance.FINANCE);
+    SurrogateSink<String> card = config.sink("card", STRING_TYPE, ceiling);
     return new Wired(MemorySurrogateStore.create(config), cards, card);
   }
 

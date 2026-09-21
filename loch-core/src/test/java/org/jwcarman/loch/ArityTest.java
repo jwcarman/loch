@@ -37,18 +37,20 @@ class ArityTest {
 
   record Note(String text) implements Value {}
 
+  /** Declared once. Nothing special about it: a name and how to decode one. */
+  private static final SurrogateType<Note> NOTE = SurrogateType.of(Note.class);
+
   private final SurrogateStoreConfig<Exact<String>, Value> config =
       new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
 
-  private final SurrogateSource<Note> notes =
-      config.source("notes", Note.class, ctx -> Exact.of("acme"));
+  private final SurrogateSource<Note> notes = config.source("notes", NOTE, ctx -> Exact.of("acme"));
 
   private final Fold<Note, Note> joined =
       config
           .fold(
               "join",
-              Note.class,
-              Note.class,
+              NOTE,
+              NOTE,
               notes -> new Note(notes.stream().map(Note::text).reduce("", String::concat)))
           .acceptingAnything()
           .mint();

@@ -36,6 +36,9 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A stored type name")
 class TypeNamesTest {
 
+  private static final SurrogateType<Card> CARD_TYPE = SurrogateType.of(Card.class);
+  private static final SurrogateType<Invoice> INVOICE_TYPE = SurrogateType.of(Invoice.class);
+
   interface Value {}
 
   record Card(String number) implements Value {}

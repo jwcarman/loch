@@ -41,6 +41,8 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("Labelling what arrives")
 class LabellingWhatArrivesTest {
 
+  private static final SurrogateType<Mail> MAIL_TYPE = SurrogateType.of(Mail.class);
+
   enum Integrity {
     ENDORSED,
     UNENDORSED
@@ -66,7 +68,7 @@ class LabellingWhatArrivesTest {
   private final SurrogateSource<Mail> mail =
       config.source(
           "customer-mail",
-          Mail.class,
+          MAIL_TYPE,
           (message, ctx) ->
               new Labels(
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),

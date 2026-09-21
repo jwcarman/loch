@@ -16,6 +16,7 @@
 package org.jwcarman.loch.example.billing;
 
 import java.math.BigDecimal;
+import org.jwcarman.loch.SurrogateType;
 
 /** The things this service deals in. */
 public final class Domain {
@@ -35,11 +36,20 @@ public final class Domain {
   /** What a customer sent. Untrusted, and full of their own personal details. */
   public record Mail(String from, String body) implements BillingValue {}
 
+  /** Stored as "mail". Say the name here if you ever want it to outlive renaming the record. */
+  public static final SurrogateType<Mail> MAIL = SurrogateType.of(Mail.class);
+
   /** A row from the billing system: authoritative, and holding a live card token. */
   public record Invoice(
       String number, String tenant, String customerEmail, BigDecimal amount, String cardToken)
       implements BillingValue {}
 
+  /** Stored as "invoice". */
+  public static final SurrogateType<Invoice> INVOICE = SurrogateType.of(Invoice.class);
+
   /** Four digits, which is all an approver needs to recognise a card. */
   public record Last4(String digits) implements BillingValue {}
+
+  /** Stored as "last4". */
+  public static final SurrogateType<Last4> LAST4 = SurrogateType.of(Last4.class);
 }

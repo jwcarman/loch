@@ -112,7 +112,11 @@ class JdbcSurrogateStoreTest {
 
   record Card(String number, String holder) {}
 
+  private static final SurrogateType<Card> CARD = SurrogateType.of(Card.class);
+
   record Last4(String digits) {}
+
+  private static final SurrogateType<Last4> LAST4 = SurrogateType.of(Last4.class);
 
   private DataSource dataSource;
   private SurrogateStore<Billing> store;
@@ -167,8 +171,7 @@ class JdbcSurrogateStoreTest {
         c.type("card-list", TypeRef.listOf(TypeRef.of(Card.class)));
     SurrogateType<List<Last4>> last4List =
         c.type("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
-    SurrogateType<Card> cardType = c.type(Card.class);
-    SurrogateType<Last4> last4Type = c.type(Last4.class);
+
     // The application composes its own pipeline: squeeze, then seal.
     JdbcSurrogateStoreConfig<Billing> jdbc =
         new JdbcSurrogateStoreConfig<Billing>()
@@ -190,11 +193,8 @@ class JdbcSurrogateStoreTest {
                     && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
 
     // One source: everything this test holds is acme's cardholder data.
-    cards =
-        c.source(
-            "cards", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
-    vendorLlm =
-        c.sink("vendor-llm", Card.class, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
+    cards = c.source("cards", CARD, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    vendorLlm = c.sink("vendor-llm", CARD, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE));
     // One destination, three readers. The ceiling is written once, every reader enforces it,
     // and all three audit under "payment-processor" because that is the subsystem they reach.
     // The subsystem, its ceiling, and everything it is allowed to read. Both restrictions are
@@ -202,12 +202,12 @@ class JdbcSurrogateStoreTest {
     var processor =
         c.destination(
                 "payment-processor", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-            .type(cardType)
-            .type(last4Type)
+            .type(CARD)
+            .type(LAST4)
             .type(cardList)
             .mint();
-    paymentProcessor = processor.reading(cardType);
-    last4Processor = processor.reading(last4Type);
+    paymentProcessor = processor.reading(CARD);
+    last4Processor = processor.reading(LAST4);
 
     // A generic container is its own type, so it needs its own source and its own sinks.
     cardLists =
@@ -228,8 +228,8 @@ class JdbcSurrogateStoreTest {
     cardLast4 =
         c.derivation(
                 "Card.last4",
-                Card.class,
-                Last4.class,
+                CARD,
+                LAST4,
                 card -> new Last4(card.number().substring(card.number().length() - 4)))
             .accepting(ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
             .lowering(joined -> new Billing(joined.tenant(), joined.integrity(), DataClass.PII))

@@ -37,6 +37,10 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("A destination")
 class DeclaredAtTheDoorTest {
 
+  private static final SurrogateType<Card> CARD_TYPE = SurrogateType.of(Card.class);
+  private static final SurrogateType<SessionToken> SESSION_TOKEN_TYPE =
+      SurrogateType.of(SessionToken.class);
+
   interface Value {}
 
   record Card(String number) implements Value {}
@@ -54,10 +58,10 @@ class DeclaredAtTheDoorTest {
   private final SurrogateType<SessionToken> tokenType = config.type(SessionToken.class);
 
   private final SurrogateSource<Card> cards =
-      config.source("cards", Card.class, ctx -> Exact.of("acme"));
+      config.source("cards", CARD_TYPE, ctx -> Exact.of("acme"));
 
   private final SurrogateSource<SessionToken> tokens =
-      config.source("tokens", SessionToken.class, ctx -> Exact.of("acme"));
+      config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Exact.of("acme"));
 
   private final SurrogateStoreConfig.Destination<Exact<String>, Value> processor =
       config

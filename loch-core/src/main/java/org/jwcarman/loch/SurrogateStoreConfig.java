@@ -135,32 +135,10 @@ public class SurrogateStoreConfig<A, D> {
 
   // ------------------------------------------------------------------ minting capabilities
 
-  /**
-   * Mints the authority to put values into this store at one label. Configuration time only.
-   *
-   * <p>Returns the {@link SurrogateSource} rather than this config, so the fluent chain stops here
-   * and the caller has to capture what it was given. That is the point: there is no way to ask for
-   * an source afterwards, so a capability nobody kept is a capability nobody has.
-   *
-   * <p>The function fixes the parts of the label that are properties of the door -- what this is,
-   * how far it is trusted, what kind of data arrives here -- and may read the rest, typically a
-   * tenant, from ambient context.
-   */
-  public <T extends D> SurrogateSource<T> source(
-      String name, Class<T> type, java.util.function.BiFunction<T, AccessContext, A> labelling) {
-    return source(name, type(type), labelling);
-  }
-
-  /** The same, for a label that depends on neither what arrives nor who is acting. */
-  public <T extends D> SurrogateSource<T> source(String name, Class<T> type, A label) {
+  /** A source whose label depends on neither what arrives nor who is acting. */
+  public <T extends D> SurrogateSource<T> source(String name, SurrogateType<T> type, A label) {
     Objects.requireNonNull(label, "a source needs a label");
-    return source(name, type(type), (value, context) -> label);
-  }
-
-  /** The same, for a label that does not depend on what is arriving. */
-  public <T extends D> SurrogateSource<T> source(
-      String name, Class<T> type, java.util.function.Function<AccessContext, A> labelling) {
-    return source(name, type(type), (value, context) -> labelling.apply(context));
+    return source(name, type, (value, context) -> label);
   }
 
   /** The same, for a label that does not depend on what is arriving. */
@@ -234,11 +212,6 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** One more type this destination is allowed to hand over. */
-    /** The same, for a type already declared, including a generic container. */
-    public <T extends D> Declaring<A, D> type(Class<T> type) {
-      return type(config.type(type));
-    }
-
     /** The same, for a type already declared, including a generic container. */
     public Declaring<A, D> type(SurrogateType<?> type) {
       Objects.requireNonNull(type, "a destination's type must not be null");
@@ -322,18 +295,6 @@ public class SurrogateStoreConfig<A, D> {
     }
   }
 
-  /**
-   * A destination with exactly one reader, which is the common case.
-   *
-   * <p>Shorthand for declaring a destination and immediately reading one type at it. Reach for
-   * {@link #destination} when the same door reads several types, so its ceiling is written once
-   * rather than copied per type.
-   */
-  public <T extends D> SurrogateSink<T> sink(
-      String name, Class<T> type, java.util.function.Function<AccessContext, A> ceiling) {
-    return sink(name, type(type), ceiling);
-  }
-
   /** The same, for a type already declared. */
   public <T extends D> SurrogateSink<T> sink(
       String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> ceiling) {
@@ -352,12 +313,6 @@ public class SurrogateStoreConfig<A, D> {
    * overloads for two through five flows, as do RxJava and Reactor for {@code zip}. Beyond five, or
    * where the parents share a type, use {@link #fold}.
    */
-  /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
-      String name, Class<I> input, Class<O> output, Function<I, O> function) {
-    return derivation(name, type(input), type(output), function);
-  }
-
   /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function) {
@@ -388,15 +343,6 @@ public class SurrogateStoreConfig<A, D> {
   /**
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
-  /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> checking(
-      String name,
-      Class<I> input,
-      Class<O> output,
-      java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
-    return checking(name, type(input), type(output), function);
-  }
-
   /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> checking(
       String name,
@@ -433,12 +379,6 @@ public class SurrogateStoreConfig<A, D> {
    * <p>The result carries the join of every parent's label, so folding two tenants' data yields
    * something labelled for both, which no destination admits.
    */
-  /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
-      String name, Class<I> input, Class<O> output, Function<List<I>, O> function) {
-    return fold(name, type(input), type(output), function);
-  }
-
   /** The same, for types already declared. */
   public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<List<I>, O> function) {
@@ -580,17 +520,6 @@ public class SurrogateStoreConfig<A, D> {
    * <p>Boolean, and registered here rather than named at a call site, for the reasons set out on
    * {@link Query}.
    */
-  /**
-   * Mints the authority to ask one question of a value without the value leaving.
-   *
-   * <p>Boolean, and registered here rather than named at a call site, for the reasons set out on
-   * {@link Query}.
-   */
-  public <I extends D, Q> Querying<A, I, Q> query(
-      String name, Class<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
-    return query(name, type(input), against, asking);
-  }
-
   /** The same, for a type already declared. */
   public <I extends D, Q> Querying<A, I, Q> query(
       String name, SurrogateType<I> input, Class<Q> against, Query.Asking<I, Q> asking) {

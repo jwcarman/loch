@@ -40,6 +40,8 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("Writing at somebody else's label")
 class WritingAtAnothersLabelTest {
 
+  private static final SurrogateType<Note> NOTE_TYPE = SurrogateType.of(Note.class);
+
   enum Integrity {
     ENDORSED,
     UNENDORSED
@@ -67,7 +69,7 @@ class WritingAtAnothersLabelTest {
   private final SurrogateSource<Note> notes =
       config.source(
           "notes",
-          Note.class,
+          NOTE_TYPE,
           ctx ->
               new Labels(
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
@@ -76,7 +78,7 @@ class WritingAtAnothersLabelTest {
   private final SurrogateSink<Note> reporting =
       config.sink(
           "reporting",
-          Note.class,
+          NOTE_TYPE,
           ctx ->
               new Labels(
                   ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),

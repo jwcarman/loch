@@ -80,18 +80,18 @@ public class SurrogateStoreConfiguration {
     // The tenant is read from the access, never passed by the caller. Writing at another
     // tenant's label is not refused so much as unsayable: nothing takes a label.
     SurrogateSource<Domain.Mail> customerMail =
-        c.source("customer-mail", Domain.Mail.class, ctx -> label(ctx, UNENDORSED, PERSONAL));
+        c.source("customer-mail", Domain.MAIL, ctx -> label(ctx, UNENDORSED, PERSONAL));
 
     // ---- how values get out ----------------------------------------------------
     SurrogateSink<Domain.Invoice> supportUi =
-        c.sink("support-ui", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, ORDINARY));
+        c.sink("support-ui", Domain.INVOICE, ctx -> label(ctx, ENDORSED, ORDINARY));
     SurrogateSink<Domain.Last4> approvalDesk =
         c.sink(
             "approval-desk",
-            Domain.Last4.class,
+            Domain.LAST4,
             ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY));
     SurrogateSink<Domain.Invoice> paymentProcessor =
-        c.sink("payment-processor", Domain.Invoice.class, ctx -> label(ctx, ENDORSED, CARDHOLDER));
+        c.sink("payment-processor", Domain.INVOICE, ctx -> label(ctx, ENDORSED, CARDHOLDER));
 
     // ---- one value from another ------------------------------------------------
     // The only operation that can raise trust, and it earns it by tying what the customer
@@ -99,8 +99,8 @@ public class SurrogateStoreConfiguration {
     Derivation<Domain.Mail, Domain.Invoice> confirmInvoice =
         c.checking(
                 "mail.confirmedInvoice",
-                Domain.Mail.class,
-                Domain.Invoice.class,
+                Domain.MAIL,
+                Domain.INVOICE,
                 (mail, ctx) -> confirm(invoices, mail, ctx))
             .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
             .lowering(joined -> joined.withIntegrity(ENDORSED))
@@ -110,8 +110,8 @@ public class SurrogateStoreConfiguration {
     Derivation<Domain.Invoice, Domain.Last4> cardLast4 =
         c.derivation(
                 "invoice.card.last4",
-                Domain.Invoice.class,
-                Domain.Last4.class,
+                Domain.INVOICE,
+                Domain.LAST4,
                 invoice -> new Domain.Last4(last4(invoice.cardToken())))
             .accepting(ctx -> label(ctx, ENDORSED, CARDHOLDER))
             .lowering(joined -> joined.withSensitivity(PERSONAL))
@@ -122,7 +122,7 @@ public class SurrogateStoreConfiguration {
     Query<Domain.Mail, String> mailMentions =
         c.query(
                 "mail.mentions",
-                Domain.Mail.class,
+                Domain.MAIL,
                 String.class,
                 (mail, text, ctx) -> mail.body().toLowerCase().contains(text.toLowerCase()))
             .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))

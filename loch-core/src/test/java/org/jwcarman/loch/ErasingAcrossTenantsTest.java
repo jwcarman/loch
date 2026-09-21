@@ -38,6 +38,8 @@ import org.jwcarman.loch.lattice.Lattices;
 @DisplayName("Erasing somebody else's data")
 class ErasingAcrossTenantsTest {
 
+  private static final SurrogateType<Record> RECORD_TYPE = SurrogateType.of(Record.class);
+
   enum Level {
     LOW,
     HIGH
@@ -69,7 +71,7 @@ class ErasingAcrossTenantsTest {
 
     SurrogateSource<Record> globexRecords =
         config.source(
-            "globex-records", Record.class, ctx -> new Labels(Exact.of("globex"), Level.HIGH));
+            "globex-records", RECORD_TYPE, ctx -> new Labels(Exact.of("globex"), Level.HIGH));
 
     SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
 
