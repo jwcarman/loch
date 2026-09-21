@@ -46,6 +46,19 @@ public final class DefaultCharter implements Charter {
    * portals that is nothing, and it is the price of the invariant -- do not "optimise" it back into
    * a mutable map.
    */
+  /**
+   * Everything declared, frozen at the moment of sealing.
+   *
+   * <p>Built once rather than per declaration. Writing a charter is single-threaded -- it happens
+   * while an application is being wired, before anything it constitutes can act -- so the
+   * collections below are ordinary and mutable until they are copied in here.
+   *
+   * <p>What crosses threads is this, and it crosses exactly once: the atomic write that seals a
+   * charter publishes it to every request thread that will ever use a portal. That is why it is
+   * immutable and why the copies preserve order -- these are read back into the manifest and into
+   * the refusal naming which types a door reads, and a message that differs between runs is a
+   * message nobody trusts.
+   */
   record Configuration(
       java.util.Map<String, SurrogateType<?>> types,
       java.util.Set<String> sources,
@@ -55,69 +68,12 @@ public final class DefaultCharter implements Charter {
       AccessContextProvider currentAccess,
       java.util.function.BiPredicate<Label, AccessContext> mayErase) {
 
-    /**
-     * Copied on the way in, so a snapshot cannot be changed once anyone can see it.
-     *
-     * <p>Declaring already builds a fresh collection every time and never touches a published one,
-     * which is what closes the race with sealing. This makes that a property of the type rather
-     * than of everyone who edits those methods afterwards.
-     *
-     * <p><b>Order-preserving copies, deliberately.</b> {@code Map.copyOf} and {@code Set.copyOf}
-     * give an unspecified iteration order, and these are read back out into a manifest and into the
-     * refusal message naming which types a door was declared to read. An error that lists them
-     * differently between runs is an error nobody trusts.
-     */
     Configuration {
       types = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(types));
       sources = java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(sources));
       destinations = List.copyOf(destinations);
       derivations = List.copyOf(derivations);
       queries = List.copyOf(queries);
-    }
-
-    static Configuration empty() {
-      return new Configuration(
-          java.util.Map.of(),
-          java.util.Set.of(),
-          List.of(),
-          List.of(),
-          List.of(),
-          AccessContextProvider.none(),
-          (label, context) -> false);
-    }
-
-    Configuration withType(SurrogateType<?> type) {
-      java.util.Map<String, SurrogateType<?>> next = new LinkedHashMap<>(types);
-      next.put(type.name(), type);
-      return new Configuration(
-          next, sources, destinations, derivations, queries, currentAccess, mayErase);
-    }
-
-    Configuration withSource(String name) {
-      java.util.Set<String> next = new java.util.LinkedHashSet<>(sources);
-      next.add(name);
-      return new Configuration(
-          types, next, destinations, derivations, queries, currentAccess, mayErase);
-    }
-
-    Configuration with(DestinationSpec destination) {
-      List<DestinationSpec> next = new ArrayList<>(destinations);
-      next.add(destination);
-      return new Configuration(types, sources, next, derivations, queries, currentAccess, mayErase);
-    }
-
-    Configuration with(DerivationSpec<?> derivation) {
-      List<DerivationSpec<?>> next = new ArrayList<>(derivations);
-      next.add(derivation);
-      return new Configuration(
-          types, sources, destinations, next, queries, currentAccess, mayErase);
-    }
-
-    Configuration with(QuerySpec<?, ?> query) {
-      List<QuerySpec<?, ?>> next = new ArrayList<>(queries);
-      next.add(query);
-      return new Configuration(
-          types, sources, destinations, derivations, next, currentAccess, mayErase);
     }
   }
 
@@ -129,22 +85,29 @@ public final class DefaultCharter implements Charter {
    * in force from that instant.
    */
   sealed interface State {
-    Configuration configuration();
-
     /** Authority may be constituted, and none of it may be exercised. */
-    record Configuring(Configuration configuration) implements State {}
+    record Configuring() implements State {}
 
     /** Authority may be exercised, and none of it may be constituted. */
     record Active(Configuration configuration, Engine engine) implements State {}
   }
 
   /** What a declaration produced: the charter it leaves behind, and the portal it hands back. */
-  record Declared<P>(Configuration configuration, P portal) {}
-
   private final Axes axes;
+
+  // Written only while this charter is being configured, which is single-threaded by contract: an
+  // application wires itself on one thread, and nothing it constitutes can act until it is sealed.
+  // Sealing copies all of it into an immutable snapshot and publishes that with one atomic write,
+  // which is the only moment any of it crosses to the threads that will use a portal.
+  private final java.util.Map<String, SurrogateType<?>> types = new LinkedHashMap<>();
+  private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
+  private final List<DestinationSpec> destinations = new ArrayList<>();
+  private final List<DerivationSpec<?>> derivations = new ArrayList<>();
+  private final List<QuerySpec<?, ?>> queries = new ArrayList<>();
+  private AccessContextProvider currentAccess = AccessContextProvider.none();
+  private java.util.function.BiPredicate<Label, AccessContext> mayErase = (label, context) -> false;
   private final java.util.concurrent.atomic.AtomicReference<State> lifecycle =
-      new java.util.concurrent.atomic.AtomicReference<>(
-          new State.Configuring(Configuration.empty()));
+      new java.util.concurrent.atomic.AtomicReference<>(new State.Configuring());
 
   /**
    * The questions this charter asks about every value it holds.
@@ -177,12 +140,17 @@ public final class DefaultCharter implements Charter {
   public void seal(Storage storage) {
     Objects.requireNonNull(storage, "a charter is sealed to a storage");
     State current = lifecycle.get();
-    if (!(current instanceof State.Configuring(Configuration configuration))) {
+    if (!(current instanceof State.Configuring)) {
       throw new IllegalStateException("this charter is already sealed");
     }
+    Configuration configuration =
+        new Configuration(
+            types, sources, destinations, derivations, queries, currentAccess, mayErase);
     Engine engine = new Engine(axes, configuration, storage);
+    // One write, and every portal this charter constituted is in force. It is also the only moment
+    // any of this crosses a thread, which is why the snapshot above is taken first.
     if (!lifecycle.compareAndSet(current, new State.Active(configuration, engine))) {
-      throw new IllegalStateException("this charter was changed while it was being sealed");
+      throw new IllegalStateException("this charter was sealed while it was being sealed");
     }
   }
 
@@ -192,24 +160,19 @@ public final class DefaultCharter implements Charter {
   }
 
   /**
-   * Constitutes one new authority, as a single atomic transition.
+   * Refuses anything further once this charter is in force.
    *
-   * <p>Fails rather than retries on a concurrent change. Two threads configuring one charter is a
-   * programming error at bootstrap, not contention worth absorbing.
+   * <p>A security invariant rather than an ergonomic one: an authority graph that can still grow is
+   * not one anybody can reason about. Writing a charter is single-threaded by contract, so this is
+   * a state check rather than a transition -- there is nothing to race with, because nothing else
+   * is declaring and the only thread that could seal is this one.
    */
-  <P> P declare(java.util.function.Function<Configuration, Declared<P>> declaration) {
-    State current = lifecycle.get();
-    if (!(current instanceof State.Configuring(Configuration configuration))) {
+  private void stillWriting() {
+    if (!(lifecycle.get() instanceof State.Configuring)) {
       throw new IllegalStateException(
           "nothing further can be declared: this charter has been sealed, and an authority graph"
               + " that can still grow is not one anybody can reason about");
     }
-    Declared<P> result = declaration.apply(configuration);
-    if (!lifecycle.compareAndSet(current, new State.Configuring(result.configuration()))) {
-      throw new IllegalStateException(
-          "this charter was changed by another thread while something was being declared");
-    }
-    return result.portal();
   }
 
   /** The engine a portal reaches through, or a refusal saying why it cannot. */
@@ -230,15 +193,28 @@ public final class DefaultCharter implements Charter {
     return lifecycle;
   }
 
-  Configuration configuration() {
-    return lifecycle.get().configuration();
+  /**
+   * What has been declared, from wherever it currently lives.
+   *
+   * <p>While writing, that is the fields themselves, read on the thread that is writing them. Once
+   * sealed it is the snapshot, read through the atomic that published it -- which is what makes
+   * reporting safe from a request thread.
+   */
+  private Configuration configuration() {
+    return switch (lifecycle.get()) {
+      case State.Active active -> active.configuration();
+      case State.Configuring _ ->
+          new Configuration(
+              types, sources, destinations, derivations, queries, currentAccess, mayErase);
+    };
   }
 
   /** Somewhere values may go. Registered once; referenced by name forever after. */
   @Override
   public DefaultCharter destination(DestinationSpec destination) {
     Objects.requireNonNull(destination, "a destination must not be null");
-    declare(configuration -> new Declared<>(configuration.with(destination), destination));
+    stillWriting();
+    destinations.add(destination);
     return this;
   }
 
@@ -252,7 +228,7 @@ public final class DefaultCharter implements Charter {
    * one, and finding that out at startup beats finding it out from a decode failure in production.
    */
   <T> SurrogateType<T> registered(SurrogateType<T> declared) {
-    SurrogateType<?> existing = configuration().types().get(declared.name());
+    SurrogateType<?> existing = types.get(declared.name());
     if (existing != null && !existing.type().getType().equals(declared.type().getType())) {
       throw new IllegalStateException(
           ("two types both want the name '%s': %s and %s. A stored name has to identify one type,"
@@ -271,13 +247,11 @@ public final class DefaultCharter implements Charter {
   }
 
   /** Validates each type and folds it into the configuration the caller is about to leave. */
-  Configuration recording(Configuration configuration, SurrogateType<?>... declared) {
-    Configuration next = configuration;
+  void recording(SurrogateType<?>... declared) {
     for (SurrogateType<?> type : declared) {
       registered(type);
-      next = next.withType(type);
+      types.put(type.name(), type);
     }
-    return next;
   }
 
   // ------------------------------------------------------------------ declaring capabilities
@@ -303,27 +277,24 @@ public final class DefaultCharter implements Charter {
     Objects.requireNonNull(name, "a source needs a name");
     Objects.requireNonNull(type, "a source needs to know what it accepts");
     Objects.requireNonNull(labelling, "a source needs to say how it labels what arrives");
+    stillWriting();
+    if (!sources.add(name)) {
+      throw new IllegalStateException("two sources are registered as '" + name + "'");
+    }
+    recording(type);
     var lifecycle = lifecycle();
     String what = "source '" + name + "'";
-    return declare(
-        configuration -> {
-          if (configuration.sources().contains(name)) {
-            throw new IllegalStateException("two sources are registered as '" + name + "'");
-          }
-          return new Declared<>(
-              recording(configuration, type).withSource(name),
-              new Conceal<T>() {
-                @Override
-                public Surrogate<T> conceal(T value) {
-                  return engineOf(lifecycle, what).concealVia(name, type, labelling, value);
-                }
+    return new Conceal<T>() {
+      @Override
+      public Surrogate<T> conceal(T value) {
+        return engineOf(lifecycle, what).concealVia(name, type, labelling, value);
+      }
 
-                @Override
-                public String toString() {
-                  return what;
-                }
-              });
-        });
+      @Override
+      public String toString() {
+        return what;
+      }
+    };
   }
 
   /**
@@ -365,12 +336,10 @@ public final class DefaultCharter implements Charter {
     for (SurrogateType<?> type : reads) {
       names.add(type.name());
     }
-    var lifecycle = lifecycle();
-    return declare(
-        configuration ->
-            new Declared<>(
-                recording(configuration, reads).with(Destinations.varying(name, ceiling)),
-                new Door(name, java.util.Collections.unmodifiableSet(names), lifecycle)));
+    stillWriting();
+    recording(reads);
+    destinations.add(Destinations.varying(name, ceiling));
+    return new Door(name, java.util.Collections.unmodifiableSet(names), lifecycle());
   }
 
   /** The same, for a ceiling that does not depend on who is asking. */
@@ -553,14 +522,13 @@ public final class DefaultCharter implements Charter {
             settings.relabel(),
             settings.availableTo(),
             fold);
-    var lifecycle = lifecycle();
+    stillWriting();
     SurrogateType<?>[] declared = new SurrogateType<?>[inputTypes.size() + 1];
     inputTypes.toArray(declared);
     declared[inputTypes.size()] = outputType;
-    return declare(
-        configuration ->
-            new Declared<>(
-                recording(configuration, declared).with(spec), capability.apply(spec, lifecycle)));
+    recording(declared);
+    derivations.add(spec);
+    return capability.apply(spec, lifecycle());
   }
 
   List<DerivationSpec<?>> derivations() {
@@ -593,23 +561,13 @@ public final class DefaultCharter implements Charter {
   @Override
   public DefaultCharter currentAccess(AccessContextProvider currentAccess) {
     Objects.requireNonNull(currentAccess, "an access source must not be null");
-    declare(
-        configuration ->
-            new Declared<>(
-                new Configuration(
-                    configuration.types(),
-                    configuration.sources(),
-                    configuration.destinations(),
-                    configuration.derivations(),
-                    configuration.queries(),
-                    currentAccess,
-                    configuration.mayErase()),
-                this));
+    stillWriting();
+    this.currentAccess = currentAccess;
     return this;
   }
 
   AccessContextProvider currentAccess() {
-    return configuration().currentAccess();
+    return currentAccess;
   }
 
   /**
@@ -637,23 +595,13 @@ public final class DefaultCharter implements Charter {
   @Override
   public DefaultCharter mayErase(java.util.function.BiPredicate<Label, AccessContext> mayErase) {
     Objects.requireNonNull(mayErase, "an erasure policy must not be null");
-    declare(
-        configuration ->
-            new Declared<>(
-                new Configuration(
-                    configuration.types(),
-                    configuration.sources(),
-                    configuration.destinations(),
-                    configuration.derivations(),
-                    configuration.queries(),
-                    configuration.currentAccess(),
-                    mayErase),
-                this));
+    stillWriting();
+    this.mayErase = mayErase;
     return this;
   }
 
   java.util.function.BiPredicate<Label, AccessContext> mayErase() {
-    return configuration().mayErase();
+    return mayErase;
   }
 
   List<DestinationSpec> destinations() {
@@ -691,23 +639,22 @@ public final class DefaultCharter implements Charter {
     }
     QuerySpec<I, Q> spec =
         new QuerySpec<>(name, input, asking, settings.ceiling(), settings.availableTo());
+    stillWriting();
+    recording(input);
+    queries.add(spec);
     var lifecycle = lifecycle();
     String what = "query '" + name + "'";
-    return declare(
-        configuration ->
-            new Declared<>(
-                recording(configuration, input).with(spec),
-                new Query<I, Q>() {
-                  @Override
-                  public Answer ask(Surrogate<I> about, Q against) {
-                    return engineOf(lifecycle, what).askVia(spec, about, against);
-                  }
+    return new Query<I, Q>() {
+      @Override
+      public Answer ask(Surrogate<I> about, Q against) {
+        return engineOf(lifecycle, what).askVia(spec, about, against);
+      }
 
-                  @Override
-                  public String toString() {
-                    return what;
-                  }
-                }));
+      @Override
+      public String toString() {
+        return what;
+      }
+    };
   }
 
   /** What a query still needs said about it before it becomes a capability. */
