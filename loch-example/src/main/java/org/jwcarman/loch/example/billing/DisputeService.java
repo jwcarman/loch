@@ -112,9 +112,4 @@ public class DisputeService {
   private static String last4(String token) {
     return token.substring(token.length() - 4);
   }
-
-  /** What a value is labelled, for a screen that must decide what to show. */
-  public BillingLabels labelOf(String id) {
-    return loch.label(id);
-  }
 }
