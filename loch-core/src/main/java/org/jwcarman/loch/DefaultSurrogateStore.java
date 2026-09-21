@@ -23,40 +23,42 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import org.jwcarman.loch.lattice.Lattice;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Every policy decision a store makes, over whatever {@link Storage} it was given.
  *
- * <p>The gate, the lattice, the registries and the audit live here and nowhere else, so an
- * in-memory store and a durable one cannot disagree about who may see what. Storage implementations
- * keep bytes; this decides.
+ * <p>The gate, the axes, the registries and the audit live here and nowhere else, so an in-memory
+ * store and a durable one cannot disagree about who may see what. Storage implementations keep
+ * bytes; this decides.
  */
-public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
+public final class DefaultSurrogateStore implements SurrogateStore {
 
-  private final Lattice<A> lattice;
-  private final Map<String, DestinationSpec<A>> destinations;
-  private final List<DerivationSpec<A, ?>> derivations;
-  private final List<QuerySpec<A, ?, ?>> queries;
+  private final List<Axis<?>> axes;
+  private final Map<String, DestinationSpec> destinations;
+  private final List<DerivationSpec<?>> derivations;
+  private final List<QuerySpec<?, ?>> queries;
   private final boolean explainRefusals;
   private final AccessContextProvider ambient;
   private final java.util.Set<String> callerMayContribute;
-  private final java.util.function.BiPredicate<A, AccessContext> mayErase;
-  private final Storage<A> storage;
+  private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
+  private final Storage storage;
 
-  public DefaultSurrogateStore(SurrogateStoreConfig<A, ?> config, Storage<A> storage) {
+  public DefaultSurrogateStore(SurrogateStoreConfig<?> config, Storage storage) {
     this.storage = storage;
-    this.lattice = config.lattice();
-    Map<String, DestinationSpec<A>> byId = new LinkedHashMap<>();
-    for (DestinationSpec<A> destination : config.destinations()) {
+    this.axes = config.declaredAxes();
+    Map<String, DestinationSpec> byId = new LinkedHashMap<>();
+    for (DestinationSpec destination : config.destinations()) {
       if (byId.put(destination.name(), destination) != null) {
         throw new IllegalStateException(
             "two destinations are registered as '" + destination.name() + "'");
       }
     }
     this.destinations = Collections.unmodifiableMap(byId);
-    Map<String, DerivationSpec<A, ?>> byName = new LinkedHashMap<>();
-    for (DerivationSpec<A, ?> derivation : config.derivations()) {
+    Map<String, DerivationSpec<?>> byName = new LinkedHashMap<>();
+    for (DerivationSpec<?> derivation : config.derivations()) {
       if (byName.put(derivation.name(), derivation) != null) {
         throw new IllegalStateException(
             "two derivations are registered as '" + derivation.name() + "'");
@@ -83,13 +85,13 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   <T> Surrogate<T> exchangeVia(
       String source,
       SurrogateType<T> type,
-      java.util.function.BiFunction<T, AccessContext, A> labelling,
+      java.util.function.BiFunction<T, AccessContext, Label> labelling,
       T value) {
     if (value == null) {
       throw new IllegalArgumentException("a store holds values, not nulls");
     }
     AccessContext asking = asking(AccessContext.empty());
-    A label;
+    Label label;
     try {
       label = labelling.apply(value, asking);
     } catch (RuntimeException e) {
@@ -109,7 +111,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
     }
     // The only door an incomplete label can come in through. A derived label is the join of its
     // parents and join only moves up, so nothing downstream can lose what was said here.
-    if (!lattice.complete(label)) {
+    if (leavesARequiredAxisUnsaid(label)) {
       audit(
           AuditRecord.Operation.HOLD,
           freshId(),
@@ -137,8 +139,19 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
             null,
             label,
             asking);
-    storage.put(id, new StoredValue<>(value, type, label, Lineage.held()), entry);
+    storage.put(id, new StoredValue(value, type, label, Lineage.held()), entry);
     return new Surrogate<>(id);
+  }
+
+  /**
+   * Whether a label leaves an axis unsaid that this store said it must not.
+   *
+   * <p>Checked at the one door a label is written through. Unsaid is the bottom of an axis's order,
+   * which is below every ceiling, so a value that left a required axis unsaid would be readable by
+   * everyone -- silently, and in the direction nobody would notice.
+   */
+  private boolean leavesARequiredAxisUnsaid(Label label) {
+    return axes.stream().anyMatch(label::unsaid);
   }
 
   /**
@@ -147,7 +160,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
    * <p>Treated as a refusal rather than allowed to propagate: a policy that cannot be evaluated has
    * not said yes, and a caller assembling a prompt should get a handle rather than a stack trace.
    */
-  private A ceilingOf(DestinationSpec<A> destination, AccessContext context) {
+  private Ceiling ceilingOf(DestinationSpec destination, AccessContext context) {
     try {
       return destination.ceiling(context);
     } catch (RuntimeException e) {
@@ -163,7 +176,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
    * Optional}: empty is a ceiling that deliberately accepts anything, and conflating the two would
    * turn a crashing policy into a permissive one.
    */
-  private Optional<A> ceilingOf(java.util.function.Supplier<Optional<A>> ceiling) {
+  private Optional<Ceiling> ceilingOf(java.util.function.Supplier<Optional<Ceiling>> ceiling) {
     try {
       return ceiling.get();
     } catch (RuntimeException e) {
@@ -202,7 +215,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
       String target,
       AuditRecord.Outcome outcome,
       String reason,
-      A label,
+      Label label,
       AccessContext context) {
     storage.record(entry(operation, value, target, outcome, reason, label, context));
   }
@@ -213,7 +226,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
       String target,
       AuditRecord.Outcome outcome,
       String reason,
-      A label,
+      Label label,
       AccessContext context) {
     return new AuditRecord(
         Instant.now(),
@@ -231,7 +244,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
       String detail,
       String value,
       String target,
-      A label,
+      Label label,
       AccessContext context) {
     audit(
         AuditRecord.Operation.DEREFERENCE,
@@ -251,7 +264,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
    * several values is worth noting because the result is more constrained than any one parent.
    * Deriving one value from one is the ordinary case and says nothing extra.
    */
-  private String reasonFor(DerivationSpec<A, ?> spec, A joined, int parents) {
+  private String reasonFor(DerivationSpec<?> spec, Label joined, int parents) {
     if (spec.privileged()) {
       return "weakened from " + joined;
     }
@@ -259,7 +272,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   }
 
   /** How a derivation's parents read in the manifest: positionally, or as many of one type. */
-  private static String reads(DerivationSpec<?, ?> spec) {
+  private static String reads(DerivationSpec<?> spec) {
     String types =
         spec.inputTypes().stream()
             .map(SurrogateType::name)
@@ -268,16 +281,16 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   }
 
   /** What a refusal is allowed to say about labels, which by default is nothing. */
-  private String explain(A label, Object ceiling) {
+  private String explain(Label label, Object ceiling) {
     return explainRefusals ? " (labelled " + label + "; accepts " + ceiling + ")" : "";
   }
 
   @Override
-  public A label(String id) {
+  public Label label(String id) {
     return metadataOf(id).label();
   }
 
-  private StoredMetadata<A> metadataOf(String id) {
+  private StoredMetadata metadataOf(String id) {
     return storage
         .metadata(id)
         .orElseThrow(() -> new IllegalArgumentException("this store is not holding " + id));
@@ -303,7 +316,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   @Override
   public int erase(Surrogate<?> root, AccessContext context) {
     AccessContext asking = asking(context);
-    StoredMetadata<A> entry = storage.metadata(root.id()).orElse(null);
+    StoredMetadata entry = storage.metadata(root.id()).orElse(null);
     if (entry == null) {
       return 0;
     }
@@ -332,10 +345,9 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
     return removed;
   }
 
-  <I, Q> Answer askVia(
-      QuerySpec<A, I, Q> spec, Surrogate<I> about, Q against, AccessContext given) {
+  <I, Q> Answer askVia(QuerySpec<I, Q> spec, Surrogate<I> about, Q against, AccessContext given) {
     AccessContext asking = asking(given);
-    AtomicReference<A> label = new AtomicReference<>();
+    AtomicReference<Label> label = new AtomicReference<>();
     Answer answer = answering(spec, about, against, asking, label);
     if (answer instanceof Answer.Refused refused) {
       audit(
@@ -351,17 +363,17 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   }
 
   private <I, Q> Answer answering(
-      QuerySpec<A, I, Q> spec,
+      QuerySpec<I, Q> spec,
       Surrogate<I> held,
       Q against,
       AccessContext context,
-      AtomicReference<A> refused) {
+      AtomicReference<Label> refused) {
     String name = spec.name();
     if (!offeredHere(() -> spec.availableTo().test(context))) {
       return new Answer.Refused(
           Answer.Reason.NOT_AVAILABLE_HERE, "'" + name + "' is not offered here");
     }
-    StoredMetadata<A> entry = storage.metadata(held.id()).orElse(null);
+    StoredMetadata entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
       return new Answer.Refused(
           Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
@@ -373,13 +385,13 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           "'%s' asks about a %s, but %s is a %s"
               .formatted(name, spec.inputType().name(), held.id(), entry.typeName()));
     }
-    Optional<A> ceiling = ceilingOf(() -> spec.ceilingFor(context));
+    Optional<Ceiling> ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
           "'" + name + "' could not say what it accepts, so it does not accept this");
     }
-    if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
+    if (ceiling.isPresent() && !ceiling.get().permits(entry.label())) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
           held.id()
@@ -423,7 +435,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
     List<Manifest.Entry> theDestinations = new ArrayList<>();
     destinations.forEach(
         (id, destination) -> {
-          A ceiling = ceilingOf(destination, AccessContext.empty());
+          Ceiling ceiling = ceilingOf(destination, AccessContext.empty());
           theDestinations.add(
               new Manifest.Entry(
                   id,
@@ -441,7 +453,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
                     derivation.privileged())));
     List<Manifest.Entry> theQuestions = new ArrayList<>();
     return new Manifest(
-        String.valueOf(lattice.bottom()), theDestinations, theDerivations, theQuestions);
+        String.valueOf(Label.nothing()), theDestinations, theDerivations, theQuestions);
   }
 
   /**
@@ -454,9 +466,9 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
    * truth.
    */
   <O> Derived<O> deriveVia(
-      DerivationSpec<A, O> spec, List<Surrogate<?>> parents, AccessContext explicit) {
+      DerivationSpec<O> spec, List<Surrogate<?>> parents, AccessContext explicit) {
     AccessContext asking = asking(explicit);
-    AtomicReference<A> label = new AtomicReference<>();
+    AtomicReference<Label> label = new AtomicReference<>();
     Derived<O> result = deriving(spec, parents, asking, label);
     if (result instanceof Derived.Refused<O> refused) {
       audit(
@@ -472,10 +484,10 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   }
 
   private <O> Derived<O> deriving(
-      DerivationSpec<A, O> spec,
+      DerivationSpec<O> spec,
       List<Surrogate<?>> parents,
       AccessContext context,
-      AtomicReference<A> refused) {
+      AtomicReference<Label> refused) {
     String id = spec.name();
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
@@ -493,7 +505,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
     // Once, not once per parent: a ceiling that reads ambient context is doing real work.
-    Optional<A> ceiling =
+    Optional<Ceiling> ceiling =
         ceilingOf(() -> Optional.ofNullable(spec.ceiling()).map(f -> f.apply(context)));
     if (ceiling == null) {
       return new Derived.Refused<>(
@@ -503,11 +515,11 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
 
     List<Object> inputs = new ArrayList<>();
     List<String> parentIds = new ArrayList<>();
-    A joined = null;
+    Label joined = null;
     for (int position = 0; position < parents.size(); position++) {
       Surrogate<?> parent = parents.get(position);
       SurrogateType<?> expected = spec.typeAt(position);
-      StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
+      StoredMetadata entry = storage.metadata(parent.id()).orElse(null);
       if (entry == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
@@ -518,7 +530,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
             "'%s' reads a %s in position %d, but %s is a %s"
                 .formatted(id, expected.name(), position + 1, parent.id(), entry.typeName()));
       }
-      if (ceiling.isPresent() && !lattice.permits(entry.label(), ceiling.get())) {
+      if (ceiling.isPresent() && !ceiling.get().permits(entry.label())) {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING,
             parent.id() + " may not reach '" + id + "'" + explain(entry.label(), ceiling.get()));
@@ -531,7 +543,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
       inputs.add(input);
       parentIds.add(parent.id());
       // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
-      joined = joined == null ? entry.label() : lattice.join(joined, entry.label());
+      joined = joined == null ? entry.label() : joined.join(entry.label());
       refused.set(joined);
     }
 
@@ -547,7 +559,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
 
-    A label = joined;
+    Label label = joined;
     if (spec.relabel() != null) {
       try {
         label = spec.relabel().apply(joined);
@@ -555,7 +567,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
       }
-      if (!lattice.permits(label, joined)) {
+      if (!label.atOrBelow(joined)) {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING,
             "'%s' relabelled a value as something not below it".formatted(id)
@@ -575,7 +587,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
             context);
     storage.put(
         newId,
-        new StoredValue<>(
+        new StoredValue(
             produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
         entry);
     return new Derived.Made<>(new Surrogate<>(newId));
@@ -584,7 +596,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
   <T> Dereferenced<T> dereference(
       Surrogate<T> held, SurrogateType<T> expected, String to, AccessContext context) {
     context = asking(context);
-    DestinationSpec<A> destination = destinations.get(to);
+    DestinationSpec destination = destinations.get(to);
     if (destination == null) {
       return denied(
           Dereferenced.Reason.NO_SUCH_DESTINATION,
@@ -594,7 +606,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           null,
           context);
     }
-    StoredMetadata<A> entry = storage.metadata(held.id()).orElse(null);
+    StoredMetadata entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
       return denied(
           Dereferenced.Reason.NO_SUCH_VALUE,
@@ -613,7 +625,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           entry.label(),
           context);
     }
-    A ceiling = ceilingOf(destination, context);
+    Ceiling ceiling = ceilingOf(destination, context);
     if (ceiling == null) {
       return denied(
           Dereferenced.Reason.ABOVE_CEILING,
@@ -623,7 +635,7 @@ public final class DefaultSurrogateStore<A> implements SurrogateStore<A> {
           entry.label(),
           context);
     }
-    if (!lattice.permits(entry.label(), ceiling)) {
+    if (!ceiling.permits(entry.label())) {
       return denied(
           Dereferenced.Reason.ABOVE_CEILING,
           held.id() + " may not reach '" + to + "'" + explain(entry.label(), ceiling),

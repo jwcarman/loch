@@ -85,6 +85,36 @@ public final class Label {
     return new Label(next);
   }
 
+  /**
+   * Whether this label is at or below another on every axis.
+   *
+   * <p>Not the same question a {@link Ceiling} answers. A ceiling is what a reader is entitled to;
+   * this compares two labels, and the one place it is needed is declassification -- checking that
+   * what a derivation relabelled its result to is genuinely below the combination of its parents.
+   *
+   * <p>Derived from {@link #join} rather than written separately, for the same reason an axis
+   * derives its own: two things that must agree cannot disagree if only one of them exists.
+   */
+  public boolean atOrBelow(Label other) {
+    return join(other).equals(other);
+  }
+
+  /**
+   * Whether this label says exactly this on one axis.
+   *
+   * <p>A predicate, not a getter: it takes the value you are asking about and answers yes or no. It
+   * hands nothing back, so it raises none of the questions a getter would -- a mixture is not equal
+   * to any value anyone can write, and an unsaid axis is not equal to one either, so both answer no
+   * without having to be represented.
+   *
+   * <p>For assertions, manifests and reports. Not for decisions: what a reader may see is a {@link
+   * Ceiling}, and asking a label one axis at a time and acting on the answers is how an application
+   * would rebuild the gate badly, outside the audit.
+   */
+  public <T> boolean says(Axis<T> axis, T value) {
+    return at(axis).equals(axis.lift(value));
+  }
+
   /** Whether this axis was marked required and this label left it unsaid. */
   public boolean unsaid(Axis<?> axis) {
     return axis.unsaid(at(axis));

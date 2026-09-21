@@ -21,15 +21,13 @@ import org.jwcarman.codec.spi.TypeRef;
 /**
  * Where a store keeps things.
  *
- * <p><b>Storage only.</b> No policy lives here: the gate, the lattice, the registries and the audit
+ * <p><b>Storage only.</b> No policy lives here: the gate, the axes, the registries and the audit
  * are decided once in {@code DefaultSurrogateStore} and shared by every implementation. A second
  * copy of a security decision is a second chance to get it wrong, and the two would drift.
  *
  * <p>An implementation must be safe to use from several threads.
- *
- * @param <A> the application's label type
  */
-public interface Storage<A> {
+public interface Storage {
 
   /**
    * Keeps a value, and the record that it was kept, as one indivisible act.
@@ -38,7 +36,7 @@ public interface Storage<A> {
    * nothing accounts for or an account of a value that does not exist, and the second is worse: it
    * is evidence of something that never happened.
    */
-  void put(String id, StoredValue<A> value, AuditRecord record);
+  void put(String id, StoredValue value, AuditRecord record);
 
   /**
    * Keeps a record of something that stored no value: a read, a question, anything refused.
@@ -49,7 +47,7 @@ public interface Storage<A> {
   void record(AuditRecord record);
 
   /** The label, the lineage and what it was stored as -- without decoding the value. */
-  Optional<StoredMetadata<A>> metadata(String id);
+  Optional<StoredMetadata> metadata(String id);
 
   /**
    * The value, decoded as the caller says it is.

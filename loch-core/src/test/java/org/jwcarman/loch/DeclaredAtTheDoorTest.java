@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * A destination settles both its restrictions when it is declared.
@@ -41,6 +43,8 @@ class DeclaredAtTheDoorTest {
   private static final SurrogateType<SessionToken> SESSION_TOKEN_TYPE =
       SurrogateType.of(SessionToken.class);
 
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+
   interface Value {}
 
   record Card(String number) implements Value {}
@@ -49,8 +53,7 @@ class DeclaredAtTheDoorTest {
 
   record SessionToken(String token) implements Value {}
 
-  private final SurrogateStoreConfig<Exact<String>, Value> config =
-      new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
 
   // Declared once, named by the strategy: card, last4, session-token.
   private final SurrogateType<Card> cardType = SurrogateType.of(Card.class);
@@ -58,15 +61,19 @@ class DeclaredAtTheDoorTest {
   private final SurrogateType<SessionToken> tokenType = SurrogateType.of(SessionToken.class);
 
   private final SurrogateSource<Card> cards =
-      config.source("cards", CARD_TYPE, ctx -> Exact.of("acme"));
+      config.source("cards", CARD_TYPE, ctx -> Label.of(TENANT, "acme"));
 
   private final SurrogateSource<SessionToken> tokens =
-      config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Exact.of("acme"));
+      config.source("tokens", SESSION_TOKEN_TYPE, ctx -> Label.of(TENANT, "acme"));
 
   private final SurrogateDestination<Value> processor =
-      config.destination("payment-processor", ctx -> Exact.of("acme"), cardType, last4Type);
+      config.destination(
+          "payment-processor",
+          ctx -> Ceiling.of(TENANT, Constraint.atMost("acme")),
+          cardType,
+          last4Type);
 
-  private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
+  private final SurrogateStore store = MemorySurrogateStore.create(config);
 
   @Test
   @DisplayName("reads the types it was declared to read")
@@ -101,7 +108,7 @@ class DeclaredAtTheDoorTest {
   void a_value_it_was_never_meant_to_see_stays_out_of_reach() {
     Surrogate<SessionToken> token = tokens.exchange(new SessionToken("sess_abc"));
 
-    assertThat(store.label(token.id())).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(token.id())).isEqualTo(Label.of(TENANT, "acme"));
     assertThatThrownBy(() -> processor.reading(tokenType))
         .isInstanceOf(IllegalStateException.class);
   }
@@ -109,7 +116,8 @@ class DeclaredAtTheDoorTest {
   @Test
   @DisplayName("has to say what it reads, because a door that reads anything reads everything")
   void has_to_say_what_it_reads() {
-    assertThatThrownBy(() -> config.destination("vague", ctx -> Exact.of("acme")))
+    assertThatThrownBy(
+            () -> config.destination("vague", ctx -> Ceiling.of(TENANT, Constraint.atMost("acme"))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("which types it reads");
   }

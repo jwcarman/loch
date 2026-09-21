@@ -21,60 +21,62 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
-import org.jwcarman.loch.lattice.Lattice;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Label;
 
 /**
- * How a store is built: the lattice its labels live in, and the destinations values may reach.
+ * How a store is built: the axes its labels are said on, and the destinations values may reach.
  *
- * <p>Both are wiring-time decisions on purpose. A lattice supplied later could reorder what is
+ * <p>Both are wiring-time decisions on purpose. An axis supplied later could reorder what is
  * permitted underneath values already stored, and a destination supplied at a call site would let
  * any code invent its own permission.
  */
-public class SurrogateStoreConfig<A, D> {
+public class SurrogateStoreConfig<D> {
 
-  private Lattice<A> lattice;
-  private Class<A> labelType;
+  private List<Axis<?>> axes = List.of();
   private boolean explainRefusals;
   private AccessContextProvider ambient = AccessContextProvider.none();
   private java.util.Set<String> callerMayContribute = java.util.Set.of();
-  private java.util.function.BiPredicate<A, AccessContext> mayErase = (label, context) -> false;
-  private final List<DestinationSpec<A>> destinations = new ArrayList<>();
-  private final List<DerivationSpec<A, ?>> derivations = new ArrayList<>();
-  final List<QuerySpec<A, ?, ?>> queries = new ArrayList<>();
+  private java.util.function.BiPredicate<Label, AccessContext> mayErase = (label, context) -> false;
+  private final List<DestinationSpec> destinations = new ArrayList<>();
+  private final List<DerivationSpec<?>> derivations = new ArrayList<>();
+  final List<QuerySpec<?, ?>> queries = new ArrayList<>();
   private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
-  private DefaultSurrogateStore<A> bound;
-  private final List<Binding<A>> bindings = new ArrayList<>();
+  private DefaultSurrogateStore bound;
+  private final List<Binding> bindings = new ArrayList<>();
   private final java.util.Map<String, SurrogateType<?>> types = new LinkedHashMap<>();
 
   /**
-   * The record this application's labels are, which a durable store has to serialise.
+   * The questions this store asks about every value it holds. Required.
    *
-   * <p>Here rather than with the storage settings because it is a property of the store and not of
-   * where it is kept: a label goes to disk encrypted like any other value, whatever the disk is.
+   * <p>This is the application's whole security vocabulary, and it is the schema: a label may only
+   * speak to an axis declared here, a ceiling has to constrain every axis a label speaks to, and a
+   * stored row naming an axis no longer declared is refused rather than quietly read without it.
    */
-  public SurrogateStoreConfig<A, D> labelType(Class<A> labelType) {
-    this.labelType = Objects.requireNonNull(labelType, "a label type must not be null");
-    return this;
-  }
-
-  /** What the labels are, for a backing store that has to write them down. */
-  public Class<A> labelType() {
-    if (labelType == null) {
-      throw new IllegalStateException(
-          "this store needs to know its label type: call labelType(...) with the record your"
-              + " labels are, because labels are written down like any other value");
+  public SurrogateStoreConfig<D> axes(Axis<?>... axes) {
+    Objects.requireNonNull(axes, "a store needs axes");
+    if (axes.length == 0) {
+      throw new IllegalArgumentException(
+          "a store needs at least one axis: a label that says nothing about anything is below every"
+              + " ceiling, which means readable by everyone");
     }
-    return labelType;
-  }
-
-  /** The order over this application's labels. Required. */
-  public SurrogateStoreConfig<A, D> lattice(Lattice<A> lattice) {
-    this.lattice = Objects.requireNonNull(lattice, "a store needs a lattice");
+    java.util.Set<String> named = new java.util.LinkedHashSet<>();
+    for (Axis<?> axis : axes) {
+      Objects.requireNonNull(axis, "an axis must not be null");
+      if (!named.add(axis.name())) {
+        throw new IllegalArgumentException(
+            "two axes both want the name '"
+                + axis.name()
+                + "', and a stored label is keyed by name, so one would read as the other");
+      }
+    }
+    this.axes = List.of(axes);
     return this;
   }
 
   /** Somewhere values may go. Registered once; referenced by name forever after. */
-  public SurrogateStoreConfig<A, D> destination(DestinationSpec<A> destination) {
+  public SurrogateStoreConfig<D> destination(DestinationSpec destination) {
     destinations.add(Objects.requireNonNull(destination, "a destination must not be null"));
     return this;
   }
@@ -110,24 +112,26 @@ public class SurrogateStoreConfig<A, D> {
   // ------------------------------------------------------------------ minting capabilities
 
   /** A source whose label depends on neither what arrives nor who is acting. */
-  public <T extends D> SurrogateSource<T> source(String name, SurrogateType<T> type, A label) {
+  public <T extends D> SurrogateSource<T> source(String name, SurrogateType<T> type, Label label) {
     Objects.requireNonNull(label, "a source needs a label");
     return source(name, type, (value, context) -> label);
   }
 
   /** The same, for a label that does not depend on what is arriving. */
   public <T extends D> SurrogateSource<T> source(
-      String name, SurrogateType<T> type, java.util.function.Function<AccessContext, A> labelling) {
+      String name,
+      SurrogateType<T> type,
+      java.util.function.Function<AccessContext, Label> labelling) {
     return source(name, type, (value, context) -> labelling.apply(context));
   }
 
   public <T extends D> SurrogateSource<T> source(
       String name,
       SurrogateType<T> type,
-      java.util.function.BiFunction<T, AccessContext, A> labelling) {
+      java.util.function.BiFunction<T, AccessContext, Label> labelling) {
     Objects.requireNonNull(name, "a source needs a name");
     registered(type);
-    Binding<A> binding = binding("source '" + name + "'");
+    Binding binding = binding("source '" + name + "'");
     Objects.requireNonNull(type, "a source needs to know what it accepts");
     Objects.requireNonNull(labelling, "a source needs to say how it labels what arrives");
     if (!sources.add(name)) {
@@ -168,7 +172,7 @@ public class SurrogateStoreConfig<A, D> {
   @SafeVarargs
   public final SurrogateDestination<D> destination(
       String name,
-      java.util.function.Function<AccessContext, A> ceiling,
+      java.util.function.Function<AccessContext, Ceiling> ceiling,
       SurrogateType<?>... reads) {
     Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
@@ -186,20 +190,20 @@ public class SurrogateStoreConfig<A, D> {
     }
     destination(Destinations.varying(name, ceiling));
     // Declaration order, not hash order: this list ends up in an error message somebody reads.
-    return new Door<A, D>(
+    return new Door<D>(
         name, java.util.Collections.unmodifiableSet(names), binding("destination '" + name + "'"));
   }
 
   /** The same, for a ceiling that does not depend on who is asking. */
   @SafeVarargs
   public final SurrogateDestination<D> destination(
-      String name, A ceiling, SurrogateType<?>... reads) {
+      String name, Ceiling ceiling, SurrogateType<?>... reads) {
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
     return destination(name, context -> ceiling, reads);
   }
 
   /** The implementation of a destination: a name, what it reads, and what it is attached to. */
-  private record Door<A, D>(String name, java.util.Set<String> reads, Binding<A> binding)
+  private record Door<D>(String name, java.util.Set<String> reads, Binding binding)
       implements SurrogateDestination<D> {
 
     @Override
@@ -212,7 +216,7 @@ public class SurrogateStoreConfig<A, D> {
                 .formatted(name, type.name(), reads));
       }
       String door = name;
-      Binding<A> bound = binding;
+      Binding bound = binding;
       return new SurrogateSink<>() {
         @Override
         public SurrogateType<T> type() {
@@ -246,7 +250,7 @@ public class SurrogateStoreConfig<A, D> {
    * where the parents share a type, use {@link #fold}.
    */
   /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> derivation(
+  public <I extends D, O extends D> Minting<O, Derivation<I, O>> derivation(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function) {
     registered(input);
     registered(output);
@@ -276,7 +280,7 @@ public class SurrogateStoreConfig<A, D> {
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
   /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<A, O, Derivation<I, O>> checking(
+  public <I extends D, O extends D> Minting<O, Derivation<I, O>> checking(
       String name,
       SurrogateType<I> input,
       SurrogateType<O> output,
@@ -312,7 +316,7 @@ public class SurrogateStoreConfig<A, D> {
    * something labelled for both, which no destination admits.
    */
   /** The same, for types already declared. */
-  public <I extends D, O extends D> Minting<A, O, Fold<I, O>> fold(
+  public <I extends D, O extends D> Minting<O, Fold<I, O>> fold(
       String name, SurrogateType<I> input, SurrogateType<O> output, Function<List<I>, O> function) {
     return new Minting<>(
         this,
@@ -344,28 +348,27 @@ public class SurrogateStoreConfig<A, D> {
    * lowers, where it is offered -- is about labels and contexts, not about how many parents there
    * are. {@code C} is whatever this eventually mints.
    */
-  public static final class Minting<A, O, C> {
+  public static final class Minting<O, C> {
 
-    private final SurrogateStoreConfig<A, ?> config;
+    private final SurrogateStoreConfig<?> config;
     private final String name;
     private final List<SurrogateType<?>> inputTypes;
     private final SurrogateType<O> outputType;
     private final java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function;
     private final boolean fold;
-    private final java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability;
-    private java.util.function.Function<AccessContext, A> ceiling;
-    private boolean anything;
-    private java.util.function.UnaryOperator<A> relabel;
+    private final java.util.function.BiFunction<DerivationSpec<O>, Binding, C> capability;
+    private java.util.function.Function<AccessContext, Ceiling> ceiling;
+    private java.util.function.UnaryOperator<Label> relabel;
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Minting(
-        SurrogateStoreConfig<A, ?> config,
+        SurrogateStoreConfig<?> config,
         String name,
         List<SurrogateType<?>> inputTypes,
         SurrogateType<O> outputType,
         java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function,
         boolean fold,
-        java.util.function.BiFunction<DerivationSpec<A, O>, Binding<A>, C> capability) {
+        java.util.function.BiFunction<DerivationSpec<O>, Binding, C> capability) {
       this.config = config;
       this.name = name;
       this.inputTypes = inputTypes;
@@ -376,50 +379,39 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** The most constrained parent this will accept. */
-    public Minting<A, O, C> accepting(A ceiling) {
+    public Minting<O, C> accepting(Ceiling ceiling) {
       Objects.requireNonNull(ceiling, "a ceiling must not be null");
       return accepting(context -> ceiling);
     }
 
     /** A ceiling that depends on who is asking, which a tenant always does. */
-    public Minting<A, O, C> accepting(java.util.function.Function<AccessContext, A> ceiling) {
+    public Minting<O, C> accepting(java.util.function.Function<AccessContext, Ceiling> ceiling) {
       this.ceiling = Objects.requireNonNull(ceiling, "a ceiling must not be null");
       return this;
     }
 
-    /**
-     * Reads anything, at any label.
-     *
-     * <p>Required if no ceiling is set, for the same reason a question's is: this receives
-     * plaintext, so breadth has to be said out loud rather than fallen into.
-     */
-    public Minting<A, O, C> acceptingAnything() {
-      this.anything = true;
-      return this;
-    }
-
     /** Declares that the result is less constrained than its parents, and by how much. */
-    public Minting<A, O, C> lowering(java.util.function.UnaryOperator<A> relabel) {
+    public Minting<O, C> lowering(java.util.function.UnaryOperator<Label> relabel) {
       this.relabel = Objects.requireNonNull(relabel, "a lowering must not be null");
       return this;
     }
 
     /** Whether this is offered at all, given who is asking. */
-    public Minting<A, O, C> availableTo(java.util.function.Predicate<AccessContext> availableTo) {
+    public Minting<O, C> availableTo(java.util.function.Predicate<AccessContext> availableTo) {
       this.availableTo = Objects.requireNonNull(availableTo, "an availability must not be null");
       return this;
     }
 
     /** Registers it and hands back the capability. Nothing can obtain one any other way. */
     public C mint() {
-      if (ceiling == null && !anything) {
+      if (ceiling == null) {
         throw new IllegalStateException(
             "'"
                 + name
                 + "' reads plaintext, so it needs a ceiling: call accepting(...) with what it may"
-                + " look at, or acceptingAnything() if it really may look at everything");
+                + " look at, saying any() on the axes it is deliberately broad about");
       }
-      DerivationSpec<A, O> spec =
+      DerivationSpec<O> spec =
           new DerivationSpec<>(
               name, inputTypes, outputType, function, ceiling, relabel, availableTo, fold);
       config.derivations.add(spec);
@@ -436,7 +428,7 @@ public class SurrogateStoreConfig<A, D> {
    * it looks: the failure mode this replaces is a capability that silently does nothing, which
    * every happy-path test would pass.
    */
-  void bind(DefaultSurrogateStore<A> store) {
+  void bind(DefaultSurrogateStore store) {
     if (this.bound != null) {
       throw new IllegalStateException(
           "this configuration has already built a store; build a second one from a fresh config, or"
@@ -453,7 +445,7 @@ public class SurrogateStoreConfig<A, D> {
    * {@link Query}.
    */
   /** The same, for a type already declared. */
-  public <I extends D, Q> Querying<A, I, Q> query(
+  public <I extends D, Q> Querying<I, Q> query(
       String name, SurrogateType<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
     Objects.requireNonNull(name, "a query needs a name");
     Objects.requireNonNull(against, "a query needs to say what it is asked against");
@@ -462,18 +454,17 @@ public class SurrogateStoreConfig<A, D> {
   }
 
   /** What a query still needs said about it before it becomes a capability. */
-  public static final class Querying<A, I, Q> {
+  public static final class Querying<I, Q> {
 
-    private final SurrogateStoreConfig<A, ?> config;
+    private final SurrogateStoreConfig<?> config;
     private final String name;
     private final SurrogateType<I> inputType;
     private final Query.Asking<I, Q> asking;
-    private java.util.function.Function<AccessContext, A> ceiling;
-    private boolean anything;
+    private java.util.function.Function<AccessContext, Ceiling> ceiling;
     private java.util.function.Predicate<AccessContext> availableTo = context -> true;
 
     private Querying(
-        SurrogateStoreConfig<A, ?> config,
+        SurrogateStoreConfig<?> config,
         String name,
         SurrogateType<I> inputType,
         Query.Asking<I, Q> asking) {
@@ -484,47 +475,35 @@ public class SurrogateStoreConfig<A, D> {
     }
 
     /** The most constrained value this may be asked about. */
-    public Querying<A, I, Q> accepting(java.util.function.Function<AccessContext, A> ceiling) {
+    public Querying<I, Q> accepting(java.util.function.Function<AccessContext, Ceiling> ceiling) {
       this.ceiling = Objects.requireNonNull(ceiling, "a ceiling must not be null");
       return this;
     }
 
     /** Accepts the same thing regardless of who is asking. */
-    public Querying<A, I, Q> accepting(A ceiling) {
+    public Querying<I, Q> accepting(Ceiling ceiling) {
       Objects.requireNonNull(ceiling, "a ceiling must not be null");
       return accepting(context -> ceiling);
     }
 
-    /**
-     * Reads anything, at any label.
-     *
-     * <p>Required if no ceiling is set. This reads plaintext to answer, so breadth has to be said
-     * out loud rather than fallen into.
-     */
-    public Querying<A, I, Q> acceptingAnything() {
-      this.anything = true;
-      return this;
-    }
-
     /** Whether this is offered at all, given who is asking. */
-    public Querying<A, I, Q> availableTo(java.util.function.Predicate<AccessContext> availableTo) {
+    public Querying<I, Q> availableTo(java.util.function.Predicate<AccessContext> availableTo) {
       this.availableTo = Objects.requireNonNull(availableTo, "an availability must not be null");
       return this;
     }
 
     /** Registers it and hands back the capability. Nothing can obtain one any other way. */
     public Query<I, Q> mint() {
-      if (ceiling == null && !anything) {
+      if (ceiling == null) {
         throw new IllegalStateException(
             "'"
                 + name
                 + "' reads plaintext to answer, so it needs a ceiling: call accepting(...) with"
-                + " what it may look at, or acceptingAnything() if it really may look at"
-                + " everything");
+                + " what it may look at, saying any() on the axes it is deliberately broad about");
       }
-      QuerySpec<A, I, Q> spec = new QuerySpec<>(name, inputType, asking, ceiling, availableTo);
+      QuerySpec<I, Q> spec = new QuerySpec<>(name, inputType, asking, ceiling, availableTo);
       config.queries.add(spec);
-      Binding<A> binding = config.binding("query '" + name + "'");
+      Binding binding = config.binding("query '" + name + "'");
       return new Query<>() {
         @Override
         public Answer ask(Surrogate<I> about, Q against) {
@@ -539,7 +518,7 @@ public class SurrogateStoreConfig<A, D> {
     }
   }
 
-  List<QuerySpec<A, ?, ?>> queries() {
+  List<QuerySpec<?, ?>> queries() {
     return List.copyOf(queries);
   }
 
@@ -553,20 +532,20 @@ public class SurrogateStoreConfig<A, D> {
    * read a cardholder token. Binding each capability at construction means a late one is attached
    * to nothing, and says so.
    */
-  static final class Binding<A> {
+  static final class Binding {
 
     private final String what;
-    private DefaultSurrogateStore<A> store;
+    private DefaultSurrogateStore store;
 
     private Binding(String what) {
       this.what = what;
     }
 
-    private void attach(DefaultSurrogateStore<A> store) {
+    private void attach(DefaultSurrogateStore store) {
       this.store = store;
     }
 
-    DefaultSurrogateStore<A> engine() {
+    DefaultSurrogateStore engine() {
       if (store == null) {
         throw new IllegalStateException(
             what
@@ -578,13 +557,13 @@ public class SurrogateStoreConfig<A, D> {
     }
   }
 
-  private Binding<A> binding(String what) {
-    Binding<A> binding = new Binding<>(what);
+  private Binding binding(String what) {
+    Binding binding = new Binding(what);
     bindings.add(binding);
     return binding;
   }
 
-  List<DerivationSpec<A, ?>> derivations() {
+  List<DerivationSpec<?>> derivations() {
     return List.copyOf(derivations);
   }
 
@@ -595,7 +574,7 @@ public class SurrogateStoreConfig<A, D> {
    * shown to a different tenant is a leak, and refusal text has a way of reaching places the value
    * never would. On for development, where the alternative is guessing.
    */
-  public SurrogateStoreConfig<A, D> explainRefusals() {
+  public SurrogateStoreConfig<D> explainRefusals() {
     this.explainRefusals = true;
     return this;
   }
@@ -627,7 +606,7 @@ public class SurrogateStoreConfig<A, D> {
    *
    * <p>An application with no notion of identity says nothing and every context is empty.
    */
-  public SurrogateStoreConfig<A, D> currentAccess(AccessContextProvider ambient) {
+  public SurrogateStoreConfig<D> currentAccess(AccessContextProvider ambient) {
     this.ambient = Objects.requireNonNull(ambient, "an access source must not be null");
     return this;
   }
@@ -642,7 +621,7 @@ public class SurrogateStoreConfig<A, D> {
    *
    * <p>Never list an identity key here.
    */
-  public SurrogateStoreConfig<A, D> callerMayContribute(String... keys) {
+  public SurrogateStoreConfig<D> callerMayContribute(String... keys) {
     this.callerMayContribute = java.util.Set.of(keys);
     return this;
   }
@@ -677,25 +656,32 @@ public class SurrogateStoreConfig<A, D> {
    * it is removed whether or not it is labelled more constrained -- which is what erasure means. A
    * value derived from two customers dies with either of them.
    */
-  public SurrogateStoreConfig<A, D> mayErase(
-      java.util.function.BiPredicate<A, AccessContext> mayErase) {
+  public SurrogateStoreConfig<D> mayErase(
+      java.util.function.BiPredicate<Label, AccessContext> mayErase) {
     this.mayErase = Objects.requireNonNull(mayErase, "an erasure policy must not be null");
     return this;
   }
 
-  java.util.function.BiPredicate<A, AccessContext> mayErase() {
+  java.util.function.BiPredicate<Label, AccessContext> mayErase() {
     return mayErase;
   }
 
-  Lattice<A> lattice() {
-    if (lattice == null) {
+  /**
+   * The axes this store was declared with.
+   *
+   * <p>Public because a durable store in another package has to write labels down, and named
+   * distinctly from {@link #axes(Axis...)} because a no-argument call would otherwise resolve to
+   * the varargs setter rather than to this.
+   */
+  public List<Axis<?>> declaredAxes() {
+    if (axes.isEmpty()) {
       throw new IllegalStateException(
-          "a store needs a lattice: call lattice(...) with the order over your label type");
+          "a store needs axes: call axes(...) with the questions it asks about every value");
     }
-    return lattice;
+    return axes;
   }
 
-  List<DestinationSpec<A>> destinations() {
+  List<DestinationSpec> destinations() {
     return List.copyOf(destinations);
   }
 

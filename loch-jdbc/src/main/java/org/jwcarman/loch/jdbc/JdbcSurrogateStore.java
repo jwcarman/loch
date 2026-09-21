@@ -52,17 +52,17 @@ public final class JdbcSurrogateStore {
    * <p>This call is also the moment the access space is fixed. Every capability declared on the
    * configuration before now is attached; anything declared afterwards reaches nothing.
    */
-  public static <A, D> SurrogateStore<A> create(
-      SurrogateStoreConfig<A, D> config, JdbcSurrogateStoreConfig<A> jdbc) {
-    JdbcStorage<A> storage =
-        new JdbcStorage<>(
+  public static <D> SurrogateStore create(
+      SurrogateStoreConfig<D> config, JdbcSurrogateStoreConfig jdbc) {
+    JdbcStorage storage =
+        new JdbcStorage(
             jdbc.dataSourceOrFail(),
             jdbc.codecsOrFail(),
             jdbc.storageCodecOrFail(),
-            config.labelType());
+            config.declaredAxes());
     if (jdbc.migrates()) {
       storage.migrate();
     }
-    return new DefaultSurrogateStore<>(config, storage);
+    return new DefaultSurrogateStore(config, storage);
   }
 }

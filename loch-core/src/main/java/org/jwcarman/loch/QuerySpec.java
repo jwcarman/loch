@@ -18,16 +18,17 @@ package org.jwcarman.loch;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.jwcarman.loch.lattice.Ceiling;
 
 /** Everything the engine needs to answer one question. Package-private, like every other spec. */
-record QuerySpec<A, I, Q>(
+record QuerySpec<I, Q>(
     String name,
     SurrogateType<I> inputType,
     Query.Asking<I, Q> asking,
-    Function<AccessContext, A> ceiling,
+    Function<AccessContext, Ceiling> ceiling,
     Predicate<AccessContext> availableTo) {
 
-  Optional<A> ceilingFor(AccessContext context) {
+  Optional<Ceiling> ceilingFor(AccessContext context) {
     return Optional.ofNullable(ceiling).map(f -> f.apply(context));
   }
 }

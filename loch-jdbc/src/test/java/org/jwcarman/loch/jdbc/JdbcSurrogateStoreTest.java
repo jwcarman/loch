@@ -42,9 +42,10 @@ import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.SurrogateStore;
 import org.jwcarman.loch.SurrogateStoreConfig;
 import org.jwcarman.loch.SurrogateType;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattice;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -81,33 +82,14 @@ class JdbcSurrogateStoreTest {
     CARDHOLDER
   }
 
-  record Billing(Exact<String> tenant, Integrity integrity, DataClass dataClass) {
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+  private static final Axis<Integrity> INTEGRITY =
+      Axis.ladder("integrity", Integrity.ENDORSED, Integrity.UNENDORSED);
+  private static final Axis<DataClass> DATA =
+      Axis.ladder("dataClass", DataClass.NONE, DataClass.PII, DataClass.CARDHOLDER);
 
-    static final Lattice<Exact<String>> TENANT = Lattices.exact();
-    static final Lattice<Integrity> INTEGRITY =
-        Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED);
-    static final Lattice<DataClass> DATA =
-        Lattices.ladder(DataClass.NONE, DataClass.PII, DataClass.CARDHOLDER);
-
-    static final Lattice<Billing> LATTICE =
-        new Lattice<>() {
-          @Override
-          public Billing join(Billing left, Billing right) {
-            return new Billing(
-                TENANT.join(left.tenant(), right.tenant()),
-                INTEGRITY.join(left.integrity(), right.integrity()),
-                DATA.join(left.dataClass(), right.dataClass()));
-          }
-
-          @Override
-          public Billing bottom() {
-            return new Billing(TENANT.bottom(), INTEGRITY.bottom(), DATA.bottom());
-          }
-        };
-
-    static Billing of(String tenant, Integrity integrity, DataClass dataClass) {
-      return new Billing(Exact.of(tenant), integrity, dataClass);
-    }
+  private static Label label(String tenant, Integrity integrity, DataClass dataClass) {
+    return Label.of(TENANT, tenant).with(INTEGRITY, integrity).with(DATA, dataClass);
   }
 
   record Card(String number, String holder) {}
@@ -119,7 +101,7 @@ class JdbcSurrogateStoreTest {
   private static final SurrogateType<Last4> LAST4 = SurrogateType.of(Last4.class);
 
   private DataSource dataSource;
-  private SurrogateStore<Billing> store;
+  private SurrogateStore store;
   private Derivation<Card, Last4> cardLast4;
   private SurrogateSource<Card> cards;
   private SurrogateSink<Card> vendorLlm;
@@ -139,11 +121,23 @@ class JdbcSurrogateStoreTest {
     return AccessContext.empty();
   }
 
-  private static Billing ceiling(AccessContext ctx, Integrity integrity, DataClass dataClass) {
-    return new Billing(
-        ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-        integrity,
-        dataClass);
+  /** What a value written on this access is labelled: the tenant comes from the access. */
+  private static Label labelFor(AccessContext ctx, Integrity integrity, DataClass dataClass) {
+    return ctx.get("tenant")
+        .map(tenant -> Label.of(TENANT, tenant))
+        .orElseGet(Label::nothing)
+        .with(INTEGRITY, integrity)
+        .with(DATA, dataClass);
+  }
+
+  private static Ceiling ceiling(AccessContext ctx, Integrity integrity, DataClass dataClass) {
+    String tenant =
+        ctx.get("tenant")
+            .orElseThrow(
+                () -> new IllegalStateException("this access says nothing about a tenant"));
+    return Ceiling.of(TENANT, Constraint.atMost(tenant))
+        .with(INTEGRITY, Constraint.atMost(integrity))
+        .with(DATA, Constraint.atMost(dataClass));
   }
 
   @BeforeEach
@@ -163,8 +157,7 @@ class JdbcSurrogateStoreTest {
     generator.init(256);
     SecretKey kek = generator.generateKey();
 
-    SurrogateStoreConfig<Billing, Object> c =
-        new SurrogateStoreConfig<Billing, Object>().labelType(Billing.class);
+    SurrogateStoreConfig<Object> c = new SurrogateStoreConfig<Object>();
     // Containers have to be named: their raw type is java.util.List, which is not ours to
     // annotate and would collide with every other list.
     SurrogateType<List<Card>> cardList =
@@ -173,8 +166,8 @@ class JdbcSurrogateStoreTest {
         SurrogateType.of("last4-list", TypeRef.listOf(TypeRef.of(Last4.class)));
 
     // The application composes its own pipeline: squeeze, then seal.
-    JdbcSurrogateStoreConfig<Billing> jdbc =
-        new JdbcSurrogateStoreConfig<Billing>()
+    JdbcSurrogateStoreConfig jdbc =
+        new JdbcSurrogateStoreConfig()
             .dataSource(dataSource)
             .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
             .storedThrough(
@@ -184,16 +177,16 @@ class JdbcSurrogateStoreTest {
                             EnvelopeCodec.builder(new JceDataKeyProvider("k1", Map.of("k1", kek)))
                                 .build())));
 
-    c.lattice(Billing.LATTICE)
+    c.axes(TENANT, INTEGRITY, DATA)
         .currentAccess(edge::get)
         // Erasure is the one operation a label cannot decide, so it is named here.
         .mayErase(
             (label, ctx) ->
                 ctx.has("role", "compliance")
-                    && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
+                    && ctx.get("tenant").map(t -> label.says(TENANT, t)).orElse(false));
 
     // One source: everything this test holds is acme's cardholder data.
-    cards = c.source("cards", CARD, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    cards = c.source("cards", CARD, ctx -> labelFor(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     vendorLlm =
         c.destination("vendor-llm", ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.NONE), CARD)
             .reading(CARD);
@@ -214,7 +207,7 @@ class JdbcSurrogateStoreTest {
     // A generic container is its own type, so it needs its own source and its own sinks.
     cardLists =
         c.source(
-            "card-lists", cardList, ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+            "card-lists", cardList, ctx -> labelFor(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
     cardListProcessor = processor.reading(cardList);
     cardListVendor =
         c.destination(
@@ -236,7 +229,7 @@ class JdbcSurrogateStoreTest {
                 LAST4,
                 card -> new Last4(card.number().substring(card.number().length() - 4)))
             .accepting(ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-            .lowering(joined -> new Billing(joined.tenant(), joined.integrity(), DataClass.PII))
+            .lowering(joined -> joined.with(DATA, DataClass.PII))
             .mint();
 
     store = JdbcSurrogateStore.create(c, jdbc);
@@ -284,7 +277,7 @@ class JdbcSurrogateStoreTest {
     Surrogate<Card> card = card();
 
     assertThat(store.holds(card)).isTrue();
-    assertThat(store.label(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(store.label(card).says(DATA, DataClass.CARDHOLDER)).isTrue();
   }
 
   @Test
@@ -294,7 +287,7 @@ class JdbcSurrogateStoreTest {
 
     Surrogate<Last4> last4 = cardLast4.derive(card, acme()).orThrow();
 
-    assertThat(store.label(last4).dataClass()).isEqualTo(DataClass.PII);
+    assertThat(store.label(last4).says(DATA, DataClass.PII)).isTrue();
     assertThat(store.lineage(last4).parents()).containsExactly(card.id());
     assertThat(store.lineage(last4).derivation()).contains("Card.last4");
   }
@@ -353,10 +346,8 @@ class JdbcSurrogateStoreTest {
             org.assertj.core.api.Assertions.catchThrowable(
                 () ->
                     JdbcSurrogateStore.create(
-                        new SurrogateStoreConfig<Billing, Object>()
-                            .labelType(Billing.class)
-                            .lattice(Billing.LATTICE),
-                        new JdbcSurrogateStoreConfig<Billing>()
+                        new SurrogateStoreConfig<Object>().axes(TENANT, INTEGRITY, DATA),
+                        new JdbcSurrogateStoreConfig()
                             .dataSource(dataSource)
                             .codecs(new JacksonCodecFactory(JsonMapper.builder().build())))))
         .isInstanceOf(IllegalStateException.class)
@@ -530,7 +521,7 @@ class JdbcSurrogateStoreTest {
     Surrogate<List<Card>> cards = cardLists.exchange(List.of(new Card("4111111111114821", "A")));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
-    assertThat(store.label(cards).dataClass()).isEqualTo(DataClass.CARDHOLDER);
+    assertThat(store.label(cards).says(DATA, DataClass.CARDHOLDER)).isTrue();
     assertThat(store.lineage(cards).asserted()).isTrue();
   }
 

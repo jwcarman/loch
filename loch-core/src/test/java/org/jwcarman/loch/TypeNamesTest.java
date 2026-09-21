@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * A stored name has to identify one type.
@@ -50,8 +50,10 @@ class TypeNamesTest {
 
   record DisputeClaim(String reason) implements Value {}
 
-  private SurrogateStoreConfig<Exact<String>, Value> config() {
-    return new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+
+  private SurrogateStoreConfig<Value> config() {
+    return new SurrogateStoreConfig<Value>().axes(TENANT);
   }
 
   @Test
@@ -87,12 +89,14 @@ class TypeNamesTest {
   @DisplayName("cannot mean two different types")
   void cannot_mean_two_different_types() {
     var c = config();
-    c.source("cards", SurrogateType.of("thing", Card.class), ctx -> Exact.of("acme"));
+    c.source("cards", SurrogateType.of("thing", Card.class), ctx -> Label.of(TENANT, "acme"));
 
     assertThatThrownBy(
             () ->
                 c.source(
-                    "invoices", SurrogateType.of("thing", Invoice.class), ctx -> Exact.of("acme")))
+                    "invoices",
+                    SurrogateType.of("thing", Invoice.class),
+                    ctx -> Label.of(TENANT, "acme")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("both want the name 'thing'");
   }

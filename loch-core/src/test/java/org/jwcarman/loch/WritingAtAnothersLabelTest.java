@@ -21,9 +21,10 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattice;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Writing at somebody else's label, which used to be refused and is now unsayable.
@@ -51,19 +52,14 @@ class WritingAtAnothersLabelTest {
 
   record Note(String text) implements Value {}
 
-  record Labels(Exact<String> tenant, Integrity integrity) {
-    static final Lattice<Labels> LATTICE =
-        Lattices.product(
-            Labels::new,
-            Lattices.axis(Labels::tenant, Lattices.exact()),
-            Lattices.axis(
-                Labels::integrity, Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED)));
-  }
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+  private static final Axis<Integrity> INTEGRITY =
+      Axis.ladder("integrity", Integrity.ENDORSED, Integrity.UNENDORSED);
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Labels, Value> config =
-      new SurrogateStoreConfig<Labels, Value>().lattice(Labels.LATTICE).currentAccess(edge::get);
+  private final SurrogateStoreConfig<Value> config =
+      new SurrogateStoreConfig<Value>().axes(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** One source, used by whoever is acting. It is the access that decides, never the caller. */
   private final SurrogateSource<Note> notes =
@@ -71,23 +67,28 @@ class WritingAtAnothersLabelTest {
           "notes",
           NOTE_TYPE,
           ctx ->
-              new Labels(
-                  ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                  Integrity.ENDORSED));
+              ctx.get("tenant")
+                  .map(tenant -> Label.of(TENANT, tenant))
+                  .orElseGet(Label::nothing)
+                  .with(INTEGRITY, Integrity.ENDORSED));
 
   private final SurrogateSink<Note> reporting =
       config
           .destination(
               "reporting",
               ctx ->
-                  new Labels(
-                      ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                      Integrity.UNENDORSED),
+                  ctx.get("tenant")
+                      .map(tenant -> Ceiling.of(TENANT, Constraint.atMost(tenant)))
+                      .orElseGet(() -> Ceiling.of(TENANT, Constraint.any()))
+                      .with(INTEGRITY, Constraint.atMost(Integrity.UNENDORSED)),
               NOTE_TYPE)
           .reading(NOTE_TYPE);
 
-  private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
+  private final SurrogateStore store = MemorySurrogateStore.create(config);
 
+  // read `.tenant()` off the stored label is re-expressed against Label.toString(), which is
+  // documented for rendering only. Deviation from PRESERVE-exactly, flagged for James: there is no
+  // other supported way to check what a stored label says on a given axis.
   @Test
   @DisplayName("is refused, so a forgery never becomes somebody else's fact")
   void is_refused() {
@@ -96,7 +97,7 @@ class WritingAtAnothersLabelTest {
     Surrogate<Note> written = notes.exchange(new Note("globex owes us 1,000,000"));
 
     // Acme wrote it and acme owns it. There was no argument through which to claim otherwise.
-    assertThat(store.label(written.id()).tenant()).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(written.id()).says(TENANT, "acme")).isTrue();
 
     // And globex does not read it as its own.
     edge.set(AccessContext.of(Map.of("tenant", "globex")));

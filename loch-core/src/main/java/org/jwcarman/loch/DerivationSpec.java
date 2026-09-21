@@ -21,6 +21,8 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Everything the engine needs to run a derivation, flattened to one arity-blind shape.
@@ -33,13 +35,13 @@ import java.util.function.UnaryOperator;
  *
  * @param inputTypes one per parent, positionally; for a fold, exactly one, applying to all of them
  */
-record DerivationSpec<A, O>(
+record DerivationSpec<O>(
     String name,
     List<SurrogateType<?>> inputTypes,
     SurrogateType<O> outputType,
     BiFunction<List<Object>, AccessContext, Optional<O>> function,
-    Function<AccessContext, A> ceiling,
-    UnaryOperator<A> relabel,
+    Function<AccessContext, Ceiling> ceiling,
+    UnaryOperator<Label> relabel,
     Predicate<AccessContext> availableTo,
     boolean fold) {
 

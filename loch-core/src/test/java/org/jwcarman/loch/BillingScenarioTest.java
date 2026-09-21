@@ -22,9 +22,10 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattice;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * A multi-tenant SaaS billing system, written the way an application would write it.
@@ -70,67 +71,42 @@ class BillingScenarioTest {
     CARDHOLDER
   }
 
-  /** Everything this application cares about, in one place. */
-  record Billing(Exact<String> tenant, Integrity integrity, Tlp tlp, DataClass dataClass) {
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+  private static final Axis<Integrity> INTEGRITY =
+      Axis.ladder("integrity", Integrity.ENDORSED, Integrity.UNENDORSED);
+  private static final Axis<Tlp> TLP = Axis.ladder("tlp", Tlp.CLEAR, Tlp.GREEN, Tlp.AMBER, Tlp.RED);
+  private static final Axis<DataClass> DATA_CLASS =
+      Axis.ladder("dataClass", DataClass.NONE, DataClass.PII, DataClass.CARDHOLDER);
 
-    static final Lattice<Exact<String>> TENANT = Lattices.exact();
-    static final Lattice<Integrity> INTEGRITY =
-        Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED);
-    static final Lattice<Tlp> TLP = Lattices.ladder(Tlp.CLEAR, Tlp.GREEN, Tlp.AMBER, Tlp.RED);
-    static final Lattice<DataClass> DATA_CLASS =
-        Lattices.ladder(DataClass.NONE, DataClass.PII, DataClass.CARDHOLDER);
+  /** What a tenant's ordinary business data looks like. */
+  private static Label label(String tenant, Integrity integrity, Tlp tlp, DataClass dataClass) {
+    return Label.of(TENANT, tenant)
+        .with(INTEGRITY, integrity)
+        .with(TLP, tlp)
+        .with(DATA_CLASS, dataClass);
+  }
 
-    /** The componentwise join. Twelve lines, and the TCK proves it. */
-    static final Lattice<Billing> LATTICE =
-        new Lattice<>() {
-          @Override
-          public Billing join(Billing left, Billing right) {
-            return new Billing(
-                TENANT.join(left.tenant(), right.tenant()),
-                INTEGRITY.join(left.integrity(), right.integrity()),
-                TLP.join(left.tlp(), right.tlp()),
-                DATA_CLASS.join(left.dataClass(), right.dataClass()));
-          }
-
-          @Override
-          public Billing bottom() {
-            return new Billing(
-                TENANT.bottom(), INTEGRITY.bottom(), TLP.bottom(), DATA_CLASS.bottom());
-          }
-        };
-
-    /** Moves one part of the label and leaves the rest still: what a relabel should look like. */
-    Billing withDataClass(DataClass dataClass) {
-      return new Billing(tenant(), integrity(), tlp(), dataClass);
-    }
-
-    Billing withTlp(Tlp tlp) {
-      return new Billing(tenant(), integrity(), tlp, dataClass());
-    }
-
-    Billing withIntegrity(Integrity integrity) {
-      return new Billing(tenant(), integrity, tlp(), dataClass());
-    }
-
-    /** What a tenant's ordinary business data looks like. */
-    static Billing of(String tenant, Integrity integrity, Tlp tlp, DataClass dataClass) {
-      return new Billing(Exact.of(tenant), integrity, tlp, dataClass);
-    }
-
-    /**
-     * A ceiling for an access made on behalf of one tenant.
-     *
-     * <p>The tenant comes from the access, never from the destination. There is no such ceiling as
-     * "any tenant but not a mixture": that set is not of the form {x : x ⊑ c} for any c, so the
-     * lattice cannot express it. Naming the tenant of the access is what makes foreign data and
-     * mixed data both fall below the bar. With no tenant named, the ceiling is ⊥ and only
-     * unattributed values pass -- which is the fail-closed answer.
-     */
-    static Billing ceilingFor(
-        AccessContext ctx, Integrity integrity, Tlp tlp, DataClass dataClass) {
-      Exact<String> tenant = ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none);
-      return new Billing(tenant, integrity, tlp, dataClass);
-    }
+  /**
+   * A ceiling for an access made on behalf of one tenant.
+   *
+   * <p>The tenant comes from the access, never from the destination. Naming the tenant of the
+   * access is what makes foreign data and mixed data both fall below the bar -- a mixture is not
+   * any one tenant, so it satisfies no {@code atMost} and no {@code any} either.
+   *
+   * <p>An access naming no tenant gets no ceiling rather than a broad one. The store treats a
+   * ceiling it cannot evaluate as a refusal and writes the line, which is what a gate unable to say
+   * it is open should do.
+   */
+  private static Ceiling ceilingFor(
+      AccessContext ctx, Integrity integrity, Tlp tlp, DataClass dataClass) {
+    String tenant =
+        ctx.get("tenant")
+            .orElseThrow(
+                () -> new IllegalStateException("this access says nothing about a tenant"));
+    return Ceiling.of(TENANT, Constraint.atMost(tenant))
+        .with(INTEGRITY, Constraint.atMost(integrity))
+        .with(TLP, Constraint.atMost(tlp))
+        .with(DATA_CLASS, Constraint.atMost(dataClass));
   }
 
   // ---------------------------------------------------------------- what travels through the store
@@ -146,15 +122,15 @@ class BillingScenarioTest {
   record Report(String text) {}
 
   /** What an operation reading plaintext may look at: always the acting tenant's own data. */
-  private static java.util.function.Function<AccessContext, Billing> reading(
+  private static java.util.function.Function<AccessContext, Ceiling> reading(
       Integrity integrity, Tlp tlp, DataClass dataClass) {
-    return ctx -> Billing.ceilingFor(ctx, integrity, tlp, dataClass);
+    return ctx -> ceilingFor(ctx, integrity, tlp, dataClass);
   }
 
   /** The approval card's ceiling: a finance approver sees more than anyone else does. */
-  private static java.util.function.Function<AccessContext, Billing> approvalCardCeiling() {
+  private static java.util.function.Function<AccessContext, Ceiling> approvalCardCeiling() {
     return ctx ->
-        Billing.ceilingFor(
+        ceilingFor(
             ctx,
             Integrity.ENDORSED,
             Tlp.AMBER,
@@ -167,8 +143,8 @@ class BillingScenarioTest {
    * door a value can enter through, and its name is still a fixed property of the door -- but the
    * four label axes themselves come from the access, the same way a tenant always did.
    */
-  private static Billing labelFrom(AccessContext ctx) {
-    return Billing.of(
+  private static Label labelFrom(AccessContext ctx) {
+    return label(
         ctx.get("tenant").orElse(""),
         Integrity.valueOf(ctx.get("integrity").orElse(Integrity.UNENDORSED.name())),
         Tlp.valueOf(ctx.get("tlp").orElse(Tlp.CLEAR.name())),
@@ -183,7 +159,7 @@ class BillingScenarioTest {
   private static final String DECLINES = "DisputeClaim.alwaysDeclines";
   private static final String WISHFUL = "DisputeClaim.invoiceNumber.trustMe";
 
-  private final MemoryStorage<Billing> storage = new MemoryStorage<>();
+  private final MemoryStorage storage = new MemoryStorage();
 
   /**
    * Standing in for the edge: a request, a message header, a session.
@@ -195,8 +171,10 @@ class BillingScenarioTest {
   private final java.util.concurrent.atomic.AtomicReference<AccessContext> edge =
       new java.util.concurrent.atomic.AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Billing, Object> config =
-      new SurrogateStoreConfig<Billing, Object>().lattice(Billing.LATTICE).currentAccess(edge::get);
+  private final SurrogateStoreConfig<Object> config =
+      new SurrogateStoreConfig<Object>()
+          .axes(TENANT, INTEGRITY, TLP, DATA_CLASS)
+          .currentAccess(edge::get);
 
   // ---------------------------------------------------------------- doors in
 
@@ -229,7 +207,7 @@ class BillingScenarioTest {
       config
           .destination(
               "vendor-llm",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               STRING_TYPE)
           .reading(STRING_TYPE);
 
@@ -237,7 +215,7 @@ class BillingScenarioTest {
       config
           .destination(
               "vendor-llm-reports",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               REPORT_TYPE)
           .reading(REPORT_TYPE);
 
@@ -245,7 +223,7 @@ class BillingScenarioTest {
       config
           .destination(
               "vendor-llm-invoice",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
               INVOICE_NUMBER_TYPE)
           .reading(INVOICE_NUMBER_TYPE);
 
@@ -254,7 +232,7 @@ class BillingScenarioTest {
       config
           .destination(
               "quarantined-llm",
-              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              ctx -> ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
               STRING_TYPE)
           .reading(STRING_TYPE);
 
@@ -262,7 +240,7 @@ class BillingScenarioTest {
       config
           .destination(
               "quarantined-llm-reports",
-              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              ctx -> ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
               REPORT_TYPE)
           .reading(REPORT_TYPE);
 
@@ -270,7 +248,7 @@ class BillingScenarioTest {
       config
           .destination(
               "quarantined-llm-invoice",
-              ctx -> Billing.ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              ctx -> ceilingFor(ctx, Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
               INVOICE_NUMBER_TYPE)
           .reading(INVOICE_NUMBER_TYPE);
 
@@ -279,7 +257,7 @@ class BillingScenarioTest {
       config
           .destination(
               "payment-processor",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
               STRING_TYPE)
           .reading(STRING_TYPE);
 
@@ -287,7 +265,7 @@ class BillingScenarioTest {
       config
           .destination(
               "payment-processor-reports",
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
               REPORT_TYPE)
           .reading(REPORT_TYPE);
 
@@ -321,11 +299,10 @@ class BillingScenarioTest {
               STRING_TYPE,
               LAST4_TYPE,
               token -> new Last4(token.substring(token.length() - 4)))
-          .accepting(
-              ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+          .accepting(ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
           // Both dimensions, deliberately: four digits are neither cardholder
           // data nor RED any more, and saying so is the reviewed act.
-          .lowering(joined -> joined.withDataClass(DataClass.PII).withTlp(Tlp.AMBER))
+          .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII).with(TLP, Tlp.AMBER))
           .availableTo(ctx -> ctx.has("tool", "prepare_approval"))
           .mint();
 
@@ -338,7 +315,7 @@ class BillingScenarioTest {
               LAST4_TYPE,
               token -> new Last4(token.substring(token.length() - 4)))
           .accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-          .lowering(joined -> joined.withDataClass(DataClass.PII))
+          .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII))
           .mint();
 
   // Declares itself an endorsement without checking anything. SurrogateStore refuses it.
@@ -350,7 +327,7 @@ class BillingScenarioTest {
               INVOICE_NUMBER_TYPE,
               claim -> new InvoiceNumber(claim.invoiceNumber()))
           .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-          .lowering(joined -> joined.withIntegrity(Integrity.UNENDORSED))
+          .lowering(joined -> joined.with(INTEGRITY, Integrity.UNENDORSED))
           .mint();
 
   // Several values in, one out. Every parent's label lands on the result.
@@ -361,7 +338,12 @@ class BillingScenarioTest {
           // of the test below is what happens to what it produces, not whether it
           // may read: a ceiling would refuse the combination earlier, and then
           // there would be nothing to demonstrate.
-          .acceptingAnything()
+          .accepting(
+              ctx ->
+                  Ceiling.of(TENANT, Constraint.any())
+                      .with(INTEGRITY, Constraint.any())
+                      .with(TLP, Constraint.any())
+                      .with(DATA_CLASS, Constraint.any()))
           .mint();
 
   // Reads the value, then says no. The refusal has to be recorded because the
@@ -385,7 +367,7 @@ class BillingScenarioTest {
               REPORT_TYPE,
               notes -> new Report("redacted summary of " + notes.size()))
           .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .lowering(joined -> joined.withDataClass(DataClass.NONE))
+          .lowering(joined -> joined.with(DATA_CLASS, DataClass.NONE))
           .mint();
 
   // The whole account never leaves the store to answer one question about it.
@@ -399,7 +381,7 @@ class BillingScenarioTest {
           .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
           .mint();
 
-  private final SurrogateStore<Billing> store = new DefaultSurrogateStore<>(config, storage);
+  private final SurrogateStore store = new DefaultSurrogateStore(config, storage);
 
   /** Every access in this system is made on behalf of a tenant, established at the edge. */
   private AccessContext acme() {
@@ -426,15 +408,21 @@ class BillingScenarioTest {
    * value is stored. What changed is the mechanism -- there is no method left that takes a label as
    * an argument, so the label has to travel through the one channel an source reads.
    */
-  private <T> Surrogate<T> holdAs(Billing label, SurrogateSource<T> source, T value) {
+  private <T> Surrogate<T> holdAs(
+      String tenant,
+      Integrity integrity,
+      Tlp tlp,
+      DataClass dataClass,
+      SurrogateSource<T> source,
+      T value) {
     AccessContext previous = edge.get();
     edge.set(
         AccessContext.of(
             java.util.Map.of(
-                "tenant", label.tenant().resolved().orElse(""),
-                "integrity", label.integrity().name(),
-                "tlp", label.tlp().name(),
-                "dataClass", label.dataClass().name())));
+                "tenant", tenant,
+                "integrity", integrity.name(),
+                "tlp", tlp.name(),
+                "dataClass", dataClass.name())));
     try {
       return source.exchange(value);
     } finally {
@@ -446,7 +434,10 @@ class BillingScenarioTest {
 
   private Surrogate<String> customerEmail() {
     return holdAs(
-        Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+        "acme",
+        Integrity.UNENDORSED,
+        Tlp.AMBER,
+        DataClass.PII,
         customerMail,
         "I was charged twice for invoice INV-4471. My SSN is 123-45-6789 if that helps.");
   }
@@ -493,9 +484,7 @@ class BillingScenarioTest {
 
     private Surrogate<String> token() {
       return holdAs(
-          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
-          cardTokens,
-          "tok_1P9xyz");
+          "acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER, cardTokens, "tok_1P9xyz");
     }
 
     @Test
@@ -522,8 +511,7 @@ class BillingScenarioTest {
   class TheApprovalCard {
 
     private Surrogate<String> last4() {
-      return holdAs(
-          Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII), last4Digits, "4821");
+      return holdAs("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII, last4Digits, "4821");
     }
 
     @Test
@@ -568,18 +556,19 @@ class BillingScenarioTest {
     void folding_two_tenants_data_makes_a_report_that_can_go_nowhere() {
       Surrogate<String> acmeNote =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
-              notes,
-              "acme disputes INV-1");
+              "acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "acme disputes INV-1");
       Surrogate<String> globexNote =
           holdAs(
-              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              "globex",
+              Integrity.ENDORSED,
+              Tlp.CLEAR,
+              DataClass.NONE,
               notes,
               "globex disputes INV-2");
 
       Surrogate<Report> report = summarise.fold(List.of(acmeNote, globexNote), acme()).orThrow();
 
-      assertThat(store.label(report).tenant().conflicted()).isTrue();
+      assertThat(store.label(report).says(TENANT, "acme")).isFalse();
       assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(paymentProcessorReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isFalse();
@@ -593,15 +582,9 @@ class BillingScenarioTest {
     @DisplayName("folding one tenant's own notes is perfectly usable")
     void folding_one_tenants_notes_is_usable() {
       Surrogate<String> first =
-          holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
-              notes,
-              "first note");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "first note");
       Surrogate<String> second =
-          holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
-              notes,
-              "second note");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "second note");
 
       Surrogate<Report> report = summarise.fold(List.of(first, second), acme()).orThrow();
 
@@ -614,19 +597,19 @@ class BillingScenarioTest {
     @DisplayName("one restricted parent constrains the whole result")
     void one_restricted_parent_constrains_the_whole_result() {
       Surrogate<String> ordinary =
-          holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
-              notes,
-              "nothing special");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "nothing special");
       Surrogate<String> personal =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+              "acme",
+              Integrity.ENDORSED,
+              Tlp.AMBER,
+              DataClass.PII,
               notes,
               "and their home address");
 
       Surrogate<Report> report = summarise.fold(List.of(ordinary, personal), acme()).orThrow();
 
-      assertThat(store.label(report).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(store.label(report).says(DATA_CLASS, DataClass.PII)).isTrue();
       assertThat(vendorLlmReports.exchange(report, acme()).allowed()).isFalse();
       assertThat(quarantinedLlmReports.exchange(report, acme()).allowed()).isTrue();
     }
@@ -645,7 +628,10 @@ class BillingScenarioTest {
     void another_tenants_data_is_refused() {
       Surrogate<String> globexNote =
           holdAs(
-              Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              "globex",
+              Integrity.ENDORSED,
+              Tlp.CLEAR,
+              DataClass.NONE,
               notes,
               "globex's entirely unremarkable note");
 
@@ -656,10 +642,7 @@ class BillingScenarioTest {
     @DisplayName("one tenant's ordinary data is fine")
     void one_tenants_ordinary_data_is_fine() {
       Surrogate<String> held =
-          holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
-              notes,
-              "nothing secret");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "nothing secret");
 
       assertThat(vendorLlmText.exchange(held, acme()).allowed()).isTrue();
     }
@@ -699,7 +682,10 @@ class BillingScenarioTest {
     void refuses_a_handle_whose_type_is_wrong() {
       Surrogate<DisputeClaim> claim =
           holdAs(
-              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              "acme",
+              Integrity.UNENDORSED,
+              Tlp.AMBER,
+              DataClass.PII,
               disputeClaims,
               new DisputeClaim("INV-1", "x"));
       Surrogate<String> lying = new Surrogate<>(claim.id());
@@ -726,7 +712,10 @@ class BillingScenarioTest {
 
     private Surrogate<DisputeClaim> claim() {
       return holdAs(
-          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+          "acme",
+          Integrity.UNENDORSED,
+          Tlp.AMBER,
+          DataClass.PII,
           disputeClaims,
           new DisputeClaim("INV-4471", "charged twice"));
     }
@@ -737,7 +726,7 @@ class BillingScenarioTest {
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
       assertThat(store.label(number))
-          .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
+          .isEqualTo(label("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
       assertThat(quarantinedLlmInvoice.exchange(number, acme()).granted())
           .contains(new InvoiceNumber("INV-4471"));
       assertThat(vendorLlmInvoice.exchange(number, acme()).allowed()).isFalse();
@@ -749,7 +738,7 @@ class BillingScenarioTest {
     void extracting_a_field_does_not_make_it_trustworthy() {
       Surrogate<InvoiceNumber> number = claimedInvoice.derive(claim(), acme()).orThrow();
 
-      assertThat(store.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
+      assertThat(store.label(number).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
     }
 
     @Test
@@ -811,7 +800,12 @@ class BillingScenarioTest {
                   DISPUTE_CLAIM_TYPE,
                   INVOICE_NUMBER_TYPE,
                   c -> new InvoiceNumber(c.invoiceNumber()))
-              .acceptingAnything()
+              .accepting(
+                  ctx ->
+                      Ceiling.of(TENANT, Constraint.any())
+                          .with(INTEGRITY, Constraint.any())
+                          .with(TLP, Constraint.any())
+                          .with(DATA_CLASS, Constraint.any()))
               .mint();
       Surrogate<DisputeClaim> claim = claim();
 
@@ -827,9 +821,7 @@ class BillingScenarioTest {
 
     private Surrogate<String> token() {
       return holdAs(
-          Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
-          cardTokens,
-          "tok_1P9xyz4821");
+          "acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER, cardTokens, "tok_1P9xyz4821");
     }
 
     private AccessContext preparingApproval() {
@@ -841,7 +833,7 @@ class BillingScenarioTest {
     void truncating_a_card_lowers_it_to_pii() {
       Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
-      assertThat(store.label(last4).dataClass()).isEqualTo(DataClass.PII);
+      assertThat(store.label(last4).says(DATA_CLASS, DataClass.PII)).isTrue();
       assertThat(approvalCardLast4.exchange(last4, acme("clearance", "finance")).granted())
           .contains(new Last4("4821"));
     }
@@ -851,8 +843,8 @@ class BillingScenarioTest {
     void lowers_nothing_it_did_not_name() {
       Surrogate<Last4> last4 = cardLast4.derive(token(), preparingApproval()).orThrow();
 
-      assertThat(store.label(last4).tenant().resolved()).contains("acme");
-      assertThat(store.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
+      assertThat(store.label(last4).says(TENANT, "acme")).isTrue();
+      assertThat(store.label(last4).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
     }
 
     /**
@@ -864,8 +856,8 @@ class BillingScenarioTest {
     void lowering_only_one_dimension_leaves_the_other_blocking() {
       Surrogate<Last4> partly = cardLast4Partial.derive(token(), acme()).orThrow();
 
-      assertThat(store.label(partly).dataClass()).isEqualTo(DataClass.PII);
-      assertThat(store.label(partly).tlp()).isEqualTo(Tlp.RED);
+      assertThat(store.label(partly).says(DATA_CLASS, DataClass.PII)).isTrue();
+      assertThat(store.label(partly).says(TLP, Tlp.RED)).isTrue();
       assertThat(approvalCardLast4.exchange(partly, acme("clearance", "finance")).allowed())
           .isFalse();
     }
@@ -885,7 +877,10 @@ class BillingScenarioTest {
     void a_relabel_that_does_not_lower_is_refused() {
       Surrogate<DisputeClaim> endorsed =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+              "acme",
+              Integrity.ENDORSED,
+              Tlp.CLEAR,
+              DataClass.NONE,
               disputeClaims,
               new DisputeClaim("INV-1", "x"));
 
@@ -949,7 +944,10 @@ class BillingScenarioTest {
 
     private Surrogate<Account> account() {
       return holdAs(
-          Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+          "acme",
+          Integrity.ENDORSED,
+          Tlp.AMBER,
+          DataClass.PII,
           accounts,
           new Account("ACC-1", "someone@acme.example"));
     }
@@ -984,19 +982,19 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses to look at a value it was never meant to see")
     void refuses_to_look_at_a_value_it_was_never_meant_to_see() {
-      SurrogateStoreConfig<Billing, Object> choosyConfig = new SurrogateStoreConfig<>();
-      choosyConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
+      SurrogateStoreConfig<Object> choosyConfig = new SurrogateStoreConfig<>();
+      choosyConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
       SurrogateSource<Account> secretAccounts =
           choosyConfig.source(
               "secret-accounts",
               ACCOUNT_TYPE,
-              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
+              label("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
       Query<Account, String> secretOwnedBy =
           choosyConfig
               .query("Account.ownedBy", ACCOUNT_TYPE, String.class, (account, sender, ctx) -> true)
               .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
               .mint();
-      SurrogateStore<Billing> choosy = MemorySurrogateStore.create(choosyConfig);
+      SurrogateStore choosy = MemorySurrogateStore.create(choosyConfig);
       Surrogate<Account> secret = secretAccounts.exchange(new Account("ACC-2", "x@y.example"));
 
       assertThat(secretOwnedBy.ask(secret, "x@y.example", acme()))
@@ -1031,21 +1029,23 @@ class BillingScenarioTest {
     @Test
     @DisplayName("unless the application asks for the explanation")
     void unless_the_application_asks_for_the_explanation() {
-      SurrogateStoreConfig<Billing, Object> chattyConfig = new SurrogateStoreConfig<>();
-      chattyConfig.lattice(Billing.LATTICE).currentAccess(edge::get).explainRefusals();
+      SurrogateStoreConfig<Object> chattyConfig = new SurrogateStoreConfig<>();
+      chattyConfig
+          .axes(TENANT, INTEGRITY, TLP, DATA_CLASS)
+          .currentAccess(edge::get)
+          .explainRefusals();
       SurrogateSource<String> chattyMail =
           chattyConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       SurrogateSink<String> chattyVendorLlm =
           chattyConfig
               .destination(
                   "vendor-llm",
-                  ctx -> Billing.ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+                  ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
                   STRING_TYPE)
               .reading(STRING_TYPE);
-      SurrogateStore<Billing> chatty = MemorySurrogateStore.create(chattyConfig);
+      SurrogateStore chatty = MemorySurrogateStore.create(chattyConfig);
       Surrogate<String> held =
-          holdAs(
-              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII), chattyMail, "x");
+          holdAs("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII, chattyMail, "x");
 
       Dereferenced<String> denied = chattyVendorLlm.exchange(held, acme());
 
@@ -1056,8 +1056,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a destination whose ceiling throws denies, rather than exploding")
     void a_destination_whose_ceiling_throws_denies() {
-      SurrogateStoreConfig<Billing, Object> fragileConfig = new SurrogateStoreConfig<>();
-      fragileConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
+      SurrogateStoreConfig<Object> fragileConfig = new SurrogateStoreConfig<>();
+      fragileConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
       SurrogateSource<String> fragileMail =
           fragileConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
       SurrogateSink<String> broken =
@@ -1069,10 +1069,9 @@ class BillingScenarioTest {
                   },
                   STRING_TYPE)
               .reading(STRING_TYPE);
-      SurrogateStore<Billing> fragile = MemorySurrogateStore.create(fragileConfig);
+      SurrogateStore fragile = MemorySurrogateStore.create(fragileConfig);
       Surrogate<String> held =
-          holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), fragileMail, "x");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, fragileMail, "x");
 
       Dereferenced<String> result = broken.exchange(held, acme());
 
@@ -1121,7 +1120,10 @@ class BillingScenarioTest {
     void records_a_check_with_the_answer_but_not_the_question() {
       Surrogate<Account> account =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+              "acme",
+              Integrity.ENDORSED,
+              Tlp.AMBER,
+              DataClass.PII,
               accounts,
               new Account("ACC-1", "someone@acme.example"));
 
@@ -1138,7 +1140,10 @@ class BillingScenarioTest {
     void says_so_when_a_derivation_weakened_a_label() {
       Surrogate<String> token =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              "acme",
+              Integrity.ENDORSED,
+              Tlp.RED,
+              DataClass.CARDHOLDER,
               cardTokens,
               "tok_1P9xyz4821");
 
@@ -1154,7 +1159,10 @@ class BillingScenarioTest {
     void an_ordinary_derivation_is_recorded_without_that_note() {
       Surrogate<DisputeClaim> claim =
           holdAs(
-              Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+              "acme",
+              Integrity.UNENDORSED,
+              Tlp.AMBER,
+              DataClass.PII,
               disputeClaims,
               new DisputeClaim("INV-4471", "charged twice"));
 
@@ -1167,9 +1175,9 @@ class BillingScenarioTest {
     @DisplayName("but one made from several values says so, since it is more constrained than any")
     void one_made_from_several_says_so() {
       Surrogate<String> first =
-          holdAs(Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), notes, "a");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "a");
       Surrogate<String> second =
-          holdAs(Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE), notes, "b");
+          holdAs("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE, notes, "b");
 
       summarise.fold(java.util.List.of(first, second), acme());
 
@@ -1188,15 +1196,15 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an access that cannot be recorded does not happen, and stores nothing")
     void an_access_that_cannot_be_recorded_does_not_happen() {
-      SurrogateStoreConfig<Billing, Object> watchedConfig = new SurrogateStoreConfig<>();
-      watchedConfig.lattice(Billing.LATTICE).currentAccess(edge::get);
+      SurrogateStoreConfig<Object> watchedConfig = new SurrogateStoreConfig<>();
+      watchedConfig.axes(TENANT, INTEGRITY, TLP, DATA_CLASS).currentAccess(edge::get);
       SurrogateSource<String> watchedMail =
           watchedConfig.source("mail", STRING_TYPE, BillingScenarioTest::labelFrom);
-      MemoryStorage<Billing> kept = new MemoryStorage<>();
-      Storage<Billing> broken =
-          new Storage<>() {
+      MemoryStorage kept = new MemoryStorage();
+      Storage broken =
+          new Storage() {
             @Override
-            public void put(String id, StoredValue<Billing> value, AuditRecord record) {
+            public void put(String id, StoredValue value, AuditRecord record) {
               throw new IllegalStateException("the record could not be written");
             }
 
@@ -1206,7 +1214,7 @@ class BillingScenarioTest {
             }
 
             @Override
-            public java.util.Optional<StoredMetadata<Billing>> metadata(String id) {
+            public java.util.Optional<StoredMetadata> metadata(String id) {
               return kept.metadata(id);
             }
 
@@ -1225,12 +1233,15 @@ class BillingScenarioTest {
               return kept.erase(root);
             }
           };
-      SurrogateStore<Billing> watched = new DefaultSurrogateStore<>(watchedConfig, broken);
+      SurrogateStore watched = new DefaultSurrogateStore(watchedConfig, broken);
 
       assertThatThrownBy(
               () ->
                   holdAs(
-                      Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE),
+                      "acme",
+                      Integrity.ENDORSED,
+                      Tlp.CLEAR,
+                      DataClass.NONE,
                       watchedMail,
                       "anything"))
           .isInstanceOf(IllegalStateException.class);
@@ -1261,7 +1272,10 @@ class BillingScenarioTest {
 
     private Surrogate<DisputeClaim> claim() {
       return holdAs(
-          Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII),
+          "acme",
+          Integrity.UNENDORSED,
+          Tlp.AMBER,
+          DataClass.PII,
           disputeClaims,
           new DisputeClaim("INV-4471", "charged twice"));
     }
@@ -1296,7 +1310,10 @@ class BillingScenarioTest {
     void a_derivation_not_offered_here_is_recorded() {
       Surrogate<String> token =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER),
+              "acme",
+              Integrity.ENDORSED,
+              Tlp.RED,
+              DataClass.CARDHOLDER,
               cardTokens,
               "tok_1P9xyz4821");
       storage.clearAudit();
@@ -1332,7 +1349,10 @@ class BillingScenarioTest {
 
       Surrogate<Account> acmeAccount =
           holdAs(
-              Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII),
+              "acme",
+              Integrity.ENDORSED,
+              Tlp.AMBER,
+              DataClass.PII,
               accounts,
               new Account("ACC-1", "someone@acme.example"));
       storage.clearAudit();

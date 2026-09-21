@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch;
 
+import org.jwcarman.loch.lattice.Label;
+
 /**
  * A value on its way into storage.
  *
@@ -23,4 +25,4 @@ package org.jwcarman.loch;
  * @param label how it is labelled -- the store is the only authority on this
  * @param lineage where it came from
  */
-public record StoredValue<A>(Object value, SurrogateType<?> type, A label, Lineage lineage) {}
+public record StoredValue(Object value, SurrogateType<?> type, Label label, Lineage lineage) {}

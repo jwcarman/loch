@@ -30,7 +30,7 @@ import org.jwcarman.codec.spi.CodecFactory;
  *
  * @param <A> the application's label type, which is stored encrypted like any other value
  */
-public final class JdbcSurrogateStoreConfig<A> {
+public final class JdbcSurrogateStoreConfig {
 
   private DataSource dataSource;
   private CodecFactory codecs;
@@ -38,19 +38,19 @@ public final class JdbcSurrogateStoreConfig<A> {
   private boolean migrate = true;
 
   /** Where the tables are. */
-  public JdbcSurrogateStoreConfig<A> dataSource(DataSource dataSource) {
+  public JdbcSurrogateStoreConfig dataSource(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "a durable store needs a data source");
     return this;
   }
 
   /** How values become bytes. */
-  public JdbcSurrogateStoreConfig<A> codecs(CodecFactory codecs) {
+  public JdbcSurrogateStoreConfig codecs(CodecFactory codecs) {
     this.codecs = Objects.requireNonNull(codecs, "a durable store needs codecs");
     return this;
   }
 
   /** What happens to those bytes before they are written: compression, encryption, both. */
-  public JdbcSurrogateStoreConfig<A> storedThrough(StorageCodec storageCodec) {
+  public JdbcSurrogateStoreConfig storedThrough(StorageCodec storageCodec) {
     this.storageCodec = Objects.requireNonNull(storageCodec, "a storage codec must not be null");
     return this;
   }
@@ -61,7 +61,7 @@ public final class JdbcSurrogateStoreConfig<A> {
    * <p>Said out loud rather than fallen into. Everything this keeps is something somebody decided
    * was worth keeping behind a door, so storing it in the clear is a decision.
    */
-  public JdbcSurrogateStoreConfig<A> storedPlainly() {
+  public JdbcSurrogateStoreConfig storedPlainly() {
     this.storageCodec =
         StorageCodec.of(
             new StorageCodec() {
@@ -79,7 +79,7 @@ public final class JdbcSurrogateStoreConfig<A> {
   }
 
   /** Leaves the tables alone, for somewhere that manages its own schema. */
-  public JdbcSurrogateStoreConfig<A> withoutMigration() {
+  public JdbcSurrogateStoreConfig withoutMigration() {
     this.migrate = false;
     return this;
   }

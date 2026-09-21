@@ -80,7 +80,7 @@ public class JdbcSurrogateStoreAutoConfiguration {
   @Bean
   @ConditionalOnBean({SurrogateStoreConfig.class, StorageCodec.class})
   public SmartInitializingSingleton surrogateStoreBuilder(
-      SurrogateStoreConfig<?, ?> config,
+      SurrogateStoreConfig<?> config,
       java.util.Optional<AccessContextProvider> access,
       DataSource dataSource,
       CodecFactory codecs,
@@ -95,15 +95,15 @@ public class JdbcSurrogateStoreAutoConfiguration {
   }
 
   /** Captures the wildcard so the label type and the storage settings line up. */
-  private static <A, D> void build(
-      SurrogateStoreConfig<A, D> config,
+  private static <D> void build(
+      SurrogateStoreConfig<D> config,
       DataSource dataSource,
       CodecFactory codecs,
       StorageCodec storageCodec,
       SurrogateStoreProperties properties) {
     // The application said what it allows; this says where it goes. Neither knows the other.
-    JdbcSurrogateStoreConfig<A> jdbc =
-        new JdbcSurrogateStoreConfig<A>()
+    JdbcSurrogateStoreConfig jdbc =
+        new JdbcSurrogateStoreConfig()
             .dataSource(dataSource)
             .codecs(codecs)
             .storedThrough(storageCodec);
@@ -112,7 +112,7 @@ public class JdbcSurrogateStoreAutoConfiguration {
     }
     // Built, and then let go of. Building is what attaches every capability declared above; the
     // object itself is of no use to an application, so nothing is given a way to reach it.
-    SurrogateStore<A> store = JdbcSurrogateStore.create(config, jdbc);
+    SurrogateStore store = JdbcSurrogateStore.create(config, jdbc);
     if (properties.isLogManifest()) {
       log.info("\n{}", store.manifest());
     }

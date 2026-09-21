@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * A fold reads many values of one type; a derivation reads exactly one.
@@ -40,10 +42,12 @@ class ArityTest {
   /** Declared once. Nothing special about it: a name and how to decode one. */
   private static final SurrogateType<Note> NOTE = SurrogateType.of(Note.class);
 
-  private final SurrogateStoreConfig<Exact<String>, Value> config =
-      new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private static final Axis<String> TENANT = Axis.matching("tenant");
 
-  private final SurrogateSource<Note> notes = config.source("notes", NOTE, ctx -> Exact.of("acme"));
+  private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
+
+  private final SurrogateSource<Note> notes =
+      config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
 
   private final Fold<Note, Note> joined =
       config
@@ -52,10 +56,10 @@ class ArityTest {
               NOTE,
               NOTE,
               notes -> new Note(notes.stream().map(Note::text).reduce("", String::concat)))
-          .acceptingAnything()
+          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
           .mint();
 
-  private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
+  private final SurrogateStore store = MemorySurrogateStore.create(config);
 
   private final Surrogate<Note> first = notes.exchange(new Note("a"));
   private final Surrogate<Note> second = notes.exchange(new Note("b"));
@@ -83,6 +87,6 @@ class ArityTest {
   void carries_the_join_of_every_parents_label() {
     Surrogate<Note> result = joined.fold(List.of(first, second)).orThrow();
 
-    assertThat(store.label(result.id())).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(result.id())).isEqualTo(Label.of(TENANT, "acme"));
   }
 }

@@ -37,7 +37,7 @@ import org.jwcarman.codec.spi.TypeRef;
  * it changes what was stored under a label chosen for what it used to be. Hold immutable values and
  * the difference never shows.
  */
-public final class MemoryStorage<A> implements Storage<A> {
+public final class MemoryStorage implements Storage {
 
   private final java.util.List<AuditRecord> audit =
       java.util.Collections.synchronizedList(new java.util.ArrayList<>());
@@ -67,19 +67,18 @@ public final class MemoryStorage<A> implements Storage<A> {
     audit.add(entry);
   }
 
-  private final Map<String, StoredValue<A>> values = new ConcurrentHashMap<>();
+  private final Map<String, StoredValue> values = new ConcurrentHashMap<>();
 
   @Override
-  public void put(String id, StoredValue<A> value, AuditRecord record) {
+  public void put(String id, StoredValue value, AuditRecord record) {
     record(record);
     values.put(id, value);
   }
 
   @Override
-  public Optional<StoredMetadata<A>> metadata(String id) {
+  public Optional<StoredMetadata> metadata(String id) {
     return Optional.ofNullable(values.get(id))
-        .map(
-            stored -> new StoredMetadata<>(stored.type().name(), stored.label(), stored.lineage()));
+        .map(stored -> new StoredMetadata(stored.type().name(), stored.label(), stored.lineage()));
   }
 
   @Override

@@ -15,11 +15,11 @@
  */
 package org.jwcarman.loch.example.billing;
 
-import static org.jwcarman.loch.example.billing.BillingLabels.Integrity.ENDORSED;
-import static org.jwcarman.loch.example.billing.BillingLabels.Integrity.UNENDORSED;
-import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.CARDHOLDER;
-import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.ORDINARY;
-import static org.jwcarman.loch.example.billing.BillingLabels.Sensitivity.PERSONAL;
+import static org.jwcarman.loch.example.billing.BillingAxes.Integrity.ENDORSED;
+import static org.jwcarman.loch.example.billing.BillingAxes.Integrity.UNENDORSED;
+import static org.jwcarman.loch.example.billing.BillingAxes.Sensitivity.CARDHOLDER;
+import static org.jwcarman.loch.example.billing.BillingAxes.Sensitivity.ORDINARY;
+import static org.jwcarman.loch.example.billing.BillingAxes.Sensitivity.PERSONAL;
 
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -30,7 +30,9 @@ import org.jwcarman.loch.Query;
 import org.jwcarman.loch.SurrogateSink;
 import org.jwcarman.loch.SurrogateSource;
 import org.jwcarman.loch.SurrogateStoreConfig;
-import org.jwcarman.loch.lattice.Exact;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -59,11 +61,10 @@ public class SurrogateStoreConfiguration {
    * application onto a different backing store changes no line in this file.
    */
   @Bean
-  public SurrogateStoreConfig<BillingLabels, Domain.BillingValue> surrogateStoreConfig() {
+  public SurrogateStoreConfig<Domain.BillingValue> surrogateStoreConfig() {
     // The domain bound is the second parameter. A source over String would not compile.
-    return new SurrogateStoreConfig<BillingLabels, Domain.BillingValue>()
-        .labelType(BillingLabels.class)
-        .lattice(BillingLabels.LATTICE);
+    return new SurrogateStoreConfig<Domain.BillingValue>()
+        .axes(BillingAxes.TENANT, BillingAxes.INTEGRITY, BillingAxes.SENSITIVITY);
   }
 
   /**
@@ -74,7 +75,7 @@ public class SurrogateStoreConfiguration {
    */
   @Bean
   public DisputeService disputeService(
-      SurrogateStoreConfig<BillingLabels, Domain.BillingValue> config, Invoices invoices) {
+      SurrogateStoreConfig<Domain.BillingValue> config, Invoices invoices) {
 
     // ---- how values get in -----------------------------------------------------
     // The tenant is read from the access, never passed by the caller. Writing at another
@@ -85,19 +86,19 @@ public class SurrogateStoreConfiguration {
     // ---- how values get out ----------------------------------------------------
     SurrogateSink<Domain.Invoice> supportUi =
         config
-            .destination("support-ui", ctx -> label(ctx, ENDORSED, ORDINARY), Domain.INVOICE)
+            .destination("support-ui", ctx -> ceiling(ctx, ENDORSED, ORDINARY), Domain.INVOICE)
             .reading(Domain.INVOICE);
     SurrogateSink<Domain.Last4> approvalDesk =
         config
             .destination(
                 "approval-desk",
-                ctx -> label(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY),
+                ctx -> ceiling(ctx, ENDORSED, ctx.has("role", "approver") ? PERSONAL : ORDINARY),
                 Domain.LAST4)
             .reading(Domain.LAST4);
     SurrogateSink<Domain.Invoice> paymentProcessor =
         config
             .destination(
-                "payment-processor", ctx -> label(ctx, ENDORSED, CARDHOLDER), Domain.INVOICE)
+                "payment-processor", ctx -> ceiling(ctx, ENDORSED, CARDHOLDER), Domain.INVOICE)
             .reading(Domain.INVOICE);
 
     // ---- one value from another ------------------------------------------------
@@ -110,8 +111,8 @@ public class SurrogateStoreConfiguration {
                 Domain.MAIL,
                 Domain.INVOICE,
                 (mail, ctx) -> confirm(invoices, mail, ctx))
-            .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
-            .lowering(joined -> joined.withIntegrity(ENDORSED))
+            .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
+            .lowering(joined -> joined.with(BillingAxes.INTEGRITY, ENDORSED))
             .mint();
 
     // Truncating a card is a declassification, which is what a PCI reviewer asks about.
@@ -122,8 +123,8 @@ public class SurrogateStoreConfiguration {
                 Domain.INVOICE,
                 Domain.LAST4,
                 invoice -> new Domain.Last4(last4(invoice.cardToken())))
-            .accepting(ctx -> label(ctx, ENDORSED, CARDHOLDER))
-            .lowering(joined -> joined.withSensitivity(PERSONAL))
+            .accepting(ctx -> ceiling(ctx, ENDORSED, CARDHOLDER))
+            .lowering(joined -> joined.with(BillingAxes.SENSITIVITY, PERSONAL))
             .availableTo(ctx -> ctx.has("role", "approver"))
             .mint();
 
@@ -135,7 +136,7 @@ public class SurrogateStoreConfiguration {
                 Domain.MAIL,
                 String.class,
                 (mail, text, ctx) -> mail.body().toLowerCase().contains(text.toLowerCase()))
-            .accepting(ctx -> label(ctx, UNENDORSED, PERSONAL))
+            .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
             .mint();
 
     return new DisputeService(
@@ -156,12 +157,31 @@ public class SurrogateStoreConfiguration {
    * tenant. It is safe here only because the tenant axis is declared required, which makes the
    * store refuse the write rather than store something anybody can read.
    */
-  private static BillingLabels label(
-      AccessContext ctx, BillingLabels.Integrity integrity, BillingLabels.Sensitivity sensitivity) {
-    return new BillingLabels(
-        ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-        integrity,
-        sensitivity);
+  private static Label label(
+      AccessContext ctx, BillingAxes.Integrity integrity, BillingAxes.Sensitivity sensitivity) {
+    return ctx.get("tenant")
+        .map(tenant -> Label.of(BillingAxes.TENANT, tenant))
+        .orElseGet(Label::nothing)
+        .with(BillingAxes.INTEGRITY, integrity)
+        .with(BillingAxes.SENSITIVITY, sensitivity);
+  }
+
+  /**
+   * What a reader may see: a point on every axis, with the tenant taken from the access.
+   *
+   * <p>A request that says nothing about a tenant gets no ceiling at all rather than a broad one.
+   * Throwing here is not sloppiness -- the store treats a ceiling it cannot evaluate as a refusal
+   * and writes the line, which is what a gate unable to say it is open should do.
+   */
+  private static Ceiling ceiling(
+      AccessContext ctx, BillingAxes.Integrity integrity, BillingAxes.Sensitivity sensitivity) {
+    String tenant =
+        ctx.get("tenant")
+            .orElseThrow(
+                () -> new IllegalStateException("this access says nothing about which tenant"));
+    return Ceiling.of(BillingAxes.TENANT, Constraint.atMost(tenant))
+        .with(BillingAxes.INTEGRITY, Constraint.atMost(integrity))
+        .with(BillingAxes.SENSITIVITY, Constraint.atMost(sensitivity));
   }
 
   /** Trust is earned by matching the claim against the mailbox it arrived from. */

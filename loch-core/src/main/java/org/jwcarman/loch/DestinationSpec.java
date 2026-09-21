@@ -15,19 +15,19 @@
  */
 package org.jwcarman.loch;
 
+import org.jwcarman.loch.lattice.Ceiling;
+
 /**
  * Somewhere a value might go, and the most constrained thing it will accept.
  *
  * <p>A destination is anything on the far side of the gate: a model endpoint, a tool, a payment
- * processor, a log sink, a person looking at an approval. Its <b>ceiling</b> is the highest label
- * it tolerates, so a value may go there when the value's label is at or below it.
+ * processor, a log sink, a person looking at an approval. Its <b>ceiling</b> says, per axis, the
+ * most it tolerates, so a value may go there when every axis of its label satisfies it.
  *
  * <p>Ceilings are declared once, at wiring, and resolved by name. That is not tidiness: a ceiling
  * constructed at a call site would let any code grant itself permission in one line.
- *
- * @param <A> the application's label type
  */
-public interface DestinationSpec<A> {
+public interface DestinationSpec {
 
   /** The name this is registered and audited under. */
   String name();
@@ -38,5 +38,5 @@ public interface DestinationSpec<A> {
    * <p>Usually constant. It takes the context for the one case that is not: a destination that is a
    * person, where what may be shown depends on who is looking.
    */
-  A ceiling(AccessContext context);
+  Ceiling ceiling(AccessContext context);
 }

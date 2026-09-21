@@ -21,8 +21,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * A capability minted after its store was built is attached to nothing.
@@ -45,30 +47,32 @@ class MintedAfterwardsTest {
 
   private static final SurrogateType<Token> TOKEN_TYPE = SurrogateType.of(Token.class);
 
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+
   interface Value {}
 
   record Token(String value) implements Value {}
 
-  private final SurrogateStoreConfig<Exact<String>, Value> config =
-      new SurrogateStoreConfig<Exact<String>, Value>().lattice(Lattices.exact());
+  private final SurrogateStoreConfig<Value> config = new SurrogateStoreConfig<Value>().axes(TENANT);
 
   private final SurrogateSource<Token> acmeTokens =
-      config.source("acme-tokens", TOKEN_TYPE, ctx -> Exact.of("acme"));
+      config.source("acme-tokens", TOKEN_TYPE, ctx -> Label.of(TENANT, "acme"));
 
-  private final SurrogateStore<Exact<String>> store = MemorySurrogateStore.create(config);
+  private final SurrogateStore store = MemorySurrogateStore.create(config);
 
   private final Surrogate<Token> secret = acmeTokens.exchange(new Token("acme's cardholder token"));
 
   @Test
   @DisplayName("proves the store itself still works, so the refusals below mean something")
   void the_loch_itself_still_works() {
-    assertThat(store.label(secret.id())).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(secret.id())).isEqualTo(Label.of(TENANT, "acme"));
   }
 
   @Test
   @DisplayName("cannot be a source planting a value at somebody else's label")
   void cannot_be_a_source() {
-    SurrogateSource<Token> forged = config.source("forged", TOKEN_TYPE, ctx -> Exact.of("globex"));
+    SurrogateSource<Token> forged =
+        config.source("forged", TOKEN_TYPE, ctx -> Label.of(TENANT, "globex"));
 
     assertThatThrownBy(() -> forged.exchange(new Token("globex owes us 1,000,000")))
         .isInstanceOf(IllegalStateException.class)
@@ -81,7 +85,7 @@ class MintedAfterwardsTest {
     Derivation<Token, Token> forged =
         config
             .derivation("forged", TOKEN_TYPE, TOKEN_TYPE, t -> new Token(t.value()))
-            .acceptingAnything()
+            .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
             .mint();
 
     assertThatThrownBy(() -> forged.derive(secret))
@@ -93,7 +97,7 @@ class MintedAfterwardsTest {
   @DisplayName("cannot be a sink with a ceiling of its own choosing")
   void cannot_be_a_sink() {
     SurrogateSink<Token> forged =
-        config.destination("forged", ctx -> Exact.conflict(), TOKEN_TYPE).reading(TOKEN_TYPE);
+        config.destination("forged", ctx -> Ceiling.nothing(), TOKEN_TYPE).reading(TOKEN_TYPE);
 
     assertThatThrownBy(() -> forged.exchange(secret))
         .isInstanceOf(IllegalStateException.class)
@@ -106,7 +110,7 @@ class MintedAfterwardsTest {
     Fold<Token, Token> forged =
         config
             .fold("forged-fold", TOKEN_TYPE, TOKEN_TYPE, all -> all.getFirst())
-            .acceptingAnything()
+            .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
             .mint();
 
     assertThatThrownBy(() -> forged.fold(List.of(secret)))
@@ -124,7 +128,7 @@ class MintedAfterwardsTest {
                 TOKEN_TYPE,
                 String.class,
                 (token, against, ctx) -> token.value().contains(against))
-            .accepting(ctx -> Exact.conflict())
+            .accepting(ctx -> Ceiling.nothing())
             .mint();
 
     assertThatThrownBy(() -> forged.ask(secret, "cardholder"))

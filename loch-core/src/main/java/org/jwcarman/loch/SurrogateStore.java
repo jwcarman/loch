@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch;
 
+import org.jwcarman.loch.lattice.Label;
+
 /**
  * A governed claim check.
  *
@@ -31,10 +33,8 @@ package org.jwcarman.loch;
  * <p><b>There is no way to read a value without naming a destination.</b> No overload omits it. You
  * cannot obtain plaintext "in general", only plaintext for somewhere, and that somewhere is what
  * policy decides on and what the audit records.
- *
- * @param <A> the application's label type: one record holding whatever labels it cares about
  */
-public interface SurrogateStore<A> {
+public interface SurrogateStore {
 
   /**
    * What a value is labelled, for rendering and for reporting.
@@ -49,10 +49,10 @@ public interface SurrogateStore<A> {
    * <p>Reading a label is not reading a value. This is how a renderer decides what to say about a
    * handle it is not allowed to open.
    */
-  A label(String id);
+  Label label(String id);
 
   /** The label of a value you are holding a typed handle to. */
-  default A label(Surrogate<?> handle) {
+  default Label label(Surrogate<?> handle) {
     return label(handle.id());
   }
 

@@ -22,9 +22,10 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattice;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Erasing somebody else's data.
@@ -47,33 +48,36 @@ class ErasingAcrossTenantsTest {
 
   record Record(String text) {}
 
-  record Labels(Exact<String> tenant, Level level) {
-    static final Lattice<Labels> LATTICE =
-        Lattices.product(
-            Labels::new,
-            Lattices.axis(Labels::tenant, Lattices.exact()),
-            Lattices.axis(Labels::level, Lattices.ladder(Level.LOW, Level.HIGH)));
-  }
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+  private static final Axis<Level> LEVEL = Axis.ladder("level", Level.LOW, Level.HIGH);
 
   @Test
   @DisplayName("is refused, even for a compliance officer")
   void is_refused_even_for_a_compliance_officer() {
     AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-    SurrogateStoreConfig<Labels, Object> config =
-        new SurrogateStoreConfig<Labels, Object>()
-            .lattice(Labels.LATTICE)
+    SurrogateStoreConfig<Object> config =
+        new SurrogateStoreConfig<Object>()
+            .axes(TENANT, LEVEL)
             .currentAccess(edge::get)
             .mayErase(
                 (label, ctx) ->
                     ctx.has("role", "compliance")
-                        && label.tenant().resolved().filter(t -> ctx.has("tenant", t)).isPresent());
+                        && ctx.get("tenant")
+                            .map(
+                                tenant ->
+                                    Ceiling.of(TENANT, Constraint.atMost(tenant))
+                                        .with(LEVEL, Constraint.any())
+                                        .permits(label))
+                            .orElse(false));
 
     SurrogateSource<Record> globexRecords =
         config.source(
-            "globex-records", RECORD_TYPE, ctx -> new Labels(Exact.of("globex"), Level.HIGH));
+            "globex-records",
+            RECORD_TYPE,
+            ctx -> Label.of(TENANT, "globex").with(LEVEL, Level.HIGH));
 
-    SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
+    SurrogateStore store = MemorySurrogateStore.create(config);
 
     Surrogate<Record> globexRecord = globexRecords.exchange(new Record("globex's records"));
 

@@ -15,6 +15,8 @@
  */
 package org.jwcarman.loch;
 
+import org.jwcarman.loch.lattice.Label;
+
 /**
  * Everything about a held value except the value.
  *
@@ -26,4 +28,4 @@ package org.jwcarman.loch;
  *     rather than a reconstructed type, because comparing what was written to what is asked for
  *     needs no parser and cannot be fooled by one.
  */
-public record StoredMetadata<A>(String typeName, A label, Lineage lineage) {}
+public record StoredMetadata(String typeName, Label label, Lineage lineage) {}

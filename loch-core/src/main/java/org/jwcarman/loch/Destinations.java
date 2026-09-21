@@ -17,6 +17,7 @@ package org.jwcarman.loch;
 
 import java.util.Objects;
 import java.util.function.Function;
+import org.jwcarman.loch.lattice.Ceiling;
 
 /**
  * Ways to declare a {@link DestinationSpec}, which is always done at wiring and never at a call
@@ -27,17 +28,17 @@ public final class Destinations {
   private Destinations() {}
 
   /** A destination that accepts the same thing regardless of who is asking: nearly all of them. */
-  public static <A> DestinationSpec<A> fixed(String name, A ceiling) {
+  public static DestinationSpec fixed(String name, Ceiling ceiling) {
     Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
-    return new DestinationSpec<>() {
+    return new DestinationSpec() {
       @Override
       public String name() {
         return name;
       }
 
       @Override
-      public A ceiling(AccessContext context) {
+      public Ceiling ceiling(AccessContext context) {
         return ceiling;
       }
     };
@@ -49,17 +50,17 @@ public final class Destinations {
    * <p>For people. An approval card may show a finance approver more than it shows anyone else, and
    * that is a decision only the application can make, from context only the application supplied.
    */
-  public static <A> DestinationSpec<A> varying(String name, Function<AccessContext, A> ceiling) {
+  public static DestinationSpec varying(String name, Function<AccessContext, Ceiling> ceiling) {
     Objects.requireNonNull(name, "a destination needs a name");
     Objects.requireNonNull(ceiling, "a destination needs a ceiling");
-    return new DestinationSpec<>() {
+    return new DestinationSpec() {
       @Override
       public String name() {
         return name;
       }
 
       @Override
-      public A ceiling(AccessContext context) {
+      public Ceiling ceiling(AccessContext context) {
         return Objects.requireNonNull(
             ceiling.apply(context), "a ceiling function must not return null");
       }

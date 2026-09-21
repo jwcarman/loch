@@ -41,6 +41,8 @@ import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.StoredMetadata;
 import org.jwcarman.loch.StoredValue;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Storage in a database, with every payload encrypted.
@@ -58,7 +60,7 @@ import org.jwcarman.loch.StoredValue;
  * <p>Derived values arrive with their parentage, and reachability is maintained as they are stored,
  * so erasing a value and everything made from it is one indexed query.
  */
-public final class JdbcStorage<A> implements Storage<A> {
+public final class JdbcStorage implements Storage {
 
   private static final String INSERT_AUDIT =
       """
@@ -107,15 +109,25 @@ public final class JdbcStorage<A> implements Storage<A> {
   private final DataSource dataSource;
   private final CodecFactory codecs;
   private final StorageCodec storageCodec;
-  private final Codec<A> labels;
+  private final Codec<java.util.Map<String, String>> labels;
+  private final java.util.List<Axis<?>> axes;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
 
   JdbcStorage(
-      DataSource dataSource, CodecFactory codecs, StorageCodec storageCodec, Class<A> labelType) {
+      DataSource dataSource,
+      CodecFactory codecs,
+      StorageCodec storageCodec,
+      java.util.List<Axis<?>> axes) {
     this.dataSource = dataSource;
     this.codecs = codecs;
     this.storageCodec = storageCodec;
-    this.labels = codecs.create(labelType).andThen(storageCodec);
+    this.axes = java.util.List.copyOf(axes);
+    // One axis at a time, keyed by name. A record would have gone to disk positionally, and then
+    // declaring a fourth axis would make every row already written undecodable.
+    this.labels =
+        codecs
+            .create(TypeRef.mapOf(TypeRef.of(String.class), TypeRef.of(String.class)))
+            .andThen(storageCodec);
   }
 
   /** Creates the tables if they are not there. */
@@ -134,7 +146,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public void put(String id, StoredValue<A> value, AuditRecord record) {
+  public void put(String id, StoredValue value, AuditRecord record) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
@@ -184,13 +196,13 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private void insertValue(Connection connection, String id, StoredValue<A> value)
+  private void insertValue(Connection connection, String id, StoredValue value)
       throws SQLException {
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id);
       statement.setString(2, value.type().name());
       statement.setBytes(3, encode(value.type().type(), value.value()));
-      statement.setBytes(4, labels.encode(value.label()));
+      statement.setBytes(4, labels.encode(value.label().encode()));
       statement.setString(5, value.lineage().derivation().orElse(null));
       statement.setTimestamp(6, Timestamp.from(Instant.now()));
       statement.executeUpdate();
@@ -221,7 +233,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public Optional<StoredMetadata<A>> metadata(String id) {
+  public Optional<StoredMetadata> metadata(String id) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(SELECT_METADATA)) {
       statement.setString(1, id);
@@ -229,13 +241,13 @@ public final class JdbcStorage<A> implements Storage<A> {
         if (!rows.next()) {
           return Optional.empty();
         }
-        A label = labels.decode(rows.getBytes("label"));
+        Label label = Label.decode(labels.decode(rows.getBytes("label")), axes);
         String derivation = rows.getString("derivation");
         Lineage lineage =
             derivation == null
                 ? Lineage.held()
                 : Lineage.derivedFrom(parentsOf(connection, id), derivation);
-        return Optional.of(new StoredMetadata<>(rows.getString("value_type"), label, lineage));
+        return Optional.of(new StoredMetadata(rows.getString("value_type"), label, lineage));
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not read " + id, e);

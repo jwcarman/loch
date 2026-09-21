@@ -19,8 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Every gate in this library is application code, and application code throws.
@@ -38,13 +40,15 @@ class PolicyThatCannotDecideTest {
 
   private static final SurrogateType<String> STRING_TYPE = SurrogateType.of(String.class);
 
-  private final MemoryStorage<Exact<String>> storage = new MemoryStorage<>();
+  private static final Axis<String> TENANT = Axis.matching("tenant");
 
-  private final SurrogateStoreConfig<Exact<String>, Object> config =
-      new SurrogateStoreConfig<Exact<String>, Object>().lattice(Lattices.exact());
+  private final MemoryStorage storage = new MemoryStorage();
+
+  private final SurrogateStoreConfig<Object> config =
+      new SurrogateStoreConfig<Object>().axes(TENANT);
 
   private final SurrogateSource<String> source =
-      config.source("source", STRING_TYPE, ctx -> Exact.of("acme"));
+      config.source("source", STRING_TYPE, ctx -> Label.of(TENANT, "acme"));
 
   private final SurrogateSink<String> sinkWhoseCeilingThrows =
       config.destination("anywhere", ctx -> boom(), STRING_TYPE).reading(STRING_TYPE);
@@ -58,7 +62,7 @@ class PolicyThatCannotDecideTest {
   private final Query<String, String> queryWhoseGateThrows =
       config
           .query("query-gate", STRING_TYPE, String.class, (v, q, ctx) -> v.equals(q))
-          .acceptingAnything()
+          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
           .availableTo(ctx -> boom())
           .mint();
 
@@ -71,17 +75,17 @@ class PolicyThatCannotDecideTest {
   private final Derivation<String, String> loweringThrows =
       config
           .derivation("lowering", STRING_TYPE, STRING_TYPE, String::toUpperCase)
-          .acceptingAnything()
+          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
           .lowering(joined -> boom())
           .mint();
 
   private final Derivation<String, String> functionThrows =
       config
           .derivation("function", STRING_TYPE, STRING_TYPE, value -> boom())
-          .acceptingAnything()
+          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
           .mint();
 
-  private final SurrogateStore<Exact<String>> store = new DefaultSurrogateStore<>(config, storage);
+  private final SurrogateStore store = new DefaultSurrogateStore(config, storage);
 
   private final Surrogate<String> held = source.exchange("secret");
 

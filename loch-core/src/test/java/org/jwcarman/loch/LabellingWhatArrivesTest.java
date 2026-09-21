@@ -21,9 +21,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattice;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * A source labels what arrives, and sometimes only the thing itself can say how.
@@ -48,21 +47,16 @@ class LabellingWhatArrivesTest {
     UNENDORSED
   }
 
-  record Labels(Exact<String> tenant, Integrity integrity) {
-    static final Lattice<Labels> LATTICE =
-        Lattices.product(
-            Labels::new,
-            Lattices.axis(Labels::tenant, Lattices.exact()),
-            Lattices.axis(
-                Labels::integrity, Lattices.ladder(Integrity.ENDORSED, Integrity.UNENDORSED)));
-  }
+  private static final Axis<String> TENANT = Axis.matching("tenant");
+  private static final Axis<Integrity> INTEGRITY =
+      Axis.ladder("integrity", Integrity.ENDORSED, Integrity.UNENDORSED);
 
   record Mail(String from, String body, boolean senderVerified) {}
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Labels, Object> config =
-      new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE).currentAccess(edge::get);
+  private final SurrogateStoreConfig<Object> config =
+      new SurrogateStoreConfig<Object>().axes(TENANT, INTEGRITY).currentAccess(edge::get);
 
   /** The tenant comes from the access; the trust comes from the message. */
   private final SurrogateSource<Mail> mail =
@@ -70,12 +64,21 @@ class LabellingWhatArrivesTest {
           "customer-mail",
           MAIL_TYPE,
           (message, ctx) ->
-              new Labels(
-                  ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                  message.senderVerified() ? Integrity.ENDORSED : Integrity.UNENDORSED));
+              ctx.get("tenant")
+                  .map(tenant -> Label.of(TENANT, tenant))
+                  .orElseGet(Label::nothing)
+                  .with(
+                      INTEGRITY,
+                      message.senderVerified() ? Integrity.ENDORSED : Integrity.UNENDORSED));
 
-  private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
+  private final SurrogateStore store = MemorySurrogateStore.create(config);
 
+  // there is no direct way left to ask what a stored label says on a given axis. Label.toString()
+  // is the only supported path back to a per-axis value, and it is documented for rendering only
+  // ("For a manifest line or an audit row. Never for a decision."). Using it here to assert what a
+  // label says is a real deviation from PRESERVE-exactly, flagged for James: this test's whole
+  // point -- that the source's labelling function reads part of the label from the value -- cannot
+  // be checked any other way against the current API.
   @Test
   @DisplayName("takes the part of the label that only the value knows")
   void takes_the_part_only_the_value_knows() {
@@ -84,8 +87,8 @@ class LabellingWhatArrivesTest {
     Surrogate<Mail> verified = mail.exchange(new Mail("known@acme.example", "hello", true));
     Surrogate<Mail> anonymous = mail.exchange(new Mail("who@nowhere.example", "hello", false));
 
-    assertThat(store.label(verified.id()).integrity()).isEqualTo(Integrity.ENDORSED);
-    assertThat(store.label(anonymous.id()).integrity()).isEqualTo(Integrity.UNENDORSED);
+    assertThat(store.label(verified.id()).says(INTEGRITY, Integrity.ENDORSED)).isTrue();
+    assertThat(store.label(anonymous.id()).says(INTEGRITY, Integrity.UNENDORSED)).isTrue();
   }
 
   /** The rest of the label is still the access's business, and the value cannot touch it. */
@@ -95,6 +98,6 @@ class LabellingWhatArrivesTest {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
     Surrogate<Mail> acmeMail = mail.exchange(new Mail("x@y.example", "globex globex globex", true));
 
-    assertThat(store.label(acmeMail.id()).tenant()).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(acmeMail.id()).says(TENANT, "acme")).isTrue();
   }
 }

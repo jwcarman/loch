@@ -32,9 +32,9 @@ public final class MemorySurrogateStore {
 
   private MemorySurrogateStore() {}
 
-  /** Builds one. The customizer is where the lattice, destinations and auditor are declared. */
-  public static <A, D> SurrogateStore<A> create(Consumer<SurrogateStoreConfig<A, D>> customizer) {
-    SurrogateStoreConfig<A, D> config = new SurrogateStoreConfig<>();
+  /** Builds one. The customizer is where the axes, destinations and portals are declared. */
+  public static <D> SurrogateStore create(Consumer<SurrogateStoreConfig<D>> customizer) {
+    SurrogateStoreConfig<D> config = new SurrogateStoreConfig<>();
     customizer.accept(config);
     return create(config);
   }
@@ -47,12 +47,12 @@ public final class MemorySurrogateStore {
    *
    * <pre>{@code
    * SurrogateStoreConfig<Billing, BillingValue> c = new SurrogateStoreConfig<>();
-   * c.lattice(Billing.LATTICE).auditor(auditor);
+   * c.axes(TENANT, INTEGRITY, SENSITIVITY);
    * SurrogateSource<Mail> mail = c.source(CUSTOMER_MAIL, Mail.class, ctx -> ...);
    * SurrogateStore<Billing> store = MemorySurrogateStore.create(c);
    * }</pre>
    */
-  public static <A, D> SurrogateStore<A> create(SurrogateStoreConfig<A, D> config) {
-    return new DefaultSurrogateStore<>(config, new MemoryStorage<>());
+  public static <D> SurrogateStore create(SurrogateStoreConfig<D> config) {
+    return new DefaultSurrogateStore(config, new MemoryStorage());
   }
 }

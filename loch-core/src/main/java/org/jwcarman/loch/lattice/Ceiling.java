@@ -44,7 +44,12 @@ public final class Ceiling {
     this.bounds = bounds;
   }
 
-  /** A ceiling that admits nothing, because it has yet to say what it is entitled to. */
+  /**
+   * A ceiling entitled to nothing, because it has yet to say what it is entitled to.
+   *
+   * <p>It admits a label that says nothing at all, which is the only thing below every ceiling, and
+   * refuses everything else -- so it is the fail-closed starting point rather than a closed door.
+   */
   public static Ceiling nothing() {
     return new Ceiling(Map.of());
   }

@@ -20,7 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * Identity is known at the edge and needed at the gate, which may be many layers down.
@@ -38,6 +41,9 @@ class AmbientContextTest {
     FINANCE
   }
 
+  private static final Axis<Clearance> CLEARANCE =
+      Axis.ladder("clearance", Clearance.NONE, Clearance.FINANCE);
+
   private final AtomicReference<String> currentUser = new AtomicReference<>("support");
 
   /**
@@ -46,18 +52,23 @@ class AmbientContextTest {
    * <p>Capabilities are attached when the store is built, so they have to be minted first. A record
    * keeps the three together without every test repeating the order.
    */
-  record Wired(
-      SurrogateStore<Clearance> store, SurrogateSource<String> cards, SurrogateSink<String> card) {}
+  record Wired(SurrogateStore store, SurrogateSource<String> cards, SurrogateSink<String> card) {}
 
   private static Wired wire(
-      java.util.function.Consumer<SurrogateStoreConfig<Clearance, Object>> settings,
+      java.util.function.Consumer<SurrogateStoreConfig<Object>> settings,
       java.util.function.Function<AccessContext, Clearance> ceiling) {
-    SurrogateStoreConfig<Clearance, Object> config = new SurrogateStoreConfig<>();
-    config.lattice(Lattices.ladder(Clearance.NONE, Clearance.FINANCE));
+    SurrogateStoreConfig<Object> config = new SurrogateStoreConfig<>();
+    config.axes(CLEARANCE);
     settings.accept(config);
-    SurrogateSource<String> cards = config.source("cards", STRING_TYPE, ctx -> Clearance.FINANCE);
+    SurrogateSource<String> cards =
+        config.source("cards", STRING_TYPE, ctx -> Label.of(CLEARANCE, Clearance.FINANCE));
     SurrogateSink<String> card =
-        config.destination("card", ceiling, STRING_TYPE).reading(STRING_TYPE);
+        config
+            .destination(
+                "card",
+                ctx -> Ceiling.of(CLEARANCE, Constraint.atMost(ceiling.apply(ctx))),
+                STRING_TYPE)
+            .reading(STRING_TYPE);
     return new Wired(MemorySurrogateStore.create(config), cards, card);
   }
 

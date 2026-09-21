@@ -22,9 +22,10 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.lattice.Exact;
-import org.jwcarman.loch.lattice.Lattice;
-import org.jwcarman.loch.lattice.Lattices;
+import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
+import org.jwcarman.loch.lattice.Label;
 
 /**
  * An axis that has to be said.
@@ -47,21 +48,17 @@ class RequiredAxisTest {
     HIGH
   }
 
-  record Labels(Exact<String> tenant, Level level) {
-    /** The tenant has to be said. The level has a meaningful bottom and does not. */
-    static final Lattice<Labels> LATTICE =
-        Lattices.product(
-            Labels::new,
-            Lattices.axis(Labels::tenant, Lattices.<String>exact()).required(),
-            Lattices.axis(Labels::level, Lattices.ladder(Level.LOW, Level.HIGH)));
-  }
+  /** The tenant has to be said. The level has a meaningful bottom and does not. */
+  private static final Axis<String> TENANT = Axis.matching("tenant").required();
+
+  private static final Axis<Level> LEVEL = Axis.ladder("level", Level.LOW, Level.HIGH);
 
   record Note(String text) {}
 
   private final AtomicReference<AccessContext> edge = new AtomicReference<>(AccessContext.empty());
 
-  private final SurrogateStoreConfig<Labels, Object> config =
-      new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE).currentAccess(edge::get);
+  private final SurrogateStoreConfig<Object> config =
+      new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL).currentAccess(edge::get);
 
   /** Exactly what an application would naturally write, including the part that was the leak. */
   private final SurrogateSource<Note> notes =
@@ -69,23 +66,29 @@ class RequiredAxisTest {
           "notes",
           NOTE_TYPE,
           ctx ->
-              new Labels(
-                  ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                  Level.HIGH));
+              ctx.get("tenant")
+                  .map(tenant -> Label.of(TENANT, tenant))
+                  .orElseGet(Label::nothing)
+                  .with(LEVEL, Level.HIGH));
 
   private final SurrogateSink<Note> reporting =
       config
           .destination(
               "reporting",
               ctx ->
-                  new Labels(
-                      ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                      Level.HIGH),
+                  ctx.get("tenant")
+                      .map(tenant -> Ceiling.of(TENANT, Constraint.atMost(tenant)))
+                      .orElseGet(() -> Ceiling.of(TENANT, Constraint.any()))
+                      .with(LEVEL, Constraint.atMost(Level.HIGH)),
               NOTE_TYPE)
           .reading(NOTE_TYPE);
 
-  private final SurrogateStore<Labels> store = MemorySurrogateStore.create(config);
+  private final SurrogateStore store = MemorySurrogateStore.create(config);
 
+  // that used to read `.tenant()` / `.level()` off a stored label are re-expressed against
+  // Label.toString(), which is documented for rendering only ("Never for a decision"). This is a
+  // deviation from PRESERVE-exactly, flagged for James: there is no supported way in the new API to
+  // assert what a stored label says on a given axis other than string-matching its render.
   @Test
   @DisplayName("is written when it was said")
   void is_written_when_it_was_said() {
@@ -93,7 +96,7 @@ class RequiredAxisTest {
 
     Surrogate<Note> note = notes.exchange(new Note("ours"));
 
-    assertThat(store.label(note.id()).tenant()).isEqualTo(Exact.of("acme"));
+    assertThat(store.label(note.id()).says(TENANT, "acme")).isTrue();
   }
 
   /** The whole point: a value nobody can attribute is a value everybody can read. */
@@ -111,18 +114,19 @@ class RequiredAxisTest {
   @Test
   @DisplayName("and says so in the record")
   void and_says_so_in_the_record() {
-    SurrogateStoreConfig<Labels, Object> own =
-        new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE).currentAccess(edge::get);
+    SurrogateStoreConfig<Object> own =
+        new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL).currentAccess(edge::get);
     SurrogateSource<Note> watched =
         own.source(
             "notes",
             NOTE_TYPE,
             ctx ->
-                new Labels(
-                    ctx.get("tenant").<Exact<String>>map(Exact::of).orElseGet(Exact::none),
-                    Level.HIGH));
-    MemoryStorage<Labels> storage = new MemoryStorage<>();
-    SurrogateStore<Labels> unused = new DefaultSurrogateStore<>(own, storage);
+                ctx.get("tenant")
+                    .map(tenant -> Label.of(TENANT, tenant))
+                    .orElseGet(Label::nothing)
+                    .with(LEVEL, Level.HIGH));
+    MemoryStorage storage = new MemoryStorage();
+    SurrogateStore unused = new DefaultSurrogateStore(own, storage);
     edge.set(AccessContext.empty());
 
     assertThatThrownBy(() -> watched.exchange(new Note("orphan")))
@@ -140,13 +144,12 @@ class RequiredAxisTest {
   @DisplayName("does not constrain an axis whose bottom means something")
   void does_not_constrain_an_axis_whose_bottom_means_something() {
     edge.set(AccessContext.of(Map.of("tenant", "acme")));
-    SurrogateStoreConfig<Labels, Object> own =
-        new SurrogateStoreConfig<Labels, Object>().lattice(Labels.LATTICE);
+    SurrogateStoreConfig<Object> own = new SurrogateStoreConfig<Object>().axes(TENANT, LEVEL);
     SurrogateSource<Note> low =
-        own.source("low", NOTE_TYPE, ctx -> new Labels(Exact.of("acme"), Level.LOW));
-    SurrogateStore<Labels> other = MemorySurrogateStore.create(own);
+        own.source("low", NOTE_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
+    SurrogateStore other = MemorySurrogateStore.create(own);
 
-    assertThat(other.label(low.exchange(new Note("fine")).id()).level()).isEqualTo(Level.LOW);
+    assertThat(other.label(low.exchange(new Note("fine")).id()).says(LEVEL, Level.LOW)).isTrue();
   }
 
   @Test

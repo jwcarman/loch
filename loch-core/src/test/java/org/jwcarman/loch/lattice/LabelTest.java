@@ -236,6 +236,28 @@ class LabelTest {
         .hasMessageContaining("sensitivity");
   }
 
+  @Test
+  @DisplayName("says exactly what it was told, and nothing near it")
+  void says_exactly_what_it_was_told() {
+    Label label = labelled("acme", Integrity.ENDORSED, Sensitivity.PERSONAL);
+
+    assertThat(label.says(TENANT, "acme")).isTrue();
+    assertThat(label.says(TENANT, "acmecorp")).isFalse();
+    assertThat(label.says(SENSITIVITY, Sensitivity.PERSONAL)).isTrue();
+    assertThat(label.says(SENSITIVITY, Sensitivity.CARDHOLDER)).isFalse();
+  }
+
+  /** Neither of the two things a matching axis can hold that nobody can write down. */
+  @Test
+  @DisplayName("says neither a mixture nor an absence is any value you could name")
+  void says_neither_a_mixture_nor_an_absence_is_a_value() {
+    Label mixed = Label.of(TENANT, "acme").join(Label.of(TENANT, "globex"));
+
+    assertThat(mixed.says(TENANT, "acme")).isFalse();
+    assertThat(mixed.says(TENANT, "globex")).isFalse();
+    assertThat(Label.nothing().says(TENANT, "acme")).isFalse();
+  }
+
   /** Two labels saying the same things are the same label, whatever order they were built in. */
   @Test
   @DisplayName("does not care what order it was built in")
