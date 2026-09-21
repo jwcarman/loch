@@ -81,10 +81,12 @@ class MintedAfterwardsTest {
   void cannot_be_a_derivation() {
     assertThatThrownBy(
             () ->
-                config
-                    .derivation("forged", TOKEN_TYPE, TOKEN_TYPE, t -> new Token(t.value()))
-                    .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
-                    .mint())
+                config.derivation(
+                    "forged",
+                    TOKEN_TYPE,
+                    TOKEN_TYPE,
+                    t -> new Token(t.value()),
+                    d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("has been sealed");
   }
@@ -106,10 +108,12 @@ class MintedAfterwardsTest {
   void cannot_be_a_fold() {
     assertThatThrownBy(
             () ->
-                config
-                    .fold("forged-fold", TOKEN_TYPE, TOKEN_TYPE, all -> all.getFirst())
-                    .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
-                    .mint())
+                config.fold(
+                    "forged-fold",
+                    TOKEN_TYPE,
+                    TOKEN_TYPE,
+                    all -> all.getFirst(),
+                    d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("has been sealed");
   }
@@ -119,14 +123,12 @@ class MintedAfterwardsTest {
   void cannot_be_a_query() {
     assertThatThrownBy(
             () ->
-                config
-                    .query(
-                        "forged-query",
-                        TOKEN_TYPE,
-                        String.class,
-                        (token, against, ctx) -> token.value().contains(against))
-                    .accepting(ctx -> Ceiling.nothing())
-                    .mint())
+                config.query(
+                    "forged-query",
+                    TOKEN_TYPE,
+                    String.class,
+                    (token, against, ctx) -> token.value().contains(against),
+                    d -> d.accepting(ctx -> Ceiling.nothing())))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("has been sealed");
   }

@@ -227,9 +227,9 @@ public final class DefaultCharter implements Charter {
   /**
    * Records a type and refuses a name that already means something else.
    *
-   * <p>Called by every mint, so the check does not depend on how the type was declared. A name has
-   * to identify one type: two of them sharing a name means a reader is handed the wrong one, and
-   * finding that out at startup beats finding it out from a decode failure in production.
+   * <p>Called by every declaration, so the check does not depend on how the type was declared. A
+   * name has to identify one type: two of them sharing a name means a reader is handed the wrong
+   * one, and finding that out at startup beats finding it out from a decode failure in production.
    */
   <T> SurrogateType<T> registered(SurrogateType<T> declared) {
     SurrogateType<?> existing = configuration().types().get(declared.name());
@@ -320,8 +320,8 @@ public final class DefaultCharter implements Charter {
    * <p>Both restrictions are settled here and neither can be widened afterwards. The ceiling says
    * which labels may arrive; {@code reads} says which types come back out. Because both are fixed
    * before any reader exists, a reader is a typed view rather than a grant -- which is what makes
-   * one safe to mint on demand, and the destination itself safe to hand to the service that talks
-   * to that subsystem.
+   * one safe to constitute on demand, and the destination itself safe to hand to the service that
+   * talks to that subsystem.
    *
    * @param reads every type this destination will hand over, and no others
    */
@@ -408,16 +408,21 @@ public final class DefaultCharter implements Charter {
    * where the parents share a type, use {@link #fold}.
    */
   /** The same, for types already declared. */
-  public <I, O> Minting<O, Derivation<I, O>> derivation(
-      String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function) {
-    return new Minting<>(
-        this,
+  @Override
+  public <I, O> Derivation<I, O> derivation(
+      String name,
+      SurrogateType<I> input,
+      SurrogateType<O> output,
+      Function<I, O> function,
+      java.util.function.Consumer<DerivationConfig> customizer) {
+    return constitute(
         name,
         List.<SurrogateType<?>>of(input),
         output,
         (values, context) ->
             Optional.ofNullable(function.apply(input.type().rawClass().cast(values.getFirst()))),
         false,
+        customizer,
         (spec, lifecycle) ->
             new Derivation<I, O>() {
               @Override
@@ -432,19 +437,21 @@ public final class DefaultCharter implements Charter {
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
   /** The same, for types already declared. */
-  public <I, O> Minting<O, Derivation<I, O>> checking(
+  @Override
+  public <I, O> Derivation<I, O> checking(
       String name,
       SurrogateType<I> input,
       SurrogateType<O> output,
-      java.util.function.BiFunction<I, AccessContext, Optional<O>> function) {
-    return new Minting<>(
-        this,
+      java.util.function.BiFunction<I, AccessContext, Optional<O>> function,
+      java.util.function.Consumer<DerivationConfig> customizer) {
+    return constitute(
         name,
         List.<SurrogateType<?>>of(input),
         output,
         (values, context) ->
             function.apply(input.type().rawClass().cast(values.getFirst()), context),
         false,
+        customizer,
         (spec, lifecycle) ->
             new Derivation<I, O>() {
               @Override
@@ -462,10 +469,14 @@ public final class DefaultCharter implements Charter {
    * something labelled for both, which no destination admits.
    */
   /** The same, for types already declared. */
-  public <I, O> Minting<O, Fold<I, O>> fold(
-      String name, SurrogateType<I> input, SurrogateType<O> output, Function<List<I>, O> function) {
-    return new Minting<>(
-        this,
+  @Override
+  public <I, O> Fold<I, O> fold(
+      String name,
+      SurrogateType<I> input,
+      SurrogateType<O> output,
+      Function<List<I>, O> function,
+      java.util.function.Consumer<DerivationConfig> customizer) {
+    return constitute(
         name,
         List.<SurrogateType<?>>of(input),
         output,
@@ -473,6 +484,7 @@ public final class DefaultCharter implements Charter {
             Optional.ofNullable(
                 function.apply(values.stream().map(v -> input.type().rawClass().cast(v)).toList())),
         true,
+        customizer,
         (spec, lifecycle) ->
             new Fold<I, O>() {
               @Override
@@ -481,6 +493,54 @@ public final class DefaultCharter implements Charter {
                     .deriveVia(spec, List.copyOf(parents));
               }
             });
+  }
+
+  /**
+   * Declares one derivation-shaped authority and hands back the portal.
+   *
+   * <p>Every arity comes through here, which is why the ceiling check lives in one place. A
+   * derivation reads plaintext, so it has to say what it may look at; there is no default, because
+   * a default here would be a policy nobody wrote.
+   */
+  private <O, C> C constitute(
+      String name,
+      List<SurrogateType<?>> inputTypes,
+      SurrogateType<O> outputType,
+      java.util.function.BiFunction<List<Object>, AccessContext, Optional<O>> function,
+      boolean fold,
+      java.util.function.Consumer<DerivationConfig> customizer,
+      java.util.function.BiFunction<
+              DerivationSpec<O>, java.util.concurrent.atomic.AtomicReference<State>, C>
+          capability) {
+    Objects.requireNonNull(name, "a derivation needs a name");
+    Objects.requireNonNull(customizer, "a derivation needs to say what it may read");
+    DerivationConfig settings = new DerivationConfig();
+    customizer.accept(settings);
+    if (settings.ceiling() == null) {
+      throw new IllegalStateException(
+          "'"
+              + name
+              + "' reads plaintext, so it needs a ceiling: call accepting(...) with what it may"
+              + " look at, saying any() on the axes it is deliberately broad about");
+    }
+    DerivationSpec<O> spec =
+        new DerivationSpec<>(
+            name,
+            inputTypes,
+            outputType,
+            function,
+            settings.ceiling(),
+            settings.relabel(),
+            settings.availableTo(),
+            fold);
+    var lifecycle = lifecycle();
+    SurrogateType<?>[] declared = new SurrogateType<?>[inputTypes.size() + 1];
+    inputTypes.toArray(declared);
+    declared[inputTypes.size()] = outputType;
+    return declare(
+        configuration ->
+            new Declared<>(
+                recording(configuration, declared).with(spec), capability.apply(spec, lifecycle)));
   }
 
   List<DerivationSpec<?>> derivations() {
@@ -591,12 +651,43 @@ public final class DefaultCharter implements Charter {
    * {@link Query}.
    */
   /** The same, for a type already declared. */
-  public <I, Q> Querying<I, Q> query(
-      String name, SurrogateType<I> input, Class<Q> against, Query.Asking<I, Q> asking) {
-    Objects.requireNonNull(name, "a query needs a name");
-    Objects.requireNonNull(against, "a query needs to say what it is asked against");
-    Objects.requireNonNull(asking, "a query needs something to ask");
-    return new Querying<>(this, name, input, asking);
+  @Override
+  public <I, Q> Query<I, Q> query(
+      String name,
+      SurrogateType<I> input,
+      Class<Q> against,
+      Query.Asking<I, Q> asking,
+      java.util.function.Consumer<QueryConfig> customizer) {
+    Objects.requireNonNull(name, "a question needs a name");
+    Objects.requireNonNull(customizer, "a question needs to say what it may read");
+    QueryConfig settings = new QueryConfig();
+    customizer.accept(settings);
+    if (settings.ceiling() == null) {
+      throw new IllegalStateException(
+          "'"
+              + name
+              + "' reads plaintext to answer, so it needs a ceiling: call accepting(...) with what"
+              + " it may look at, saying any() on the axes it is deliberately broad about");
+    }
+    QuerySpec<I, Q> spec =
+        new QuerySpec<>(name, input, asking, settings.ceiling(), settings.availableTo());
+    var lifecycle = lifecycle();
+    String what = "query '" + name + "'";
+    return declare(
+        configuration ->
+            new Declared<>(
+                recording(configuration, input).with(spec),
+                new Query<I, Q>() {
+                  @Override
+                  public Answer ask(Surrogate<I> about, Q against) {
+                    return engineOf(lifecycle, what).askVia(spec, about, against);
+                  }
+
+                  @Override
+                  public String toString() {
+                    return what;
+                  }
+                }));
   }
 
   /** What a query still needs said about it before it becomes a capability. */

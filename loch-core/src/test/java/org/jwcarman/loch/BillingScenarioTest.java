@@ -280,104 +280,97 @@ class BillingScenarioTest {
 
   // A projection. Cannot weaken anything, so it needs no ceremony.
   private final Derivation<DisputeClaim, InvoiceNumber> claimedInvoice =
-      config
-          .derivation(
-              CLAIMED_INVOICE,
-              DISPUTE_CLAIM_TYPE,
-              INVOICE_NUMBER_TYPE,
-              claim -> new InvoiceNumber(claim.invoiceNumber()))
-          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .mint();
+      config.derivation(
+          CLAIMED_INVOICE,
+          DISPUTE_CLAIM_TYPE,
+          INVOICE_NUMBER_TYPE,
+          claim -> new InvoiceNumber(claim.invoiceNumber()),
+          d -> d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII)));
 
   // Truncating a card IS a declassification, and PCI auditors ask about it.
   private final Derivation<String, Last4> cardLast4 =
-      config
-          .derivation(
-              CARD_LAST4,
-              STRING_TYPE,
-              LAST4_TYPE,
-              token -> new Last4(token.substring(token.length() - 4)))
-          .accepting(ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-          // Both dimensions, deliberately: four digits are neither cardholder
-          // data nor RED any more, and saying so is the reviewed act.
-          .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII).with(TLP, Tlp.AMBER))
-          .availableTo(ctx -> ctx.has("tool", "prepare_approval"))
-          .mint();
+      config.derivation(
+          CARD_LAST4,
+          STRING_TYPE,
+          LAST4_TYPE,
+          token -> new Last4(token.substring(token.length() - 4)),
+          d ->
+              d.accepting(ctx -> ceilingFor(ctx, Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+                  // Both dimensions, deliberately: four digits are neither cardholder
+                  // data nor RED any more, and saying so is the reviewed act.
+                  .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII).with(TLP, Tlp.AMBER))
+                  .availableTo(ctx -> ctx.has("tool", "prepare_approval")));
 
   // The same truncation, lowering only one dimension. Still cannot be shown.
   private final Derivation<String, Last4> cardLast4Partial =
-      config
-          .derivation(
-              CARD_LAST4_PARTIAL,
-              STRING_TYPE,
-              LAST4_TYPE,
-              token -> new Last4(token.substring(token.length() - 4)))
-          .accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
-          .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII))
-          .mint();
+      config.derivation(
+          CARD_LAST4_PARTIAL,
+          STRING_TYPE,
+          LAST4_TYPE,
+          token -> new Last4(token.substring(token.length() - 4)),
+          d ->
+              d.accepting(reading(Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER))
+                  .lowering(joined -> joined.with(DATA_CLASS, DataClass.PII)));
 
   // Declares itself an endorsement without checking anything. The charter refuses it.
   private final Derivation<DisputeClaim, InvoiceNumber> wishful =
-      config
-          .derivation(
-              WISHFUL,
-              DISPUTE_CLAIM_TYPE,
-              INVOICE_NUMBER_TYPE,
-              claim -> new InvoiceNumber(claim.invoiceNumber()))
-          .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-          .lowering(joined -> joined.with(INTEGRITY, Integrity.UNENDORSED))
-          .mint();
+      config.derivation(
+          WISHFUL,
+          DISPUTE_CLAIM_TYPE,
+          INVOICE_NUMBER_TYPE,
+          claim -> new InvoiceNumber(claim.invoiceNumber()),
+          d ->
+              d.accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
+                  .lowering(joined -> joined.with(INTEGRITY, Integrity.UNENDORSED)));
 
   // Several values in, one out. Every parent's label lands on the result.
   private final Fold<String, Report> summarise =
-      config
-          .fold(SUMMARISE, STRING_TYPE, REPORT_TYPE, notes -> new Report(String.join(" / ", notes)))
+      config.fold(
+          SUMMARISE,
+          STRING_TYPE,
+          REPORT_TYPE,
+          notes -> new Report(String.join(" / ", notes)),
           // An internal reporting job, entitled to read across tenants. The point
           // of the test below is what happens to what it produces, not whether it
           // may read: a ceiling would refuse the combination earlier, and then
           // there would be nothing to demonstrate.
-          .accepting(
-              ctx ->
-                  Ceiling.of(TENANT, Constraint.any())
-                      .with(INTEGRITY, Constraint.any())
-                      .with(TLP, Constraint.any())
-                      .with(DATA_CLASS, Constraint.any()))
-          .mint();
+          d ->
+              d.accepting(
+                  ctx ->
+                      Ceiling.of(TENANT, Constraint.any())
+                          .with(INTEGRITY, Constraint.any())
+                          .with(TLP, Constraint.any())
+                          .with(DATA_CLASS, Constraint.any())));
 
   // Reads the value, then says no. The refusal has to be recorded because the
   // function already saw the plaintext.
   private final Derivation<DisputeClaim, InvoiceNumber> declines =
-      config
-          .checking(
-              DECLINES,
-              DISPUTE_CLAIM_TYPE,
-              INVOICE_NUMBER_TYPE,
-              (claim, ctx) -> java.util.Optional.empty())
-          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .mint();
+      config.checking(
+          DECLINES,
+          DISPUTE_CLAIM_TYPE,
+          INVOICE_NUMBER_TYPE,
+          (claim, ctx) -> java.util.Optional.empty(),
+          d -> d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII)));
 
   // A fold that lowers is as privileged as a derivation that lowers.
   private final Fold<String, Report> summariseForRelease =
-      config
-          .fold(
-              SUMMARISE_FOR_RELEASE,
-              STRING_TYPE,
-              REPORT_TYPE,
-              notes -> new Report("redacted summary of " + notes.size()))
-          .accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-          .lowering(joined -> joined.with(DATA_CLASS, DataClass.NONE))
-          .mint();
+      config.fold(
+          SUMMARISE_FOR_RELEASE,
+          STRING_TYPE,
+          REPORT_TYPE,
+          notes -> new Report("redacted summary of " + notes.size()),
+          d ->
+              d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
+                  .lowering(joined -> joined.with(DATA_CLASS, DataClass.NONE)));
 
   // The whole account never leaves the store to answer one question about it.
   private final Query<Account, String> ownedBy =
-      config
-          .query(
-              "Account.ownedBy",
-              ACCOUNT_TYPE,
-              String.class,
-              (account, sender, ctx) -> account.email().equalsIgnoreCase(sender))
-          .accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII))
-          .mint();
+      config.query(
+          "Account.ownedBy",
+          ACCOUNT_TYPE,
+          String.class,
+          (account, sender, ctx) -> account.email().equalsIgnoreCase(sender),
+          d -> d.accepting(reading(Integrity.ENDORSED, Tlp.AMBER, DataClass.PII)));
 
   {
     config.seal(storage);
@@ -824,19 +817,18 @@ class BillingScenarioTest {
     void a_derivation_cannot_be_declared_after_sealing() {
       assertThatThrownBy(
               () ->
-                  config
-                      .derivation(
-                          "whatever-i-like",
-                          DISPUTE_CLAIM_TYPE,
-                          INVOICE_NUMBER_TYPE,
-                          c -> new InvoiceNumber(c.invoiceNumber()))
-                      .accepting(
-                          ctx ->
-                              Ceiling.of(TENANT, Constraint.any())
-                                  .with(INTEGRITY, Constraint.any())
-                                  .with(TLP, Constraint.any())
-                                  .with(DATA_CLASS, Constraint.any()))
-                      .mint())
+                  config.derivation(
+                      "whatever-i-like",
+                      DISPUTE_CLAIM_TYPE,
+                      INVOICE_NUMBER_TYPE,
+                      c -> new InvoiceNumber(c.invoiceNumber()),
+                      d ->
+                          d.accepting(
+                              ctx ->
+                                  Ceiling.of(TENANT, Constraint.any())
+                                      .with(INTEGRITY, Constraint.any())
+                                      .with(TLP, Constraint.any())
+                                      .with(DATA_CLASS, Constraint.any()))))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("has been sealed");
     }
@@ -1025,10 +1017,12 @@ class BillingScenarioTest {
               ACCOUNT_TYPE,
               label("acme", Integrity.ENDORSED, Tlp.RED, DataClass.CARDHOLDER));
       Query<Account, String> secretOwnedBy =
-          choosyConfig
-              .query("Account.ownedBy", ACCOUNT_TYPE, String.class, (account, sender, ctx) -> true)
-              .accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
-              .mint();
+          choosyConfig.query(
+              "Account.ownedBy",
+              ACCOUNT_TYPE,
+              String.class,
+              (account, sender, ctx) -> true,
+              d -> d.accepting(reading(Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
       choosyConfig.seal(new MemoryStorage());
       Surrogate<Account> secret = secretAccounts.conceal(new Account("ACC-2", "x@y.example"));
 

@@ -78,29 +78,44 @@ public interface Charter {
   /** A destination declared elsewhere. */
   Charter destination(DestinationSpec destination);
 
-  /** The authority to make one value from another. */
-  <I, O> Minting<O, Derivation<I, O>> derivation(
-      String name, SurrogateType<I> input, SurrogateType<O> output, Function<I, O> function);
+  /**
+   * The authority to make one value from another.
+   *
+   * <p>The customizer says what the derivation may read, and whether it weakens a label. Both are
+   * settled here and cannot change afterwards, which is what makes the manifest a complete answer.
+   */
+  <I, O> Derivation<I, O> derivation(
+      String name,
+      SurrogateType<I> input,
+      SurrogateType<O> output,
+      Function<I, O> function,
+      java.util.function.Consumer<DerivationConfig> customizer);
 
   /**
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
    */
-  <I, O> Minting<O, Derivation<I, O>> checking(
+  <I, O> Derivation<I, O> checking(
       String name,
       SurrogateType<I> input,
       SurrogateType<O> output,
-      java.util.function.BiFunction<I, AccessContext, java.util.Optional<O>> function);
+      java.util.function.BiFunction<I, AccessContext, java.util.Optional<O>> function,
+      java.util.function.Consumer<DerivationConfig> customizer);
 
   /** The authority to make one value from many of one type. */
-  <I, O> Minting<O, Fold<I, O>> fold(
+  <I, O> Fold<I, O> fold(
       String name,
       SurrogateType<I> input,
       SurrogateType<O> output,
-      Function<java.util.List<I>, O> function);
+      Function<java.util.List<I>, O> function,
+      java.util.function.Consumer<DerivationConfig> customizer);
 
   /** The authority to ask one question of a value without the value leaving. */
-  <I, Q> Querying<I, Q> query(
-      String name, SurrogateType<I> input, Class<Q> against, Query.Asking<I, Q> asking);
+  <I, Q> Query<I, Q> query(
+      String name,
+      SurrogateType<I> input,
+      Class<Q> against,
+      Query.Asking<I, Q> asking,
+      java.util.function.Consumer<QueryConfig> customizer);
 
   // ------------------------------------------------------------------ settling how it behaves
 

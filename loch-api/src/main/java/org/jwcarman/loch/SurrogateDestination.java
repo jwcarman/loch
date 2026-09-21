@@ -29,9 +29,9 @@ package org.jwcarman.loch;
  * the service that talks to that subsystem</b>. It holds no configuration and cannot declare a new
  * door -- only look through this one.
  *
- * <p>It is still more authority than any one reader, because it can mint a reader for every type it
- * was declared to read. Hand out the destination when a service talks to the whole subsystem; hand
- * out a reader when it needs one kind of value.
+ * <p>It is still more authority than any one reader, because it can constitute a reader for every
+ * type it was declared to read. Hand out the destination when a service talks to the whole
+ * subsystem; hand out a reader when it needs one kind of value.
  */
 public interface SurrogateDestination {
 

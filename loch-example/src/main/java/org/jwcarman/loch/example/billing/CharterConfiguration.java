@@ -104,39 +104,35 @@ public class CharterConfiguration {
     // The only operation that can raise trust, and it earns it by tying what the customer
     // claimed to the mailbox their message came from.
     Derivation<Domain.Mail, Domain.Invoice> confirmInvoice =
-        charter
-            .checking(
-                "mail.confirmedInvoice",
-                Domain.MAIL,
-                Domain.INVOICE,
-                (mail, ctx) -> confirm(invoices, mail, ctx))
-            .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
-            .lowering(joined -> joined.with(BillingAxes.INTEGRITY, ENDORSED))
-            .mint();
+        charter.checking(
+            "mail.confirmedInvoice",
+            Domain.MAIL,
+            Domain.INVOICE,
+            (mail, ctx) -> confirm(invoices, mail, ctx),
+            d ->
+                d.accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
+                    .lowering(joined -> joined.with(BillingAxes.INTEGRITY, ENDORSED)));
 
     // Truncating a card is a declassification, which is what a PCI reviewer asks about.
     Derivation<Domain.Invoice, Domain.Last4> cardLast4 =
-        charter
-            .derivation(
-                "invoice.card.last4",
-                Domain.INVOICE,
-                Domain.LAST4,
-                invoice -> new Domain.Last4(last4(invoice.cardToken())))
-            .accepting(ctx -> ceiling(ctx, ENDORSED, CARDHOLDER))
-            .lowering(joined -> joined.with(BillingAxes.SENSITIVITY, PERSONAL))
-            .availableTo(ctx -> ctx.has("role", "approver"))
-            .mint();
+        charter.derivation(
+            "invoice.card.last4",
+            Domain.INVOICE,
+            Domain.LAST4,
+            invoice -> new Domain.Last4(last4(invoice.cardToken())),
+            d ->
+                d.accepting(ctx -> ceiling(ctx, ENDORSED, CARDHOLDER))
+                    .lowering(joined -> joined.with(BillingAxes.SENSITIVITY, PERSONAL))
+                    .availableTo(ctx -> ctx.has("role", "approver")));
 
     // ---- one bit, without the value leaving ------------------------------------
     Query<Domain.Mail, String> mailMentions =
-        charter
-            .query(
-                "mail.mentions",
-                Domain.MAIL,
-                String.class,
-                (mail, text, ctx) -> mail.body().toLowerCase().contains(text.toLowerCase()))
-            .accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL))
-            .mint();
+        charter.query(
+            "mail.mentions",
+            Domain.MAIL,
+            String.class,
+            (mail, text, ctx) -> mail.body().toLowerCase().contains(text.toLowerCase()),
+            d -> d.accepting(ctx -> ceiling(ctx, UNENDORSED, PERSONAL)));
 
     return new DisputeService(
         customerMail,

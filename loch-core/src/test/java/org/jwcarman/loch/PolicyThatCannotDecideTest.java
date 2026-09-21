@@ -53,36 +53,44 @@ class PolicyThatCannotDecideTest {
       config.destination("anywhere", ctx -> boom(), STRING_TYPE).reading(STRING_TYPE);
 
   private final Query<String, String> queryWhoseCeilingThrows =
-      config
-          .query("query-ceiling", STRING_TYPE, String.class, (v, q, ctx) -> v.equals(q))
-          .accepting(ctx -> boom())
-          .mint();
+      config.query(
+          "query-ceiling",
+          STRING_TYPE,
+          String.class,
+          (v, q, ctx) -> v.equals(q),
+          d -> d.accepting(ctx -> boom()));
 
   private final Query<String, String> queryWhoseGateThrows =
-      config
-          .query("query-gate", STRING_TYPE, String.class, (v, q, ctx) -> v.equals(q))
-          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
-          .availableTo(ctx -> boom())
-          .mint();
+      config.query(
+          "query-gate",
+          STRING_TYPE,
+          String.class,
+          (v, q, ctx) -> v.equals(q),
+          d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())).availableTo(ctx -> boom()));
 
   private final Derivation<String, String> derivationWhoseCeilingThrows =
-      config
-          .derivation("derivation-ceiling", STRING_TYPE, STRING_TYPE, String::toUpperCase)
-          .accepting(ctx -> boom())
-          .mint();
+      config.derivation(
+          "derivation-ceiling",
+          STRING_TYPE,
+          STRING_TYPE,
+          String::toUpperCase,
+          d -> d.accepting(ctx -> boom()));
 
   private final Derivation<String, String> loweringThrows =
-      config
-          .derivation("lowering", STRING_TYPE, STRING_TYPE, String::toUpperCase)
-          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
-          .lowering(joined -> boom())
-          .mint();
+      config.derivation(
+          "lowering",
+          STRING_TYPE,
+          STRING_TYPE,
+          String::toUpperCase,
+          d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())).lowering(joined -> boom()));
 
   private final Derivation<String, String> functionThrows =
-      config
-          .derivation("function", STRING_TYPE, STRING_TYPE, value -> boom())
-          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
-          .mint();
+      config.derivation(
+          "function",
+          STRING_TYPE,
+          STRING_TYPE,
+          value -> boom(),
+          d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())));
 
   {
     config.seal(storage);

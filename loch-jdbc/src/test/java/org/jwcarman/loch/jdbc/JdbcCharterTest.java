@@ -223,13 +223,13 @@ class JdbcCharterTest {
 
     cardLast4 =
         c.derivation(
-                "Card.last4",
-                CARD,
-                LAST4,
-                card -> new Last4(card.number().substring(card.number().length() - 4)))
-            .accepting(ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
-            .lowering(joined -> joined.with(DATA, DataClass.PII))
-            .mint();
+            "Card.last4",
+            CARD,
+            LAST4,
+            card -> new Last4(card.number().substring(card.number().length() - 4)),
+            d ->
+                d.accepting(ctx -> ceiling(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER))
+                    .lowering(joined -> joined.with(DATA, DataClass.PII)));
 
     c.seal(jdbc.storage(c.axes()));
     store = c;

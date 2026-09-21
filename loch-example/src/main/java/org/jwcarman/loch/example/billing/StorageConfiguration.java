@@ -35,7 +35,7 @@ import org.springframework.context.annotation.Configuration;
  * <p>Separate from {@link CharterConfiguration} for a reason worth knowing about: that class mints
  * capabilities in its constructor, so it has to <i>consume</i> these two beans. A configuration
  * class cannot declare a bean and take it as a constructor parameter -- Spring reports a circular
- * reference and the context does not start. Minting in a constructor means the things minting
+ * reference and the context does not start. Declaring in a constructor means the things declared
  * depends on live somewhere else.
  */
 @Configuration

@@ -69,21 +69,22 @@ class WhatACharterPermitsTest {
       charter.destination("approval-desk", ctx -> upTo(Sensitivity.ORDINARY), LAST4).reading(LAST4);
 
   private final Derivation<Card, Last4> truncate =
-      charter
-          .derivation("card.last4", CARD, LAST4, card -> new Last4(card.number().substring(12)))
-          .accepting(ctx -> upTo(Sensitivity.PERSONAL))
-          .lowering(joined -> joined.with(SENSITIVITY, Sensitivity.ORDINARY))
-          .mint();
+      charter.derivation(
+          "card.last4",
+          CARD,
+          LAST4,
+          card -> new Last4(card.number().substring(12)),
+          d ->
+              d.accepting(ctx -> upTo(Sensitivity.PERSONAL))
+                  .lowering(joined -> joined.with(SENSITIVITY, Sensitivity.ORDINARY)));
 
   private final Query<Card, String> mentions =
-      charter
-          .query(
-              "card.startsWith",
-              CARD,
-              String.class,
-              (card, prefix, ctx) -> card.number().startsWith(prefix))
-          .accepting(ctx -> upTo(Sensitivity.PERSONAL))
-          .mint();
+      charter.query(
+          "card.startsWith",
+          CARD,
+          String.class,
+          (card, prefix, ctx) -> card.number().startsWith(prefix),
+          d -> d.accepting(ctx -> upTo(Sensitivity.PERSONAL)));
 
   @Test
   @DisplayName("is answerable before it has been sealed to anything")

@@ -49,14 +49,12 @@ class ArityTest {
   private final Conceal<Note> notes = config.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
 
   private final Fold<Note, Note> joined =
-      config
-          .fold(
-              "join",
-              NOTE,
-              NOTE,
-              notes -> new Note(notes.stream().map(Note::text).reduce("", String::concat)))
-          .accepting(ctx -> Ceiling.of(TENANT, Constraint.any()))
-          .mint();
+      config.fold(
+          "join",
+          NOTE,
+          NOTE,
+          notes -> new Note(notes.stream().map(Note::text).reduce("", String::concat)),
+          d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())));
 
   {
     config.seal(new MemoryStorage());
