@@ -16,7 +16,7 @@
 package org.jwcarman.loch.example.billing;
 
 import org.jwcarman.loch.AccessDeniedException;
-import org.jwcarman.loch.HeldId;
+import org.jwcarman.loch.HandleId;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -32,8 +32,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The HTTP surface.
  *
- * <p>References cross the wire as ids, which is all a {@link HeldId} is. A client can hold one, log
- * it, put it in a URL and hand it back tomorrow; none of that is permission to read anything.
+ * <p>References cross the wire as ids, which is all a {@link HandleId} is. A client can hold one,
+ * log it, put it in a URL and hand it back tomorrow; none of that is permission to read anything.
  */
 @RestController
 @RequestMapping("/disputes")
@@ -57,27 +57,27 @@ public class DisputeController {
 
   @GetMapping("/{id}/mentions")
   public boolean mentions(@PathVariable String id, @RequestParam String text) {
-    return disputes.mentions(new HeldId(id), text);
+    return disputes.mentions(new HandleId(id), text);
   }
 
   @PostMapping("/{id}/confirm")
   public Reference confirm(@PathVariable String id) {
-    return new Reference(disputes.confirm(new HeldId(id)).value());
+    return new Reference(disputes.confirm(new HandleId(id)).value());
   }
 
   @GetMapping("/{id}/card")
   public Domain.Last4 card(@PathVariable String id) {
-    return disputes.cardForApproval(new HeldId(id));
+    return disputes.cardForApproval(new HandleId(id));
   }
 
   @GetMapping("/{id}")
   public Domain.Invoice invoice(@PathVariable String id) {
-    return disputes.forSupportScreen(new HeldId(id));
+    return disputes.forSupportScreen(new HandleId(id));
   }
 
   @PostMapping("/{id}/refund")
   public String refund(@PathVariable String id) {
-    return disputes.refund(new HeldId(id));
+    return disputes.refund(new HandleId(id));
   }
 
   /** A refusal is a 403, and says which gate said no without saying what was behind it. */

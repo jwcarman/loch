@@ -280,7 +280,7 @@ class BillingScenarioTest {
 
   // ---------------------------------------------------------------- the scenario
 
-  private Held<String> customerEmail() {
+  private Handle<String> customerEmail() {
     return loch.hold(
         "I was charged twice for invoice INV-4471. My SSN is 123-45-6789 if that helps.",
         String.class,
@@ -294,7 +294,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("never reaches a vendor's model")
     void never_reaches_a_vendors_model() {
-      Held<String> email = customerEmail();
+      Handle<String> email = customerEmail();
 
       Dereferenced<String> attempt = loch.dereference(email, VENDOR_LLM, acme());
 
@@ -308,7 +308,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("does reach the quarantined model, which is what it is for")
     void does_reach_the_quarantined_model() {
-      Held<String> email = customerEmail();
+      Handle<String> email = customerEmail();
 
       assertThat(loch.dereference(email, QUARANTINED_LLM, acme()).granted())
           .hasValueSatisfying(text -> assertThat(text).contains("INV-4471"));
@@ -317,7 +317,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("is still a handle everywhere else, and says nothing when printed")
     void is_still_a_handle_everywhere_else() {
-      Held<String> email = customerEmail();
+      Handle<String> email = customerEmail();
 
       assertThat(email.toString()).doesNotContain("123-45-6789").contains("loch_");
     }
@@ -327,7 +327,7 @@ class BillingScenarioTest {
   @DisplayName("the card token")
   class TheCardToken {
 
-    private Held<String> token() {
+    private Handle<String> token() {
       return loch.hold(
           "tok_1P9xyz",
           String.class,
@@ -345,7 +345,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("cannot reach any model, and cannot reach a person")
     void cannot_reach_any_model_or_person() {
-      Held<String> token = token();
+      Handle<String> token = token();
 
       assertThat(loch.dereference(token, VENDOR_LLM, acme()).allowed()).isFalse();
       assertThat(loch.dereference(token, QUARANTINED_LLM, acme()).allowed()).isFalse();
@@ -358,7 +358,7 @@ class BillingScenarioTest {
   @DisplayName("the approval card")
   class TheApprovalCard {
 
-    private Held<String> last4() {
+    private Handle<String> last4() {
       return loch.hold(
           "4821", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
     }
@@ -399,18 +399,18 @@ class BillingScenarioTest {
     @Test
     @DisplayName("folding two tenants' data makes a report that can go nowhere at all")
     void folding_two_tenants_data_makes_a_report_that_can_go_nowhere() {
-      Held<String> acmeNote =
+      Handle<String> acmeNote =
           loch.hold(
               "acme disputes INV-1",
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
-      Held<String> globexNote =
+      Handle<String> globexNote =
           loch.hold(
               "globex disputes INV-2",
               String.class,
               Billing.of("globex", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      Held<Report> report =
+      Handle<Report> report =
           loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE, acme()).orThrow();
 
       assertThat(loch.label(report).tenant().conflicted()).isTrue();
@@ -427,18 +427,18 @@ class BillingScenarioTest {
     @Test
     @DisplayName("folding one tenant's own notes is perfectly usable")
     void folding_one_tenants_notes_is_usable() {
-      Held<String> first =
+      Handle<String> first =
           loch.hold(
               "first note",
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
-      Held<String> second =
+      Handle<String> second =
           loch.hold(
               "second note",
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
-      Held<Report> report = loch.deriveAll(List.of(first, second), SUMMARISE, acme()).orThrow();
+      Handle<Report> report = loch.deriveAll(List.of(first, second), SUMMARISE, acme()).orThrow();
 
       assertThat(loch.dereference(report, VENDOR_LLM, acme()).granted())
           .contains(new Report("first note / second note"));
@@ -448,18 +448,18 @@ class BillingScenarioTest {
     @Test
     @DisplayName("one restricted parent constrains the whole result")
     void one_restricted_parent_constrains_the_whole_result() {
-      Held<String> ordinary =
+      Handle<String> ordinary =
           loch.hold(
               "nothing special",
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
-      Held<String> personal =
+      Handle<String> personal =
           loch.hold(
               "and their home address",
               String.class,
               Billing.of("acme", Integrity.ENDORSED, Tlp.AMBER, DataClass.PII));
 
-      Held<Report> report =
+      Handle<Report> report =
           loch.deriveAll(List.of(ordinary, personal), SUMMARISE, acme()).orThrow();
 
       assertThat(loch.label(report).dataClass()).isEqualTo(DataClass.PII);
@@ -479,7 +479,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("another tenant's data is refused, even though it is perfectly ordinary")
     void another_tenants_data_is_refused() {
-      Held<String> globex =
+      Handle<String> globex =
           loch.hold(
               "globex's entirely unremarkable note",
               String.class,
@@ -491,7 +491,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("one tenant's ordinary data is fine")
     void one_tenants_ordinary_data_is_fine() {
-      Held<String> held =
+      Handle<String> held =
           loch.hold(
               "nothing secret",
               String.class,
@@ -508,8 +508,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses an id nobody minted, rather than computing anything")
     void refuses_an_id_nobody_minted() {
-      Held<String> invented =
-          new Held<>(new HeldId("loch_whatever-i-like"), TypeRef.of(String.class));
+      Handle<String> invented =
+          new Handle<>(new HandleId("loch_whatever-i-like"), TypeRef.of(String.class));
 
       assertThat(loch.dereference(invented, QUARANTINED_LLM, acme()))
           .isInstanceOfSatisfying(
@@ -530,8 +530,8 @@ class BillingScenarioTest {
     @Test
     @DisplayName("refuses a handle whose claimed type is not what was stored")
     void refuses_a_handle_whose_type_is_wrong() {
-      Held<String> email = customerEmail();
-      Held<Integer> lying = new Held<>(email.id(), TypeRef.of(Integer.class));
+      Handle<String> email = customerEmail();
+      Handle<Integer> lying = new Handle<>(email.id(), TypeRef.of(Integer.class));
 
       assertThat(loch.dereference(lying, QUARANTINED_LLM, acme()))
           .isInstanceOfSatisfying(
@@ -553,7 +553,7 @@ class BillingScenarioTest {
   @DisplayName("deriving")
   class Deriving {
 
-    private Held<DisputeClaim> claim() {
+    private Handle<DisputeClaim> claim() {
       return loch.hold(
           new DisputeClaim("INV-4471", "charged twice"),
           DisputeClaim.class,
@@ -563,7 +563,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a projection inherits its parent's labels exactly")
     void a_projection_inherits_its_parents_labels() {
-      Held<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
 
       assertThat(loch.label(number))
           .isEqualTo(Billing.of("acme", Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII));
@@ -576,7 +576,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("extracting a field does not make it trustworthy")
     void extracting_a_field_does_not_make_it_trustworthy() {
-      Held<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> number = loch.derive(claim(), CLAIMED_INVOICE).orThrow();
 
       assertThat(loch.label(number).integrity()).isEqualTo(Integrity.UNENDORSED);
     }
@@ -584,9 +584,9 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records what it came from, so erasure has something to follow")
     void records_what_it_came_from() {
-      Held<DisputeClaim> parent = claim();
+      Handle<DisputeClaim> parent = claim();
 
-      Held<InvoiceNumber> number = loch.derive(parent, CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> number = loch.derive(parent, CLAIMED_INVOICE).orThrow();
 
       assertThat(loch.lineage(number).parents()).containsExactly(parent.id());
       assertThat(loch.lineage(number).derivation()).contains(CLAIMED_INVOICE.value());
@@ -604,10 +604,10 @@ class BillingScenarioTest {
     @Test
     @DisplayName("deriving twice makes two values, and each caller gets its own answer")
     void deriving_twice_makes_two_values() {
-      Held<DisputeClaim> parent = claim();
+      Handle<DisputeClaim> parent = claim();
 
-      Held<InvoiceNumber> once = loch.derive(parent, CLAIMED_INVOICE).orThrow();
-      Held<InvoiceNumber> twice = loch.derive(parent, CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> once = loch.derive(parent, CLAIMED_INVOICE).orThrow();
+      Handle<InvoiceNumber> twice = loch.derive(parent, CLAIMED_INVOICE).orThrow();
 
       assertThat(once.id()).isNotEqualTo(twice.id());
       assertThat(loch.lineage(once).parents()).containsExactly(parent.id());
@@ -637,7 +637,7 @@ class BillingScenarioTest {
   @DisplayName("weakening a label")
   class Weakening {
 
-    private Held<String> token() {
+    private Handle<String> token() {
       return loch.hold(
           "tok_1P9xyz4821",
           String.class,
@@ -651,7 +651,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("truncating a card lowers it to PII, which a person may then see")
     void truncating_a_card_lowers_it_to_pii() {
-      Held<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
+      Handle<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.dereference(last4, APPROVAL_CARD, acme("clearance", "finance")).granted())
@@ -661,7 +661,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("and lowers nothing it did not name: still acme's, still endorsed")
     void lowers_nothing_it_did_not_name() {
-      Held<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
+      Handle<Last4> last4 = loch.derive(token(), CARD_LAST4, preparingApproval()).orThrow();
 
       assertThat(loch.label(last4).tenant().resolved()).contains("acme");
       assertThat(loch.label(last4).integrity()).isEqualTo(Integrity.ENDORSED);
@@ -674,7 +674,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("lowering only one dimension leaves the other still blocking")
     void lowering_only_one_dimension_leaves_the_other_blocking() {
-      Held<Last4> partly = loch.derive(token(), CARD_LAST4_PARTIAL, acme()).orThrow();
+      Handle<Last4> partly = loch.derive(token(), CARD_LAST4_PARTIAL, acme()).orThrow();
 
       assertThat(loch.label(partly).dataClass()).isEqualTo(DataClass.PII);
       assertThat(loch.label(partly).tlp()).isEqualTo(Tlp.RED);
@@ -695,7 +695,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a relabel that does not actually lower is refused")
     void a_relabel_that_does_not_lower_is_refused() {
-      Held<DisputeClaim> endorsed =
+      Handle<DisputeClaim> endorsed =
           loch.hold(
               new DisputeClaim("INV-1", "x"),
               DisputeClaim.class,
@@ -736,7 +736,7 @@ class BillingScenarioTest {
   @DisplayName("asking instead of taking")
   class Checks {
 
-    private Held<Account> account() {
+    private Handle<Account> account() {
       return loch.hold(
           new Account("ACC-1", "someone@acme.example"),
           Account.class,
@@ -746,7 +746,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("answers the question without the account ever leaving")
     void answers_without_the_account_leaving() {
-      Held<Account> account = account();
+      Handle<Account> account = account();
 
       assertThat(loch.check(account, OWNED_BY, "someone@acme.example").isTrue()).isTrue();
       assertThat(loch.check(account, OWNED_BY, "attacker@elsewhere.example").isFalse()).isTrue();
@@ -782,7 +782,7 @@ class BillingScenarioTest {
                                       Billing.ceilingFor(
                                           ctx, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE))
                               .build()));
-      Held<Account> secret =
+      Handle<Account> secret =
           choosy.hold(
               new Account("ACC-2", "x@y.example"),
               Account.class,
@@ -829,7 +829,7 @@ class BillingScenarioTest {
                       .explainRefusals()
                       .destination(
                           tenantScoped(VENDOR_LLM, Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE)));
-      Held<String> held =
+      Handle<String> held =
           chatty.hold(
               "x",
               String.class,
@@ -857,7 +857,7 @@ class BillingScenarioTest {
                               ctx -> {
                                 throw new IllegalStateException("policy service is down");
                               })));
-      Held<String> held =
+      Handle<String> held =
           fragile.hold(
               "x", String.class, Billing.of("acme", Integrity.ENDORSED, Tlp.CLEAR, DataClass.NONE));
 
@@ -897,7 +897,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records holding, because that is where labels are asserted rather than computed")
     void records_holding() {
-      Held<String> email = customerEmail();
+      Handle<String> email = customerEmail();
 
       assertThat(audit.of(AuditRecord.Operation.HOLD))
           .anySatisfy(entry -> assertThat(entry.value()).isEqualTo(email.id()));
@@ -906,7 +906,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("records a check, with the answer but never the question")
     void records_a_check_with_the_answer_but_not_the_question() {
-      Held<Account> account =
+      Handle<Account> account =
           loch.hold(
               new Account("ACC-1", "someone@acme.example"),
               Account.class,
@@ -923,7 +923,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("says so when a derivation weakened a label")
     void says_so_when_a_derivation_weakened_a_label() {
-      Held<String> token =
+      Handle<String> token =
           loch.hold(
               "tok_1P9xyz4821",
               String.class,
@@ -939,7 +939,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("an ordinary derivation is recorded without that note")
     void an_ordinary_derivation_is_recorded_without_that_note() {
-      Held<DisputeClaim> claim =
+      Handle<DisputeClaim> claim =
           loch.hold(
               new DisputeClaim("INV-4471", "charged twice"),
               DisputeClaim.class,
@@ -989,7 +989,7 @@ class BillingScenarioTest {
   @DisplayName("refusals reach the record too")
   class RefusalsAreRecorded {
 
-    private Held<DisputeClaim> claim() {
+    private Handle<DisputeClaim> claim() {
       return loch.hold(
           new DisputeClaim("INV-4471", "charged twice"),
           DisputeClaim.class,
@@ -1024,7 +1024,7 @@ class BillingScenarioTest {
     @Test
     @DisplayName("a derivation not offered here is recorded, and says nothing about the value")
     void a_derivation_not_offered_here_is_recorded() {
-      Held<String> token =
+      Handle<String> token =
           loch.hold(
               "tok_1P9xyz4821",
               String.class,

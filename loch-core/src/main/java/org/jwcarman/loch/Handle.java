@@ -21,12 +21,17 @@ import org.jwcarman.codec.spi.TypeRef;
 /**
  * A handle to a value the loch is holding.
  *
+ * <p><b>Deliberately not a ticket, a receipt or a claim.</b> Those all name something that entitles
+ * the bearer to what it refers to, which is the one thing this does not do. A file handle promises
+ * nothing about whether you may read the file; it names it. That is exactly right here, and a name
+ * that suggested otherwise would teach the opposite of the rule that matters most.
+ *
  * <p><b>It does not contain the value.</b> That is the whole point: there is no way to read a held
  * value except by asking the store, and asking the store is the gate. You cannot forget to check,
  * because there is nothing here to read.
  *
- * <p><b>What travels is the {@link HeldId}.</b> A handle is a local, typed view of a value that is
- * already held: the {@link TypeRef} is a claim the gate checks against what the store actually
+ * <p><b>What travels is the {@link HandleId}.</b> A handle is a local, typed view of a value that
+ * is already held: the {@link TypeRef} is a claim the gate checks against what the store actually
  * wrote, so it is worth having where code is using a value and worth nothing on a wire. An event, a
  * message or a row carries the id -- a string, which every serialiser can manage without being
  * taught anything -- and the receiving side says what it expects with {@link #of}.
@@ -40,21 +45,21 @@ import org.jwcarman.codec.spi.TypeRef;
  *     a value <i>is</i> and what class happened to carry it are different questions, and only the
  *     first survives a round trip.
  */
-public record Held<T>(HeldId id, TypeRef<T> type) {
+public record Handle<T>(HandleId id, TypeRef<T> type) {
 
-  public Held {
+  public Handle {
     Objects.requireNonNull(id, "a handle needs an id");
     Objects.requireNonNull(type, "a handle needs a type");
   }
 
   /** A local typed view of a value that is already held. */
-  public static <T> Held<T> of(HeldId id, Class<T> type) {
-    return new Held<>(id, TypeRef.of(type));
+  public static <T> Handle<T> of(HandleId id, Class<T> type) {
+    return new Handle<>(id, TypeRef.of(type));
   }
 
   /** A local typed view, for a generic container. */
-  public static <T> Held<T> of(HeldId id, TypeRef<T> type) {
-    return new Held<>(id, type);
+  public static <T> Handle<T> of(HandleId id, TypeRef<T> type) {
+    return new Handle<>(id, type);
   }
 
   /**

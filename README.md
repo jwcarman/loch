@@ -25,7 +25,7 @@ to read it. Turning it back into a value is the one checked operation, and it al
 the value is going.
 
 ```java
-Held<String> body = loch.hold(message.body(), String.class, new Billing(ACME, UNENDORSED, AMBER, PII));
+Handle<String> body = loch.hold(message.body(), String.class, new Billing(ACME, UNENDORSED, AMBER, PII));
 
 loch.dereference(body, VENDOR_LLM, onBehalfOf(ACME));       // Denied: above ceiling
 loch.dereference(body, QUARANTINED_LLM, onBehalfOf(ACME));  // Allowed
@@ -50,15 +50,15 @@ otherwise anything that could write an id could claim to be trusted.
 described a computation, presenting one would be a request to perform it, and ids arrive from
 untrusted places. So **lookup never computes**: an id is found, or refused.
 
-**What travels is the id.** A `Held<T>` is a *local typed view* — its `TypeRef` is a claim the gate
+**What travels is the id.** A `Handle<T>` is a *local typed view* — its `TypeRef` is a claim the gate
 checks against what the store actually wrote, which makes it worth having where code uses a value
-and worth nothing on a wire. Events, messages and rows carry a `HeldId`, which every serialiser can
+and worth nothing on a wire. Events, messages and rows carry a `HandleId`, which every serialiser can
 manage without being taught anything, and the receiving side says what it expects:
 
 ```java
-record InboundMail(String from, HeldId body) {}          // goes anywhere
+record InboundMail(String from, HandleId body) {}          // goes anywhere
 
-Held<String> body = Held.of(event.body(), String.class); // typed again where it is used
+Handle<String> body = Handle.of(event.body(), String.class); // typed again where it is used
 ```
 
 A handle also prints as its id and nothing else. The Java type is a local matter, and whether a
@@ -182,7 +182,7 @@ itself for any of them.
 ## Combining values, and the thing that makes it matter
 
 ```java
-Held<Report> report = loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE);
+Handle<Report> report = loch.deriveAll(List.of(acmeNote, globexNote), SUMMARISE);
 ```
 
 The result carries the join of **every** parent's label. Nobody marked anything as conflicted:

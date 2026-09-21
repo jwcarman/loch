@@ -57,14 +57,14 @@ class AmbientContextTest {
                                   ? Clearance.FINANCE
                                   : Clearance.NONE)));
 
-  private Held<String> last4() {
+  private Handle<String> last4() {
     return loch.hold("4821", String.class, Clearance.FINANCE);
   }
 
   @Test
   @DisplayName("comes from the edge, with no context threaded through the call")
   void comes_from_the_edge() {
-    Held<String> value = last4();
+    Handle<String> value = last4();
 
     currentUser.set("finance");
     assertThat(loch.dereference(value, CARD).granted()).contains("4821");
@@ -92,7 +92,7 @@ class AmbientContextTest {
                               seen.set(ctx);
                               return Clearance.FINANCE;
                             })));
-    Held<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
+    Handle<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
 
     watching.dereference(value, CARD, AccessContext.of("purpose", "refund"));
 
@@ -123,7 +123,7 @@ class AmbientContextTest {
                                   ? Clearance.FINANCE
                                   : Clearance.NONE;
                             })));
-    Held<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
+    Handle<String> value = watching.hold("4821", String.class, Clearance.FINANCE);
 
     var claimed = watching.dereference(value, CARD, AccessContext.of("clearance", "finance"));
 

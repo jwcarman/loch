@@ -40,7 +40,7 @@ import org.jwcarman.loch.DerivationId;
 import org.jwcarman.loch.Derivations;
 import org.jwcarman.loch.DestinationId;
 import org.jwcarman.loch.Destinations;
-import org.jwcarman.loch.Held;
+import org.jwcarman.loch.Handle;
 import org.jwcarman.loch.Loch;
 import org.jwcarman.loch.lattice.Exact;
 import org.jwcarman.loch.lattice.Lattice;
@@ -190,7 +190,7 @@ class JdbcLochTest {
                             .build()));
   }
 
-  private Held<Card> card() {
+  private Handle<Card> card() {
     return loch.hold(
         new Card("4111111111114821", "J CARMAN"),
         Card.class,
@@ -200,7 +200,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("keeps a value and gives it back to somewhere allowed to have it")
   void keeps_a_value_and_gives_it_back() {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
     assertThat(loch.dereference(card, PAYMENT_PROCESSOR, acme()).granted())
         .contains(new Card("4111111111114821", "J CARMAN"));
@@ -211,7 +211,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("stores no plaintext, not the value and not the label either")
   void stores_no_plaintext() throws SQLException {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
@@ -231,7 +231,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("a fresh loch over the same database reads what the last one wrote")
   void survives_a_restart() {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
     assertThat(loch.holds(card)).isTrue();
     assertThat(loch.label(card).dataClass()).isEqualTo(DataClass.CARDHOLDER);
@@ -240,9 +240,9 @@ class JdbcLochTest {
   @Test
   @DisplayName("a derived value keeps its parentage and its lowered label")
   void a_derived_value_keeps_its_parentage() {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
-    Held<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
     assertThat(loch.label(last4).dataClass()).isEqualTo(DataClass.PII);
     assertThat(loch.lineage(last4).parents()).containsExactly(card.id());
@@ -252,10 +252,10 @@ class JdbcLochTest {
   @Test
   @DisplayName("deriving the same thing twice stores it twice, and says so")
   void deriving_twice_stores_twice() throws SQLException {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
-    Held<Last4> once = loch.derive(card, CARD_LAST4, acme()).orThrow();
-    Held<Last4> twice = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> once = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Last4> twice = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
     assertThat(once.id()).isNotEqualTo(twice.id());
     assertThat(rowCount("loch_value")).isEqualTo(3);
@@ -265,8 +265,8 @@ class JdbcLochTest {
   @Test
   @DisplayName("erasing a value takes everything ever derived from it")
   void erasing_takes_everything_derived_from_it() throws SQLException {
-    Held<Card> card = card();
-    Held<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Card> card = card();
+    Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
     int removed = loch.erase(card);
 
@@ -279,8 +279,8 @@ class JdbcLochTest {
   @Test
   @DisplayName("erasing a derived value leaves its parent alone")
   void erasing_a_derived_value_leaves_its_parent() {
-    Held<Card> card = card();
-    Held<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
+    Handle<Card> card = card();
+    Handle<Last4> last4 = loch.derive(card, CARD_LAST4, acme()).orThrow();
 
     assertThat(loch.erase(last4)).isEqualTo(1);
     assertThat(loch.holds(card)).isTrue();
@@ -289,7 +289,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("another tenant's access is refused, whatever is on disk")
   void another_tenants_access_is_refused() {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
     assertThat(dereferenceAs("globex", card)).isFalse();
   }
@@ -312,7 +312,7 @@ class JdbcLochTest {
   }
 
   /** A different tenant, established at the edge rather than claimed by the caller. */
-  private boolean dereferenceAs(String tenant, Held<Card> card) {
+  private boolean dereferenceAs(String tenant, Handle<Card> card) {
     edge.set(AccessContext.of("tenant", tenant));
     return loch.dereference(card, PAYMENT_PROCESSOR).allowed();
   }
@@ -344,8 +344,8 @@ class JdbcLochTest {
   @Test
   @DisplayName("compresses a big repetitive value before encrypting it")
   void compresses_a_big_value_before_encrypting() throws SQLException {
-    Held<Card> small = card();
-    Held<Card> repetitive =
+    Handle<Card> small = card();
+    Handle<Card> repetitive =
         loch.hold(
             new Card("4111111111114821", "J CARMAN ".repeat(200)),
             Card.class,
@@ -362,7 +362,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("does not make a small value bigger by compressing it")
   void does_not_make_a_small_value_bigger() throws SQLException {
-    Held<Card> card = card();
+    Handle<Card> card = card();
 
     int stored = payloadLength(card);
     int plain =
@@ -376,7 +376,7 @@ class JdbcLochTest {
     assertThat(stored).isLessThan(plain + 100);
   }
 
-  private int payloadLength(Held<?> held) throws SQLException {
+  private int payloadLength(Handle<?> held) throws SQLException {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement("SELECT payload FROM loch_value WHERE value_id = ?")) {
@@ -399,7 +399,7 @@ class JdbcLochTest {
     List<Card> cards =
         List.of(new Card("4111111111114821", "A"), new Card("4111111111119999", "B"));
 
-    Held<List<Card>> held =
+    Handle<List<Card>> held =
         loch.hold(
             cards,
             TypeRef.listOf(TypeRef.of(Card.class)),
@@ -417,12 +417,12 @@ class JdbcLochTest {
   @Test
   @DisplayName("a handle claiming the wrong element type is refused")
   void a_handle_claiming_the_wrong_element_type_is_refused() {
-    Held<List<Card>> cards =
+    Handle<List<Card>> cards =
         loch.hold(
             List.of(new Card("4111111111114821", "A")),
             TypeRef.listOf(TypeRef.of(Card.class)),
             Billing.of("acme", Integrity.ENDORSED, DataClass.CARDHOLDER));
-    Held<List<Last4>> lying = new Held<>(cards.id(), TypeRef.listOf(TypeRef.of(Last4.class)));
+    Handle<List<Last4>> lying = new Handle<>(cards.id(), TypeRef.listOf(TypeRef.of(Last4.class)));
 
     assertThat(loch.dereference(lying, PAYMENT_PROCESSOR, acme()).allowed()).isFalse();
   }
@@ -431,7 +431,7 @@ class JdbcLochTest {
   @Test
   @DisplayName("asking what a value is labelled does not decode the value")
   void asking_for_a_label_does_not_decode_the_value() {
-    Held<List<Card>> cards =
+    Handle<List<Card>> cards =
         loch.hold(
             List.of(new Card("4111111111114821", "A")),
             TypeRef.listOf(TypeRef.of(Card.class)),

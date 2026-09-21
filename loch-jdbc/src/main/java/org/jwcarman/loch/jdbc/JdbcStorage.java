@@ -34,7 +34,7 @@ import javax.sql.DataSource;
 import org.jwcarman.codec.spi.Codec;
 import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
-import org.jwcarman.loch.HeldId;
+import org.jwcarman.loch.HandleId;
 import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.StoredMetadata;
@@ -126,7 +126,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public void put(HeldId id, StoredValue<A> value) {
+  public void put(HandleId id, StoredValue<A> value) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
@@ -145,7 +145,7 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private void insertValue(Connection connection, HeldId id, StoredValue<A> value)
+  private void insertValue(Connection connection, HandleId id, StoredValue<A> value)
       throws SQLException {
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id.value());
@@ -158,14 +158,14 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private void insertLineage(Connection connection, HeldId id, Lineage lineage)
+  private void insertLineage(Connection connection, HandleId id, Lineage lineage)
       throws SQLException {
     try (PreparedStatement self = connection.prepareStatement(INSERT_SELF_CLOSURE)) {
       self.setString(1, id.value());
       self.setString(2, id.value());
       self.executeUpdate();
     }
-    List<HeldId> parents = lineage.parents();
+    List<HandleId> parents = lineage.parents();
     for (int i = 0; i < parents.size(); i++) {
       try (PreparedStatement parent = connection.prepareStatement(INSERT_PARENT)) {
         parent.setString(1, id.value());
@@ -182,7 +182,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public Optional<StoredMetadata<A>> metadata(HeldId id) {
+  public Optional<StoredMetadata<A>> metadata(HandleId id) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(SELECT_METADATA)) {
       statement.setString(1, id.value());
@@ -204,7 +204,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public <T> Optional<T> value(HeldId id, TypeRef<T> type) {
+  public <T> Optional<T> value(HandleId id, TypeRef<T> type) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement = connection.prepareStatement(SELECT_PAYLOAD)) {
       statement.setString(1, id.value());
@@ -219,13 +219,13 @@ public final class JdbcStorage<A> implements Storage<A> {
     }
   }
 
-  private List<HeldId> parentsOf(Connection connection, HeldId id) throws SQLException {
-    List<HeldId> parents = new ArrayList<>();
+  private List<HandleId> parentsOf(Connection connection, HandleId id) throws SQLException {
+    List<HandleId> parents = new ArrayList<>();
     try (PreparedStatement statement = connection.prepareStatement(SELECT_PARENTS)) {
       statement.setString(1, id.value());
       try (ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
-          parents.add(new HeldId(rows.getString("parent_id")));
+          parents.add(new HandleId(rows.getString("parent_id")));
         }
       }
     }
@@ -233,7 +233,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public boolean contains(HeldId id) {
+  public boolean contains(HandleId id) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement("SELECT 1 FROM loch_value WHERE value_id = ?")) {
@@ -247,7 +247,7 @@ public final class JdbcStorage<A> implements Storage<A> {
   }
 
   @Override
-  public int erase(HeldId root) {
+  public int erase(HandleId root) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);

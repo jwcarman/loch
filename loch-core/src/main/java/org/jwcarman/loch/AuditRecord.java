@@ -40,7 +40,7 @@ import java.util.Optional;
 public record AuditRecord(
     Instant at,
     Operation operation,
-    HeldId value,
+    HandleId value,
     Optional<String> target,
     Outcome outcome,
     Optional<String> reason,

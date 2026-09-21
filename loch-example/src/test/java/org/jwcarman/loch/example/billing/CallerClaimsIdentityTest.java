@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.loch.AccessContext;
-import org.jwcarman.loch.Held;
+import org.jwcarman.loch.Handle;
 import org.jwcarman.loch.Loch;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,8 +55,8 @@ class CallerClaimsIdentityTest {
   @Test
   @DisplayName("does not make it so")
   void does_not_make_it_so() {
-    // Held as acme's cardholder data. No ambient context at all here (no HTTP request).
-    Held<String> token =
+    // Handle as acme's cardholder data. No ambient context at all here (no HTTP request).
+    Handle<String> token =
         loch.hold(
             "tok_live_secret",
             String.class,

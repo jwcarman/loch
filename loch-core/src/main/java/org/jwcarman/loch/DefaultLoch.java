@@ -116,7 +116,7 @@ public final class DefaultLoch<A> implements Loch<A> {
    */
   private void audit(
       AuditRecord.Operation operation,
-      HeldId value,
+      HandleId value,
       String target,
       AuditRecord.Outcome outcome,
       String reason,
@@ -137,7 +137,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   private <T> Dereferenced<T> denied(
       Dereferenced.Reason reason,
       String detail,
-      HeldId value,
+      HandleId value,
       String target,
       A label,
       AccessContext context) {
@@ -158,7 +158,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public <T> Held<T> hold(T value, TypeRef<T> type, A label) {
+  public <T> Handle<T> hold(T value, TypeRef<T> type, A label) {
     if (value == null) {
       throw new IllegalArgumentException("a loch holds values, not nulls");
     }
@@ -167,7 +167,7 @@ public final class DefaultLoch<A> implements Loch<A> {
           "a held value needs an label; use the lattice's bottom to say 'nothing in"
               + " particular'");
     }
-    HeldId id = HeldId.fresh();
+    HandleId id = HandleId.fresh();
     storage.put(id, new StoredValue<>(value, type, label, Lineage.held()));
     audit(
         AuditRecord.Operation.HOLD,
@@ -177,15 +177,15 @@ public final class DefaultLoch<A> implements Loch<A> {
         null,
         label,
         AccessContext.empty());
-    return new Held<>(id, type);
+    return new Handle<>(id, type);
   }
 
   @Override
-  public A label(Held<?> held) {
+  public A label(Handle<?> held) {
     return metadataOf(held).label();
   }
 
-  private StoredMetadata<A> metadataOf(Held<?> held) {
+  private StoredMetadata<A> metadataOf(Handle<?> held) {
     return storage
         .metadata(held.id())
         .orElseThrow(() -> new IllegalArgumentException("this loch is not holding " + held.id()));
@@ -197,12 +197,12 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public boolean holds(Held<?> held) {
+  public boolean holds(Handle<?> held) {
     return storage.contains(held.id());
   }
 
   @Override
-  public int erase(Held<?> root) {
+  public int erase(Handle<?> root) {
     int removed = storage.erase(root.id());
     audit(
         AuditRecord.Operation.ERASE,
@@ -216,7 +216,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public <I, Q> Answer check(Held<I> held, CheckId<I, Q> id, Q question, AccessContext context) {
+  public <I, Q> Answer check(Handle<I> held, CheckId<I, Q> id, Q question, AccessContext context) {
     AccessContext asking = asking(context);
     AtomicReference<A> label = new AtomicReference<>();
     Answer answer = checking(held, id, question, asking, label);
@@ -235,7 +235,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @SuppressWarnings("unchecked")
   private <I, Q> Answer checking(
-      Held<I> held,
+      Handle<I> held,
       CheckId<I, Q> id,
       Q question,
       AccessContext context,
@@ -290,7 +290,7 @@ public final class DefaultLoch<A> implements Loch<A> {
   }
 
   @Override
-  public Lineage lineage(Held<?> held) {
+  public Lineage lineage(Handle<?> held) {
     return metadataOf(held).lineage();
   }
 
@@ -330,14 +330,14 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @Override
   public <I, O> Derived<O> deriveAll(
-      List<Held<I>> parents, FoldId<I, O> id, AccessContext context) {
+      List<Handle<I>> parents, FoldId<I, O> id, AccessContext context) {
     AccessContext asking = asking(context);
     AtomicReference<A> label = new AtomicReference<>();
     Derived<O> result = foldingAll(parents, id, asking, label);
     if (result instanceof Derived.Refused<O> refused) {
       audit(
           AuditRecord.Operation.DERIVE,
-          parents.isEmpty() ? HeldId.fresh() : parents.getFirst().id(),
+          parents.isEmpty() ? HandleId.fresh() : parents.getFirst().id(),
           id.value(),
           AuditRecord.Outcome.REFUSED,
           refused.reason().name(),
@@ -349,7 +349,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @SuppressWarnings("unchecked")
   private <I, O> Derived<O> foldingAll(
-      List<Held<I>> parents, FoldId<I, O> id, AccessContext context, AtomicReference<A> refused) {
+      List<Handle<I>> parents, FoldId<I, O> id, AccessContext context, AtomicReference<A> refused) {
     Fold<A, I, O> fold = (Fold<A, I, O>) folds.get(id.value());
     if (fold == null) {
       return new Derived.Refused<>(
@@ -366,9 +366,9 @@ public final class DefaultLoch<A> implements Loch<A> {
 
     String expected = nameOf(fold.inputType());
     List<I> inputs = new ArrayList<>();
-    List<HeldId> parentIds = new ArrayList<>();
+    List<HandleId> parentIds = new ArrayList<>();
     A joined = null;
-    for (Held<I> parent : parents) {
+    for (Handle<I> parent : parents) {
       StoredMetadata<A> entry = storage.metadata(parent.id()).orElse(null);
       if (entry == null) {
         return new Derived.Refused<>(
@@ -414,7 +414,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
 
-    HeldId newId = HeldId.fresh();
+    HandleId newId = HandleId.fresh();
     storage.put(
         newId,
         new StoredValue<>(
@@ -427,11 +427,11 @@ public final class DefaultLoch<A> implements Loch<A> {
         fold.privileged() ? "weakened from " + joined : "folded " + parentIds.size() + " values",
         label,
         context);
-    return new Derived.Made<>(new Held<>(newId, fold.outputType()));
+    return new Derived.Made<>(new Handle<>(newId, fold.outputType()));
   }
 
   @Override
-  public <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> id, AccessContext context) {
+  public <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> id, AccessContext context) {
     AccessContext asking = asking(context);
     AtomicReference<A> label = new AtomicReference<>();
     Derived<O> result = deriving(parent, id, asking, label);
@@ -450,7 +450,7 @@ public final class DefaultLoch<A> implements Loch<A> {
 
   @SuppressWarnings("unchecked")
   private <I, O> Derived<O> deriving(
-      Held<I> parent, DerivationId<I, O> id, AccessContext context, AtomicReference<A> refused) {
+      Handle<I> parent, DerivationId<I, O> id, AccessContext context, AtomicReference<A> refused) {
     Derivation<A, I, O> derivation = (Derivation<A, I, O>) derivations.get(id.value());
     if (derivation == null) {
       return new Derived.Refused<>(
@@ -481,7 +481,7 @@ public final class DefaultLoch<A> implements Loch<A> {
               .formatted(parent.id(), entry.label(), id, ceiling.get()));
     }
 
-    List<HeldId> parents = List.of(parent.id());
+    List<HandleId> parents = List.of(parent.id());
     I input = storage.value(parent.id(), derivation.inputType()).orElse(null);
     if (input == null) {
       return new Derived.Refused<>(
@@ -506,7 +506,7 @@ public final class DefaultLoch<A> implements Loch<A> {
       }
     }
 
-    HeldId newId = HeldId.fresh();
+    HandleId newId = HandleId.fresh();
     storage.put(
         newId,
         new StoredValue<>(
@@ -522,11 +522,11 @@ public final class DefaultLoch<A> implements Loch<A> {
         derivation.privileged() ? "weakened from " + joined : null,
         label,
         context);
-    return new Derived.Made<>(new Held<>(newId, derivation.outputType()));
+    return new Derived.Made<>(new Handle<>(newId, derivation.outputType()));
   }
 
   @Override
-  public <T> Dereferenced<T> dereference(Held<T> held, DestinationId to, AccessContext context) {
+  public <T> Dereferenced<T> dereference(Handle<T> held, DestinationId to, AccessContext context) {
     context = asking(context);
     Destination<A> destination = destinations.get(to);
     if (destination == null) {

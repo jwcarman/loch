@@ -26,10 +26,10 @@ import org.jwcarman.codec.spi.TypeRef;
  * Here redemption is decided -- against the label the value carries, the ceiling of wherever it is
  * going, and an identity the holder of the check does not control.
  *
- * <p>Put a value in with {@link #hold} and you get a {@link Held} handle. The handle goes wherever
- * you like -- an event stream, a prompt, a message to another service -- because possession of a
- * handle is not permission to read it. Getting the value back out is the one checked operation, and
- * it always names where the value is going.
+ * <p>Put a value in with {@link #hold} and you get a {@link Handle} handle. The handle goes
+ * wherever you like -- an event stream, a prompt, a message to another service -- because
+ * possession of a handle is not permission to read it. Getting the value back out is the one
+ * checked operation, and it always names where the value is going.
  *
  * <p><b>There is no way to read a value without naming a destination.</b> No overload omits it. You
  * cannot obtain plaintext "in general", only plaintext for somewhere, and that somewhere is what
@@ -59,10 +59,10 @@ public interface Loch<A> {
    * only place labels are asserted rather than computed; everywhere else they are derived, and
    * derivation can only make them more constrained.
    */
-  <T> Held<T> hold(T value, TypeRef<T> type, A label);
+  <T> Handle<T> hold(T value, TypeRef<T> type, A label);
 
   /** For a value whose class is its type, which is most of them. */
-  default <T> Held<T> hold(T value, Class<T> type, A label) {
+  default <T> Handle<T> hold(T value, Class<T> type, A label) {
     return hold(value, TypeRef.of(type), label);
   }
 
@@ -72,7 +72,7 @@ public interface Loch<A> {
    * <p>Reading a label is not reading a value. This is how a renderer decides what to say about a
    * handle it is not allowed to open.
    */
-  A label(Held<?> held);
+  A label(Handle<?> held);
 
   /**
    * Removes a value and everything ever derived from it.
@@ -83,10 +83,10 @@ public interface Loch<A> {
    *
    * @return how many values were removed, the root included
    */
-  int erase(Held<?> root);
+  int erase(Handle<?> root);
 
   /** Whether the loch is holding this at all. */
-  boolean holds(Held<?> held);
+  boolean holds(Handle<?> held);
 
   /**
    * Makes a new value from one already held, through a derivation registered at wiring.
@@ -99,10 +99,10 @@ public interface Loch<A> {
    * <p>A derivation reads plaintext in order to compute, so it is a destination like any other and
    * passes the same gate.
    */
-  <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation, AccessContext context);
+  <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> derivation, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default <I, O> Derived<O> derive(Held<I> parent, DerivationId<I, O> derivation) {
+  default <I, O> Derived<O> derive(Handle<I> parent, DerivationId<I, O> derivation) {
     return derive(parent, derivation, AccessContext.empty());
   }
 
@@ -114,10 +114,10 @@ public interface Loch<A> {
    * that could keep it. Prefer this to {@link #dereference} wherever a question is what you
    * actually have.
    */
-  <I, Q> Answer check(Held<I> held, CheckId<I, Q> check, Q question, AccessContext context);
+  <I, Q> Answer check(Handle<I> held, CheckId<I, Q> check, Q question, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default <I, Q> Answer check(Held<I> held, CheckId<I, Q> check, Q question) {
+  default <I, Q> Answer check(Handle<I> held, CheckId<I, Q> check, Q question) {
     return check(held, check, question, AccessContext.empty());
   }
 
@@ -129,15 +129,15 @@ public interface Loch<A> {
    * destination admits. The value exists and keeps its lineage; it simply cannot be dereferenced
    * anywhere. Cross-tenant leakage is not forbidden by a rule someone remembered to write.
    */
-  <I, O> Derived<O> deriveAll(List<Held<I>> parents, FoldId<I, O> fold, AccessContext context);
+  <I, O> Derived<O> deriveAll(List<Handle<I>> parents, FoldId<I, O> fold, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default <I, O> Derived<O> deriveAll(List<Held<I>> parents, FoldId<I, O> fold) {
+  default <I, O> Derived<O> deriveAll(List<Handle<I>> parents, FoldId<I, O> fold) {
     return deriveAll(parents, fold, AccessContext.empty());
   }
 
   /** Where a value came from: its parents, and what made it. Empty for anything held directly. */
-  Lineage lineage(Held<?> held);
+  Lineage lineage(Handle<?> held);
 
   /**
    * What this loch is configured to allow, in a form a person can read.
@@ -156,10 +156,10 @@ public interface Loch<A> {
    * that the destination is one that was registered, that the stored value really is the type the
    * handle claims, and that the label is at or below the destination's ceiling.
    */
-  <T> Dereferenced<T> dereference(Held<T> held, DestinationId to, AccessContext context);
+  <T> Dereferenced<T> dereference(Handle<T> held, DestinationId to, AccessContext context);
 
   /** Using whatever the loch was told about who is asking. */
-  default <T> Dereferenced<T> dereference(Held<T> held, DestinationId to) {
+  default <T> Dereferenced<T> dereference(Handle<T> held, DestinationId to) {
     return dereference(held, to, AccessContext.empty());
   }
 }

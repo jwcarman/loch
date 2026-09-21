@@ -19,15 +19,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.loch.Held;
-import org.jwcarman.loch.HeldId;
+import org.jwcarman.loch.Handle;
+import org.jwcarman.loch.HandleId;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The claim this library makes most often: a reference can go anywhere, because holding one is not
  * permission to read it.
  *
- * <p>It only holds if the reference actually survives the journey. A {@code Held<T>} does not: it
+ * <p>It only holds if the reference actually survives the journey. A {@code Handle<T>} does not: it
  * carries a {@code TypeRef}, which no serialiser can reconstruct, and the type was never authority
  * anyway -- the gate checks it against what the store wrote. So what travels is the id, and the
  * receiving side says what it expects.
@@ -36,7 +36,7 @@ import tools.jackson.databind.json.JsonMapper;
 class HandleTravelTest {
 
   /** An ordinary application event. Nothing here knows about Loch except the id. */
-  record InboundMail(String from, HeldId body) {}
+  record InboundMail(String from, HandleId body) {}
 
   record Card(String number) {}
 
@@ -44,7 +44,7 @@ class HandleTravelTest {
   @DisplayName("survives a round trip through JSON with nothing taught to any serialiser")
   void survives_a_round_trip_through_json() {
     JsonMapper mapper = JsonMapper.builder().build();
-    HeldId id = HeldId.fresh();
+    HandleId id = HandleId.fresh();
 
     String json = mapper.writeValueAsString(new InboundMail("x@y.example", id));
     InboundMail back = mapper.readValue(json, InboundMail.class);
@@ -56,9 +56,9 @@ class HandleTravelTest {
   @Test
   @DisplayName("becomes a typed view again where it is used")
   void becomes_a_typed_view_again_where_it_is_used() {
-    HeldId id = HeldId.fresh();
+    HandleId id = HandleId.fresh();
 
-    Held<Card> held = Held.of(id, Card.class);
+    Handle<Card> held = Handle.of(id, Card.class);
 
     assertThat(held.id()).isEqualTo(id);
     assertThat(held.type().rawClass()).isEqualTo(Card.class);
@@ -68,8 +68,8 @@ class HandleTravelTest {
   @Test
   @DisplayName("prints as its id and nothing else")
   void prints_as_its_id_and_nothing_else() {
-    HeldId id = HeldId.fresh();
+    HandleId id = HandleId.fresh();
 
-    assertThat(Held.of(id, Card.class).toString()).isEqualTo(id.value()).doesNotContain("Card");
+    assertThat(Handle.of(id, Card.class).toString()).isEqualTo(id.value()).doesNotContain("Card");
   }
 }

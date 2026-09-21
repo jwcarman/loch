@@ -39,15 +39,15 @@ import org.jwcarman.codec.spi.TypeRef;
  */
 public final class MemoryStorage<A> implements Storage<A> {
 
-  private final Map<HeldId, StoredValue<A>> values = new ConcurrentHashMap<>();
+  private final Map<HandleId, StoredValue<A>> values = new ConcurrentHashMap<>();
 
   @Override
-  public void put(HeldId id, StoredValue<A> value) {
+  public void put(HandleId id, StoredValue<A> value) {
     values.put(id, value);
   }
 
   @Override
-  public Optional<StoredMetadata<A>> metadata(HeldId id) {
+  public Optional<StoredMetadata<A>> metadata(HandleId id) {
     return Optional.ofNullable(values.get(id))
         .map(
             stored ->
@@ -56,26 +56,26 @@ public final class MemoryStorage<A> implements Storage<A> {
   }
 
   @Override
-  public <T> Optional<T> value(HeldId id, TypeRef<T> type) {
+  public <T> Optional<T> value(HandleId id, TypeRef<T> type) {
     return Optional.ofNullable(values.get(id)).map(stored -> type.rawClass().cast(stored.value()));
   }
 
   @Override
-  public boolean contains(HeldId id) {
+  public boolean contains(HandleId id) {
     return values.containsKey(id);
   }
 
   @Override
-  public int erase(HeldId root) {
-    Set<HeldId> doomed = new HashSet<>();
-    Deque<HeldId> pending = new ArrayDeque<>();
+  public int erase(HandleId root) {
+    Set<HandleId> doomed = new HashSet<>();
+    Deque<HandleId> pending = new ArrayDeque<>();
     pending.add(root);
     while (!pending.isEmpty()) {
-      HeldId next = pending.removeFirst();
+      HandleId next = pending.removeFirst();
       if (!doomed.add(next)) {
         continue;
       }
-      List<HeldId> children = new ArrayList<>();
+      List<HandleId> children = new ArrayList<>();
       values.forEach(
           (id, stored) -> {
             if (stored.lineage().parents().contains(next)) {
@@ -85,7 +85,7 @@ public final class MemoryStorage<A> implements Storage<A> {
       pending.addAll(children);
     }
     int removed = 0;
-    for (HeldId id : doomed) {
+    for (HandleId id : doomed) {
       if (values.remove(id) != null) {
         removed++;
       }

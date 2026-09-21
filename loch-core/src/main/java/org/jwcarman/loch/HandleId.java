@@ -29,11 +29,11 @@ import java.util.UUID;
  * <p>So the rule this type exists to enforce is that <b>lookup never computes</b>. An id is found
  * or it is refused. Manufacturing one gains nothing, which is why they can be passed anywhere.
  */
-public record HeldId(String value) {
+public record HandleId(String value) {
 
   private static final String PREFIX = "loch_";
 
-  public HeldId {
+  public HandleId {
     Objects.requireNonNull(value, "an id needs a value");
     if (value.isBlank()) {
       throw new IllegalArgumentException("an id cannot be blank");
@@ -41,8 +41,8 @@ public record HeldId(String value) {
   }
 
   /** A fresh id, for a value that was held or non-deterministically derived. */
-  public static HeldId fresh() {
-    return new HeldId(PREFIX + UUID.randomUUID());
+  public static HandleId fresh() {
+    return new HandleId(PREFIX + UUID.randomUUID());
   }
 
   @Override
