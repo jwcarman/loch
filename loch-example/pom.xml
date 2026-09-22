@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright © ${year} James Carman
+    Copyright © 2026 James Carman
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,22 +21,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <!-- Boot's parent, not ours, on purpose.
-       This module is meant to look like an application somebody would actually write, and an
-       application written against Spring Boot uses spring-boot-starter-parent: it brings the
-       plugin (so `mvn spring-boot:run` works and the jar is repackaged), the parameters compiler
-       flag (without which every @PathVariable fails at runtime), and dependency management for
-       the whole ecosystem.
+  <!-- Spring Boot without spring-boot-starter-parent, which is Boot's own documented option for
+       a module that already has a parent: import spring-boot-dependencies for versions, and
+       declare spring-boot-maven-plugin with its repackage goal for the jar and for
+       `mvn spring-boot:run`.
 
-       loch-parent still aggregates this module, since aggregation and inheritance are separate
-       things in Maven, so `mvn install` at the root still builds it. What is lost by not
-       inheriting is the licence and formatting configuration, which is re-declared below rather
-       than quietly dropped. -->
+       Inheriting loch-parent is the point. Formatting, licence headers, the compiler settings
+       and the surefire configuration are the build this module is part of, and re-declaring them
+       here was how they drifted. The `parameters` compiler flag that @PathVariable needs comes
+       from loch-parent, which sets it for the same reason Boot's parent does. -->
   <parent>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.1.1</version>
-    <relativePath/>
+    <groupId>org.jwcarman.loch</groupId>
+    <artifactId>loch-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
   </parent>
 
   <groupId>org.jwcarman.loch</groupId>
@@ -47,26 +44,45 @@
     cardholder data and untrusted mail.</description>
 
   <properties>
-    <!-- Ahead of what Boot 4.1.1 manages (11.0.24), which carries three criticals: a FORM auth
-         authorization flaw, a DIGEST capture-replay bypass, and an access-control flaw. This
-         module is the only one that serves HTTP, so no published module is exposed. A security
-         library shipping a demo on a known-vulnerable server is its own argument. Remove when
-         Boot catches up.
-
-         A property works here because this module inherits spring-boot-starter-parent. The root
-         pom imports the Boot BOM instead, and an imported BOM resolves its own properties, so the
-         same line there would do nothing. -->
-    <tomcat.version>11.0.25</tomcat.version>
-    <java.version>25</java.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
     <codec.version>0.9.0</codec.version>
-    <testcontainers.version>2.0.5</testcontainers.version>
-    <spotless.version>3.10.2</spotless.version>
-    <license.plugin.version>5.1.2</license.plugin.version>
-    <license.owner>James Carman</license.owner>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- Ahead of what Boot 4.1.1 manages (11.0.24), which carries three criticals: a FORM auth
+           authorization flaw, a DIGEST capture-replay bypass, and an access-control flaw. This
+           module is the only one here that serves HTTP, so no published artifact is exposed. A
+           security library shipping a demo on a known-vulnerable server is still its own
+           argument. Remove when Boot catches up.
+
+           Declared rather than set through the tomcat.version property: an imported BOM resolves
+           its own properties, so the property form would be silently inert now that this module
+           imports spring-boot-dependencies instead of inheriting it. First declaration wins in
+           dependencyManagement, which is why these sit above the import. -->
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-core</artifactId>
+        <version>11.0.25</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-el</artifactId>
+        <version>11.0.25</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-websocket</artifactId>
+        <version>11.0.25</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.jwcarman.codec</groupId>
         <artifactId>codec-bom</artifactId>
@@ -161,74 +177,21 @@
   </dependencies>
   <build>
     <plugins>
+      <!-- Version and goal stated explicitly: without spring-boot-starter-parent nothing
+           supplies either, and the jar silently would not be repackaged. -->
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
-      </plugin>
-
-      <!-- Re-declared because this module does not inherit loch-parent. -->
-      <plugin>
-        <groupId>com.diffplug.spotless</groupId>
-        <artifactId>spotless-maven-plugin</artifactId>
-        <version>${spotless.version}</version>
-        <configuration>
-          <java>
-            <googleJavaFormat>
-              <style>GOOGLE</style>
-            </googleJavaFormat>
-          </java>
-        </configuration>
+        <version>${spring-boot.version}</version>
         <executions>
           <execution>
             <goals>
-              <goal>check</goal>
+              <goal>repackage</goal>
             </goals>
-            <phase>validate</phase>
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <groupId>com.mycila</groupId>
-        <artifactId>license-maven-plugin</artifactId>
-        <version>${license.plugin.version}</version>
-        <configuration>
-          <properties>
-            <owner>${license.owner}</owner>
-          </properties>
-          <licenseSets>
-            <licenseSet>
-              <inlineHeader><![CDATA[Copyright © ${year} ${owner}
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.]]></inlineHeader>
-              <excludes>
-                <exclude>**/*.md</exclude>
-                <exclude>**/*.yaml</exclude>
-                <exclude>**/*.yml</exclude>
-                <exclude>src/main/resources/**</exclude>
-                <exclude>src/test/resources/**</exclude>
-              </excludes>
-            </licenseSet>
-          </licenseSets>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>check</goal>
-            </goals>
-            <phase>validate</phase>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
+</plugins>
   </build>
 </project>
