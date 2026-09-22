@@ -28,7 +28,12 @@ package org.jwcarman.loch;
  * ceiling decides who may ask and the audit line records that they did; counting is the
  * application's job, and it is a real job.
  *
- * <p>Minted during configuration, and obtainable only by being handed one.
+ * <p>What makes counting tractable is the shape of the question. Equality leaks almost nothing --
+ * it confirms a guess somebody already had. A prefix, a range or a comparison leaks enormously,
+ * because it turns repetition into binary search. Declaring the first kind and not the second is
+ * worth more than any budget.
+ *
+ * <p>Declared during configuration, and obtainable only by being handed one.
  *
  * @param <I> the type of value this can be asked about
  * @param <Q> what the question is asked against
