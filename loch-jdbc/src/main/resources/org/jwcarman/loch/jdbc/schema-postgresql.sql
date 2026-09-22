@@ -101,7 +101,13 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   previous    BYTEA,
   digest      BYTEA       NOT NULL,
   root_id     TEXT        NOT NULL,
-  who         TEXT        NOT NULL
+  -- Whatever the application calls identity, as JSON through its own codec and then encrypted,
+  -- exactly like a label. Not in the clear, because loch does not know what is in here: an
+  -- AccessContext is a map the application fills, so it may hold a tenant, an email address or a
+  -- whole token, and storing it plainly was this library deciding somebody else's data was
+  -- harmless. It was also Map.toString(), whose iteration order is salted per JVM and which is
+  -- ambiguous for any value containing a comma or an equals sign -- unqueryable AND unparseable.
+  who         BYTEA       NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS loch_audit_value ON loch_audit (value_id);

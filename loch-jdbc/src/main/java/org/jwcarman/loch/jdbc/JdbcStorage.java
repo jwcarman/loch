@@ -135,7 +135,13 @@ public final class JdbcStorage implements Storage {
   private final DataSource dataSource;
   private final CodecFactory codecs;
   private final StorageCodec storageCodec;
-  private final Codec<java.util.Map<String, String>> labels;
+
+  /**
+   * Serialisation then encryption, for the two things stored as a map of strings that must not be
+   * in the clear: a label, and whatever the application calls identity.
+   */
+  private final Codec<java.util.Map<String, String>> protectedMap;
+
   private final Axes axes;
   private final String rootId;
   private final java.util.function.Function<String, byte[]> roots;
@@ -156,7 +162,7 @@ public final class JdbcStorage implements Storage {
     this.roots = roots;
     // One axis at a time, keyed by name. A record would have gone to disk positionally, and then
     // declaring a fourth axis would make every row already written undecodable.
-    this.labels =
+    this.protectedMap =
         codecs
             .create(TypeRef.mapOf(TypeRef.of(String.class), TypeRef.of(String.class)))
             .andThen(storageCodec);
@@ -266,12 +272,16 @@ public final class JdbcStorage implements Storage {
     byte[] previous = head.digest();
     byte[] detail = protected_(entry.detail());
     byte[] label = protected_(entry.label());
+    // Encrypted ONCE, then both signed and stored. A StorageCodec is free to be non-deterministic
+    // -- an authenticated cipher uses a fresh nonce every time -- so encrypting a second copy for
+    // the digest signs bytes no column ever held, and every line fails its own check on read-back.
+    byte[] who = protectedMap.encode(entry.context());
     // The database's clock, not this process's: a trail signs facts it witnessed, and when some
     // application server believed it decided something is not one of them. Truncated once, because
     // TIMESTAMPTZ keeps microseconds and an Instant offers nanoseconds -- signing what was in hand
     // rather than what reached the column made every line fail its own check when it was read back.
     Instant recordedAt = head.recordedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    byte[] digest = lineDigest(rootId, previous, recordedAt, entry, detail, label);
+    byte[] digest = lineDigest(rootId, previous, recordedAt, entry, detail, label, who);
     try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
       statement.setTimestamp(1, Timestamp.from(recordedAt));
       statement.setString(2, entry.operation().name());
@@ -284,7 +294,7 @@ public final class JdbcStorage implements Storage {
       statement.setBytes(9, previous);
       statement.setBytes(10, digest);
       statement.setString(11, rootId);
-      statement.setString(12, entry.context().toString());
+      statement.setBytes(12, who);
       statement.executeUpdate();
     }
   }
@@ -308,7 +318,7 @@ public final class JdbcStorage implements Storage {
   private void insertValue(Connection connection, String id, StoredValue value)
       throws SQLException {
     byte[] payload = encode(value.type().type(), value.value());
-    byte[] label = labels.encode(value.label().encode());
+    byte[] label = protectedMap.encode(value.label().encode());
     // From the parents, which are immutable and already written, so nothing here is locked and two
     // derivations never wait on each other. A fresh value has none and starts its own graph.
     byte[] digest =
@@ -489,7 +499,8 @@ public final class JdbcStorage implements Storage {
       Instant recordedAt,
       AuditRecord entry,
       byte[] detail,
-      byte[] label) {
+      byte[] label,
+      byte[] who) {
     return lineDigest(
         under,
         previous,
@@ -501,7 +512,7 @@ public final class JdbcStorage implements Storage {
         entry.reason().orElse(null),
         detail,
         label,
-        entry.context().toString());
+        who);
   }
 
   private byte[] lineDigest(
@@ -515,7 +526,7 @@ public final class JdbcStorage implements Storage {
       String reason,
       byte[] detail,
       byte[] label,
-      String who) {
+      byte[] who) {
     javax.crypto.Mac mac = keyed(Domain.LINE, under);
     feed(mac, previous);
     feed(mac, recordedAt.toString().getBytes(UTF_8));
@@ -526,7 +537,7 @@ public final class JdbcStorage implements Storage {
     feed(mac, reason == null ? null : reason.getBytes(UTF_8));
     feed(mac, detail);
     feed(mac, label);
-    feed(mac, who.getBytes(UTF_8));
+    feed(mac, who);
     return mac.doFinal();
   }
 
@@ -589,7 +600,7 @@ public final class JdbcStorage implements Storage {
                 rows.getString("reason"),
                 rows.getBytes("detail"),
                 rows.getBytes("label"),
-                rows.getString("who"));
+                rows.getBytes("who"));
         if (!java.util.Arrays.equals(digest, rows.getBytes("digest"))) {
           return java.util.Optional.of(rows.getLong("entry_id"));
         }
@@ -750,7 +761,7 @@ public final class JdbcStorage implements Storage {
         if (!rows.next()) {
           return Optional.empty();
         }
-        Label label = Label.decode(labels.decode(rows.getBytes("label")), axes);
+        Label label = Label.decode(protectedMap.decode(rows.getBytes("label")), axes);
         String derivation = rows.getString("derivation");
         Lineage lineage =
             derivation == null
@@ -775,7 +786,7 @@ public final class JdbcStorage implements Storage {
       try (ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
           String id = rows.getString("value_id");
-          Label label = Label.decode(labels.decode(rows.getBytes("label")), axes);
+          Label label = Label.decode(protectedMap.decode(rows.getBytes("label")), axes);
           String derivation = rows.getString("derivation");
           Lineage lineage =
               derivation == null
