@@ -134,7 +134,7 @@ class RequiredAxisTest {
 
     assertThat(own.holds("nothing")).isFalse();
     assertThat(storage.everything()).isEmpty();
-    assertThat(storage.audit(AuditRecord.Operation.HOLD))
+    assertThat(storage.audit(AuditRecord.Operation.CONCEAL))
         .isNotEmpty()
         .allSatisfy(entry -> assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }

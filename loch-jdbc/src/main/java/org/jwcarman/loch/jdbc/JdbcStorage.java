@@ -82,7 +82,7 @@ public final class JdbcStorage implements Storage {
   private static final String INSERT_AUDIT =
       """
       INSERT INTO loch_audit
-        (at, operation, value_id, target, outcome, reason, detail, label, previous, digest,
+        (decided_at, operation, value_id, target, outcome, reason, detail, label, previous, digest,
          root_id, who)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
@@ -238,10 +238,10 @@ public final class JdbcStorage implements Storage {
     // Truncated once, and the same value is stored and signed. TIMESTAMPTZ keeps microseconds and
     // Instant.now() offers nanoseconds, so signing what was in hand rather than what reached the
     // column made every line fail its own check the moment it was read back.
-    Instant at = entry.at().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    byte[] digest = lineDigest(rootId, previous, at, entry, detail, label);
+    Instant decidedAt = entry.decidedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    byte[] digest = lineDigest(rootId, previous, decidedAt, entry, detail, label);
     try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
-      statement.setTimestamp(1, Timestamp.from(at));
+      statement.setTimestamp(1, Timestamp.from(decidedAt));
       statement.setString(2, entry.operation().name());
       statement.setString(3, entry.value());
       statement.setString(4, entry.target().orElse(null));
@@ -411,11 +411,16 @@ public final class JdbcStorage implements Storage {
    * it is. Keyed, so nobody can recompute the tail after removing something from the middle.
    */
   private byte[] lineDigest(
-      String under, byte[] previous, Instant at, AuditRecord entry, byte[] detail, byte[] label) {
+      String under,
+      byte[] previous,
+      Instant decidedAt,
+      AuditRecord entry,
+      byte[] detail,
+      byte[] label) {
     return lineDigest(
         under,
         previous,
-        at,
+        decidedAt,
         entry.operation().name(),
         entry.value(),
         entry.target().orElse(null),
@@ -429,7 +434,7 @@ public final class JdbcStorage implements Storage {
   private byte[] lineDigest(
       String under,
       byte[] previous,
-      Instant at,
+      Instant decidedAt,
       String operation,
       String value,
       String target,
@@ -440,7 +445,7 @@ public final class JdbcStorage implements Storage {
       String who) {
     javax.crypto.Mac mac = keyed(under);
     feed(mac, previous);
-    feed(mac, at.toString().getBytes(UTF_8));
+    feed(mac, decidedAt.toString().getBytes(UTF_8));
     feed(mac, operation.getBytes(UTF_8));
     feed(mac, value.getBytes(UTF_8));
     feed(mac, target == null ? null : target.getBytes(UTF_8));
@@ -488,7 +493,7 @@ public final class JdbcStorage implements Storage {
         PreparedStatement statement =
             connection.prepareStatement(
                 """
-                SELECT entry_id, at, operation, value_id, target, outcome, reason, detail, label,
+                SELECT entry_id, decided_at, operation, value_id, target, outcome, reason, detail, label,
                        previous, digest, root_id, who
                 FROM loch_audit ORDER BY entry_id
                 """);
@@ -503,7 +508,7 @@ public final class JdbcStorage implements Storage {
             lineDigest(
                 rows.getString("root_id"),
                 previous,
-                rows.getTimestamp("at").toInstant(),
+                rows.getTimestamp("decided_at").toInstant(),
                 rows.getString("operation"),
                 rows.getString("value_id"),
                 rows.getString("target"),
@@ -627,7 +632,7 @@ public final class JdbcStorage implements Storage {
         String derivation = rows.getString("derivation");
         Lineage lineage =
             derivation == null
-                ? Lineage.held()
+                ? Lineage.concealed()
                 : Lineage.derivedFrom(parentsOf(connection, id), derivation);
         return Optional.of(new StoredMetadata(rows.getString("value_type"), label, lineage));
       }
@@ -652,7 +657,7 @@ public final class JdbcStorage implements Storage {
           String derivation = rows.getString("derivation");
           Lineage lineage =
               derivation == null
-                  ? Lineage.held()
+                  ? Lineage.concealed()
                   : Lineage.derivedFrom(parentsOf(connection, id), derivation);
           found.put(id, new StoredMetadata(rows.getString("value_type"), label, lineage));
         }

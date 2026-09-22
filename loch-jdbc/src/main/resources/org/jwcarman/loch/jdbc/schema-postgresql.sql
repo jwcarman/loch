@@ -74,7 +74,7 @@ CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
 -- and against which ceiling, which is exactly the thing a refusal must never tell its caller.
 CREATE TABLE IF NOT EXISTS loch_audit (
   entry_id    BIGSERIAL PRIMARY KEY,
-  at          TIMESTAMPTZ NOT NULL,
+  decided_at  TIMESTAMPTZ NOT NULL,
   operation   TEXT        NOT NULL,
   value_id    TEXT,
   target      TEXT,
@@ -101,4 +101,4 @@ CREATE TABLE IF NOT EXISTS loch_audit (
 );
 
 CREATE INDEX IF NOT EXISTS loch_audit_value ON loch_audit (value_id);
-CREATE INDEX IF NOT EXISTS loch_audit_at ON loch_audit (at);
+CREATE INDEX IF NOT EXISTS loch_audit_decided_at ON loch_audit (decided_at);

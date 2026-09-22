@@ -93,7 +93,7 @@ final class Engine {
     }
     if (label == null) {
       audit(
-          AuditRecord.Operation.HOLD,
+          AuditRecord.Operation.CONCEAL,
           storage.freshId(),
           source,
           AuditRecord.Outcome.REFUSED,
@@ -107,7 +107,7 @@ final class Engine {
     // parents and join only moves up, so nothing downstream can lose what was said here.
     if (leavesARequiredAxisUnsaid(label)) {
       audit(
-          AuditRecord.Operation.HOLD,
+          AuditRecord.Operation.CONCEAL,
           storage.freshId(),
           source,
           AuditRecord.Outcome.REFUSED,
@@ -126,14 +126,14 @@ final class Engine {
     // which door it came in through.
     AuditRecord entry =
         entry(
-            AuditRecord.Operation.HOLD,
+            AuditRecord.Operation.CONCEAL,
             id,
             source,
             AuditRecord.Outcome.ALLOWED,
             Why.nothing(),
             label,
             asking);
-    storage.put(id, new StoredValue(value, type, label, Lineage.held()), entry);
+    storage.put(id, new StoredValue(value, type, label, Lineage.concealed()), entry);
     return new Surrogate<>(id);
   }
 
@@ -248,7 +248,7 @@ final class Engine {
       Label label,
       AccessContext context) {
     audit(
-        AuditRecord.Operation.DEREFERENCE,
+        AuditRecord.Operation.REVEAL,
         value,
         target,
         AuditRecord.Outcome.REFUSED,
@@ -338,7 +338,7 @@ final class Engine {
     Answer answer = answering(spec, about, against, asking, label, because);
     if (answer instanceof Answer.Refused refused) {
       audit(
-          AuditRecord.Operation.ASK,
+          AuditRecord.Operation.QUERY,
           about.id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
@@ -399,7 +399,7 @@ final class Engine {
     }
     // The answer, never what was asked: the argument can itself be sensitive.
     audit(
-        AuditRecord.Operation.ASK,
+        AuditRecord.Operation.QUERY,
         held.id(),
         name,
         AuditRecord.Outcome.ALLOWED,
@@ -620,7 +620,7 @@ final class Engine {
           context);
     }
     audit(
-        AuditRecord.Operation.DEREFERENCE,
+        AuditRecord.Operation.REVEAL,
         held.id(),
         to,
         AuditRecord.Outcome.ALLOWED,

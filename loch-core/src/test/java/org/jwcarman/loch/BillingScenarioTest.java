@@ -1126,7 +1126,7 @@ class BillingScenarioTest {
       acme();
       quarantinedLlmText.reveal(customerEmail());
 
-      AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.REVEAL).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED);
       assertThat(entry.target()).contains("quarantined-llm");
       assertThat(entry.context()).containsEntry("tenant", "acme");
@@ -1140,7 +1140,7 @@ class BillingScenarioTest {
       acme();
       vendorLlmText.reveal(customerEmail());
 
-      AuditRecord entry = storage.audit(AuditRecord.Operation.DEREFERENCE).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.REVEAL).getLast();
       assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
       assertThat(entry.reason())
           .hasValueSatisfying(why -> assertThat(why).startsWith("ABOVE_CEILING"));
@@ -1151,7 +1151,7 @@ class BillingScenarioTest {
     void records_holding() {
       Surrogate<String> email = customerEmail();
 
-      assertThat(storage.audit(AuditRecord.Operation.HOLD))
+      assertThat(storage.audit(AuditRecord.Operation.CONCEAL))
           .anySatisfy(entry -> assertThat(entry.value()).isEqualTo(email.id()));
     }
 
@@ -1170,7 +1170,7 @@ class BillingScenarioTest {
       acme();
       ownedBy.ask(account, "someone@acme.example");
 
-      AuditRecord entry = storage.audit(AuditRecord.Operation.ASK).getLast();
+      AuditRecord entry = storage.audit(AuditRecord.Operation.QUERY).getLast();
       assertThat(entry.reason()).contains("answered true");
       assertThat(entry.toString()).doesNotContain("someone@acme.example");
     }
@@ -1408,7 +1408,7 @@ class BillingScenarioTest {
       globex();
       ownedBy.ask(acmeAccount, "x");
 
-      assertThat(storage.audit(AuditRecord.Operation.ASK))
+      assertThat(storage.audit(AuditRecord.Operation.QUERY))
           .anySatisfy(
               entry -> {
                 assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);

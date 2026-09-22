@@ -644,7 +644,7 @@ class JdbcCharterTest {
 
     // One line for taking it in, one for handing it over.
     assertThat(rowCount("loch_audit")).isEqualTo(2);
-    assertThat(auditColumn("operation")).containsExactly("HOLD", "DEREFERENCE");
+    assertThat(auditColumn("operation")).containsExactly("CONCEAL", "REVEAL");
     assertThat(auditColumn("outcome")).containsOnly("ALLOWED");
   }
 

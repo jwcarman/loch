@@ -26,19 +26,19 @@ import java.util.Optional;
  * reachability problem rather than a cascade anyone has to design.
  *
  * @param parents the values this was derived from, in the order they were given
- * @param derivation what made it, absent for a value that was held directly
+ * @param derivation what made it, absent for a value that was concealed directly
  */
 public record Lineage(List<String> parents, Optional<String> derivation) {
 
-  private static final Lineage HELD = new Lineage(List.of(), Optional.empty());
+  private static final Lineage CONCEALED = new Lineage(List.of(), Optional.empty());
 
   public Lineage {
     parents = List.copyOf(parents);
   }
 
   /** A value nobody derived: it was handed to the store by trusted code at a boundary. */
-  public static Lineage held() {
-    return HELD;
+  public static Lineage concealed() {
+    return CONCEALED;
   }
 
   public static Lineage derivedFrom(List<String> parents, String derivation) {

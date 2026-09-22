@@ -45,7 +45,7 @@ import java.util.Optional;
  * @param context whatever the application contributed about who was asking
  */
 public record AuditRecord(
-    Instant at,
+    Instant decidedAt,
     Operation operation,
     String value,
     Optional<String> target,
@@ -57,14 +57,14 @@ public record AuditRecord(
 
   /** What was being attempted. */
   public enum Operation {
-    /** A value was taken into custody, with labels its caller asserted. */
-    HOLD,
-    /** Plaintext was asked for, on its way somewhere. */
-    DEREFERENCE,
-    /** A new value was made from one already held. */
+    /** A value was concealed, with labels its caller asserted. */
+    CONCEAL,
+    /** A value was revealed: plaintext was asked for, on its way somewhere. */
+    REVEAL,
+    /** A new value was made from one already concealed. */
     DERIVE,
     /** A question was answered about a value without the value leaving. */
-    ASK,
+    QUERY,
     /** A value and everything derived from it were removed. */
     ERASE
   }
@@ -75,7 +75,7 @@ public record AuditRecord(
   }
 
   public AuditRecord {
-    Objects.requireNonNull(at, "an audit record needs a time");
+    Objects.requireNonNull(decidedAt, "an audit record needs a time");
     Objects.requireNonNull(operation, "an audit record needs an operation");
     context = Map.copyOf(context);
   }
@@ -90,7 +90,7 @@ public record AuditRecord(
   public String toString() {
     return "%s %s %s%s %s%s%s%s"
         .formatted(
-            at,
+            decidedAt,
             operation,
             value,
             target.map(" -> "::concat).orElse(""),
