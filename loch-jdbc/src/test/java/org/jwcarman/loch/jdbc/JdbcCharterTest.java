@@ -467,20 +467,63 @@ class JdbcCharterTest {
   }
 
   /**
-   * Verification must not depend on identifiers happening to sort parents before children.
+   * Deriving and erasing must not be able to miss each other.
    *
-   * <p>They do today, because v7 identifiers sort by creation time -- but {@code Storage.freshId}
-   * is a documented seam an application may replace, and two writers with skewed clocks interleave
-   * regardless. Checking to a fixpoint asks nothing of the order.
+   * <p>A share lock on the parent rows is not enough: under READ COMMITTED a blocked DELETE resumes
+   * with the snapshot its statement began with, so an erasure can take its snapshot, wait behind a
+   * derivation, and then delete only what it saw -- leaving the child that committed in between
+   * alive, with its parent gone and no ERASE line naming it.
+   *
+   * <p>Run as contention rather than as one contrived interleaving, because the interleaving that
+   * breaks it is a matter of timing. Every surviving value must still verify: nothing may be left
+   * pointing at a parent that was erased.
    */
   @Test
-  @DisplayName("verifies a graph whose children sort before their parents")
-  void verifies_regardless_of_identifier_order() {
-    Surrogate<Card> card = card();
-    acme();
-    cardLast4.derive(card).orThrow();
+  @DisplayName("deriving while erasing never leaves a child of an erased value behind")
+  void deriving_while_erasing_leaves_nothing_behind() throws Exception {
+    int rounds = 24;
+    java.util.List<java.util.concurrent.Callable<Void>> work = new java.util.ArrayList<>();
+    for (int round = 0; round < rounds; round++) {
+      work.add(
+          () -> {
+            acme();
+            Surrogate<Card> card = card();
+            Thread deriving =
+                new Thread(
+                    () -> {
+                      acme();
+                      try {
+                        cardLast4.derive(card);
+                      } catch (RuntimeException expected) {
+                        // The parent went first. That is a legitimate outcome of the race.
+                      }
+                    });
+            Thread erasing =
+                new Thread(
+                    () -> {
+                      edge.set(
+                          AccessContext.of(
+                              java.util.Map.of("tenant", "acme", "role", "compliance")));
+                      store.erase(card);
+                    });
+            deriving.start();
+            erasing.start();
+            deriving.join();
+            erasing.join();
+            return null;
+          });
+    }
+    try (java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(4)) {
+      for (java.util.concurrent.Future<Void> done : pool.invokeAll(work)) {
+        done.get();
+      }
+    }
 
+    // Whatever survived is coherent: nothing orphaned, nothing missing, the trail intact.
     assertThat(storage.brokenValues()).isEmpty();
+    assertThat(storage.missingValues()).isEmpty();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
   }
 
   private void deleteValue(String id) throws SQLException {

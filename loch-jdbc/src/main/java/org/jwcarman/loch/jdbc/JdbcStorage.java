@@ -194,6 +194,12 @@ public final class JdbcStorage implements Storage {
     inTransaction(
         "could not store " + id,
         connection -> {
+          // Before anything is read, so an erasure cannot begin between reading the parents and
+          // writing the child. A value with no parents cannot be a descendant of anything, so it
+          // does not contend.
+          if (!value.lineage().parents().isEmpty()) {
+            lockLineageShared(connection);
+          }
           insertValue(connection, id, value);
           insertLineage(connection, id, value.lineage());
           insertAudit(connection, record);
@@ -508,6 +514,41 @@ public final class JdbcStorage implements Storage {
 
   /** One name every appender waits on, so the trail has one order. */
   private static final long TRAIL_LOCK = 0x10C_A0D17L;
+
+  /**
+   * What deriving and erasing contend on, so that one cannot miss the other.
+   *
+   * <p>A share lock on the parent rows is not enough, and the way it fails is worth writing down.
+   * Under READ COMMITTED a blocked DELETE resumes with the snapshot its statement began with. So an
+   * erasure could take its snapshot -- in which the parent has no children -- block on a
+   * derivation's share lock, and then resume and delete only what it saw. The child committed in
+   * between is invisible to it: a value derived from erased data survives, no ERASE line names it,
+   * and its parent is gone, so the value verifier reports it broken forever.
+   *
+   * <p>Shared for deriving and exclusive for erasing. Any number of derivations proceed at once; an
+   * erasure waits for the ones in flight and shuts out the ones that would start. That is the right
+   * way round: deriving is common and must not block itself, erasing is rare and must be complete.
+   * Taken before the trail lock in both paths, so the two are always acquired in the same order and
+   * cannot deadlock against each other.
+   */
+  private static final long LINEAGE_LOCK = 0x10C_11AE9L;
+
+  /** Waits for every derivation in flight, and holds off the ones that have not started. */
+  private static void lockLineageExclusively(Connection connection) throws SQLException {
+    try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+      lock.setLong(1, LINEAGE_LOCK);
+      lock.execute();
+    }
+  }
+
+  /** Shared, so derivations never wait on one another -- only on an erasure. */
+  private static void lockLineageShared(Connection connection) throws SQLException {
+    try (PreparedStatement lock =
+        connection.prepareStatement("SELECT pg_advisory_xact_lock_shared(?)")) {
+      lock.setLong(1, LINEAGE_LOCK);
+      lock.execute();
+    }
+  }
 
   /**
    * The line this one follows, and the moment this one is being written.
@@ -943,6 +984,7 @@ public final class JdbcStorage implements Storage {
     return inTransactionReturning(
         "could not erase " + root,
         connection -> {
+          lockLineageExclusively(connection);
           List<String> removed = new java.util.ArrayList<>();
           // RETURNING, so the identities come back from the same statement that destroys them.
           // Selecting them first would be a second snapshot and a window to disagree with.
