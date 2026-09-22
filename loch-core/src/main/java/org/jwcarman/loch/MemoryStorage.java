@@ -97,7 +97,7 @@ public final class MemoryStorage implements Storage {
   }
 
   @Override
-  public int erase(String root) {
+  public List<String> erase(String root) {
     Set<String> doomed = new HashSet<>();
     Deque<String> pending = new ArrayDeque<>();
     pending.add(root);
@@ -115,10 +115,10 @@ public final class MemoryStorage implements Storage {
           });
       pending.addAll(children);
     }
-    int removed = 0;
+    List<String> removed = new ArrayList<>();
     for (String id : doomed) {
       if (values.remove(id) != null) {
-        removed++;
+        removed.add(id);
       }
     }
     return removed;

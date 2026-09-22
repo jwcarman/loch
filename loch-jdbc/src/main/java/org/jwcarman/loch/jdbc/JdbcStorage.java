@@ -123,6 +123,7 @@ public final class JdbcStorage implements Storage {
       """
       DELETE FROM loch_value WHERE value_id IN
         (SELECT descendant_id FROM loch_lineage_closure WHERE ancestor_id = ?)
+      RETURNING value_id
       """;
   private static final String DELETE_CLOSURE_OF_GONE =
       """
@@ -561,6 +562,55 @@ public final class JdbcStorage implements Storage {
   }
 
   /**
+   * Every value the trail says should be here and is not.
+   *
+   * <p>The gap the value graph cannot see. A value's digest binds it to its ancestry, so editing
+   * one breaks its children and deleting one breaks them too -- but a <b>leaf</b> has no children,
+   * and deleting it leaves nothing behind to disagree with. {@link #brokenValues()} iterates the
+   * rows that are still there, and a row that is gone is not one of them.
+   *
+   * <p>Only the trail can close that, because only the trail is outside the row. Every value was
+   * announced by an ALLOWED CONCEAL or DERIVE line naming it, and every lawful removal wrote an
+   * ERASE line naming it. What the trail says exists, minus what the trail says was erased, is
+   * exactly what {@code loch_value} should contain. Anything missing from that difference was
+   * removed by something that did not go through this library.
+   *
+   * <p>This is why erasure records identifiers rather than a count, and why the value rows carry no
+   * timestamp of their own: a row cannot be the evidence for its own existence.
+   *
+   * <p>Verifying the trail first is the point. These are claims the trail makes, so they are worth
+   * exactly what {@link #firstBrokenEntry()} says they are -- an attacker who could delete the row
+   * could delete its CONCEAL line too, and the chain is what makes that visible.
+   *
+   * @return the identifiers of values the trail announced, never erased, and which are not here
+   */
+  public List<String> missingValues() {
+    List<String> missing = new java.util.ArrayList<>();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                """
+                SELECT announced.value_id FROM (
+                  SELECT DISTINCT value_id FROM loch_audit
+                   WHERE outcome = 'ALLOWED' AND operation IN ('CONCEAL', 'DERIVE')
+                ) AS announced
+                 WHERE announced.value_id NOT IN (
+                   SELECT value_id FROM loch_audit
+                    WHERE outcome = 'ALLOWED' AND operation = 'ERASE')
+                   AND announced.value_id NOT IN (SELECT value_id FROM loch_value)
+                 ORDER BY announced.value_id
+                """);
+        ResultSet rows = statement.executeQuery()) {
+      while (rows.next()) {
+        missing.add(rows.getString("value_id"));
+      }
+      return missing;
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not check the values against the trail", e);
+    }
+  }
+
+  /**
    * Every value whose digest no longer agrees with its own bytes and its ancestry.
    *
    * <p>An edited value appears here; so does every value derived from it, because their digests
@@ -762,14 +812,20 @@ public final class JdbcStorage implements Storage {
   }
 
   @Override
-  public int erase(String root) {
+  public List<String> erase(String root) {
     return inTransactionReturning(
         "could not erase " + root,
         connection -> {
-          int removed;
+          List<String> removed = new java.util.ArrayList<>();
+          // RETURNING, so the identities come back from the same statement that destroys them.
+          // Selecting them first would be a second snapshot and a window to disagree with.
           try (PreparedStatement statement = connection.prepareStatement(DELETE_REACHABLE)) {
             statement.setString(1, root);
-            removed = statement.executeUpdate();
+            try (ResultSet rows = statement.executeQuery()) {
+              while (rows.next()) {
+                removed.add(rows.getString("value_id"));
+              }
+            }
           }
           try (Statement tidy = connection.createStatement()) {
             tidy.executeUpdate(DELETE_CLOSURE_OF_GONE);

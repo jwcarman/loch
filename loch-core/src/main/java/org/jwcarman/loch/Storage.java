@@ -113,7 +113,12 @@ public interface Storage {
    * value is made of its parents, so leaving descendants behind after erasing a root leaves the
    * data that was asked to be gone.
    *
-   * @return how many values were removed, the root included
+   * <p>Reports the identifiers rather than a count, because the trail has to name what it
+   * destroyed. A row cannot attest to its own existence: once it is deleted, a column on it is
+   * deleted too, so the only way anything can later tell a lawful erasure from a quiet one is if
+   * the erasure wrote down what it took.
+   *
+   * @return the values removed, the root included, in no particular order
    */
-  int erase(String root);
+  java.util.List<String> erase(String root);
 }

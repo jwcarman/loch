@@ -1273,7 +1273,7 @@ class BillingScenarioTest {
             }
 
             @Override
-            public int erase(String root) {
+            public java.util.List<String> erase(String root) {
               return kept.erase(root);
             }
           };

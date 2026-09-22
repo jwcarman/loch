@@ -321,16 +321,23 @@ final class Engine {
           Revealed.Reason.ABOVE_CEILING,
           "erasing is refused: this store was not told who may erase");
     }
-    int removed = storage.erase(root.id());
-    audit(
-        AuditRecord.Operation.ERASE,
-        root.id(),
-        null,
-        AuditRecord.Outcome.ALLOWED,
-        Why.of(removed + " values removed"),
-        null,
-        asking);
-    return removed;
+    List<String> removed = storage.erase(root.id());
+    // One line per value, not one per call. Every other operation writes a line naming the value
+    // it acted on, and erasure is the operation where that matters most: it is the only one that
+    // makes a value stop existing, so the trail is the only thing left that can say the value ever
+    // did. A single line saying "41 values removed" cannot distinguish a lawful erasure from
+    // somebody quietly deleting a row, because nothing afterwards knows which 41.
+    for (String id : removed) {
+      audit(
+          AuditRecord.Operation.ERASE,
+          id,
+          root.id(),
+          AuditRecord.Outcome.ALLOWED,
+          Why.of("erased"),
+          null,
+          asking);
+    }
+    return removed.size();
   }
 
   <I, Q> Answer askVia(QuerySpec<I, Q> spec, Surrogate<I> about, Q against) {

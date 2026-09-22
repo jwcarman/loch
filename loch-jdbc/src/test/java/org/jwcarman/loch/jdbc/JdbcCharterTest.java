@@ -359,6 +359,52 @@ class JdbcCharterTest {
   }
 
   /**
+   * The case the value graph is blind to.
+   *
+   * <p>A value's digest binds it to its ancestry, so deleting one is caught by the children it
+   * orphans. A leaf has none. Nothing derived from it, nothing to disagree, and a verifier that
+   * walks the rows that are still there cannot miss what is not there.
+   *
+   * <p>The trail is outside the row, which is the whole reason it can answer this.
+   */
+  @Test
+  @DisplayName("notices a leaf value somebody deleted, which left no children to notice it")
+  void notices_a_deleted_leaf() throws SQLException {
+    Surrogate<Card> card = card();
+
+    assertThat(storage.missingValues()).isEmpty();
+    deleteValue(card.id());
+
+    assertThat(storage.brokenValues()).isEmpty();
+    assertThat(storage.missingValues()).containsExactly(card.id());
+  }
+
+  /** And a value this library was asked to erase is not reported missing, because it said so. */
+  @Test
+  @DisplayName("does not confuse a lawful erasure with a deletion")
+  void does_not_confuse_erasure_with_deletion() {
+    Surrogate<Card> card = card();
+    acme();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
+
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
+    assertThat(store.erase(card)).isEqualTo(2);
+
+    assertThat(store.holds(card.id())).isFalse();
+    assertThat(store.holds(last4.id())).isFalse();
+    assertThat(storage.missingValues()).isEmpty();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+  }
+
+  private void deleteValue(String id) throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.prepareStatement("DELETE FROM loch_value WHERE value_id = ?")) {
+      statement.setString(1, id);
+      assertThat(statement.executeUpdate()).isPositive();
+    }
+  }
+
+  /**
    * The trail is a chain, because a line has a predecessor rather than parents.
    *
    * <p>Values hash from their ancestry and need no order. Accesses have no ancestry -- a refused
