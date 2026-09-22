@@ -56,6 +56,7 @@
   </scm>
 
   <modules>
+    <module>loch-bom</module>
     <module>loch-api</module>
     <module>loch-core</module>
     <module>loch-jdbc</module>
@@ -74,7 +75,6 @@
 
     <codec.version>0.9.0</codec.version>
     <spring-boot.version>4.1.1</spring-boot.version>
-    <zstd.version>1.5.7-6</zstd.version>
     <postgresql.version>42.7.9</postgresql.version>
     <testcontainers.version>2.0.5</testcontainers.version>
 
@@ -117,11 +117,6 @@
         <version>${codec.version}</version>
         <type>pom</type>
         <scope>import</scope>
-      </dependency>
-      <dependency>
-        <groupId>com.github.luben</groupId>
-        <artifactId>zstd-jni</artifactId>
-        <version>${zstd.version}</version>
       </dependency>
       <dependency>
         <groupId>org.testcontainers</groupId>
