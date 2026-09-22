@@ -184,42 +184,71 @@ public final class JdbcStorage implements Storage {
 
   @Override
   public void put(String id, StoredValue value, AuditRecord record) {
+    inTransaction(
+        "could not store " + id,
+        connection -> {
+          insertValue(connection, id, value);
+          insertLineage(connection, id, value.lineage());
+          insertAudit(connection, record);
+        });
+  }
+
+  /**
+   * One write, in a transaction this library chooses the isolation of.
+   *
+   * <p>READ COMMITTED is pinned rather than inherited, and the chain depends on it. A REPEATABLE
+   * READ transaction fixes its snapshot at its first statement, which here is the one taking the
+   * advisory lock -- so an appender queues correctly, then reads the head as it was before it
+   * queued, and several lines commit naming the same predecessor. Nobody has attacked anything and
+   * the trail reports itself broken, which is worse than useless: it teaches operators that the
+   * verifier cries wolf. Pools configured REPEATABLE READ are ordinary, so this cannot be a hope.
+   *
+   * <p>Both the isolation level and the auto-commit flag are put back, because the connection goes
+   * back to a pool that lent it on the terms it had.
+   */
+  private void inTransaction(String what, SqlWork work) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
+      int isolation = connection.getTransactionIsolation();
+      connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
       connection.setAutoCommit(false);
       try {
-        insertValue(connection, id, value);
-        insertLineage(connection, id, value.lineage());
-        insertAudit(connection, record);
+        work.run(connection);
         connection.commit();
       } catch (SQLException | RuntimeException e) {
         connection.rollback();
         throw e;
       } finally {
         connection.setAutoCommit(autoCommit);
+        connection.setTransactionIsolation(isolation);
       }
     } catch (SQLException e) {
-      throw new IllegalStateException("could not store " + id, e);
+      throw new IllegalStateException(what, e);
     }
+  }
+
+  /** The same, for a write that has something to report back. */
+  private <T> T inTransactionReturning(String what, SqlAnswer<T> work) {
+    java.util.concurrent.atomic.AtomicReference<T> answer =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    inTransaction(what, connection -> answer.set(work.run(connection)));
+    return answer.get();
+  }
+
+  @FunctionalInterface
+  private interface SqlWork {
+    void run(Connection connection) throws SQLException;
+  }
+
+  @FunctionalInterface
+  private interface SqlAnswer<T> {
+    T run(Connection connection) throws SQLException;
   }
 
   @Override
   public void record(AuditRecord entry) {
-    try (Connection connection = dataSource.getConnection()) {
-      boolean autoCommit = connection.getAutoCommit();
-      connection.setAutoCommit(false);
-      try {
-        insertAudit(connection, entry);
-        connection.commit();
-      } catch (SQLException | RuntimeException e) {
-        connection.rollback();
-        throw e;
-      } finally {
-        connection.setAutoCommit(autoCommit);
-      }
-    } catch (SQLException e) {
-      throw new IllegalStateException("could not record " + entry.operation(), e);
-    }
+    inTransaction(
+        "could not record " + entry.operation(), connection -> insertAudit(connection, entry));
   }
 
   /**
@@ -734,29 +763,19 @@ public final class JdbcStorage implements Storage {
 
   @Override
   public int erase(String root) {
-    try (Connection connection = dataSource.getConnection()) {
-      boolean autoCommit = connection.getAutoCommit();
-      connection.setAutoCommit(false);
-      try {
-        int removed;
-        try (PreparedStatement statement = connection.prepareStatement(DELETE_REACHABLE)) {
-          statement.setString(1, root);
-          removed = statement.executeUpdate();
-        }
-        try (Statement tidy = connection.createStatement()) {
-          tidy.executeUpdate(DELETE_CLOSURE_OF_GONE);
-        }
-        connection.commit();
-        return removed;
-      } catch (SQLException | RuntimeException e) {
-        connection.rollback();
-        throw e;
-      } finally {
-        connection.setAutoCommit(autoCommit);
-      }
-    } catch (SQLException e) {
-      throw new IllegalStateException("could not erase " + root, e);
-    }
+    return inTransactionReturning(
+        "could not erase " + root,
+        connection -> {
+          int removed;
+          try (PreparedStatement statement = connection.prepareStatement(DELETE_REACHABLE)) {
+            statement.setString(1, root);
+            removed = statement.executeUpdate();
+          }
+          try (Statement tidy = connection.createStatement()) {
+            tidy.executeUpdate(DELETE_CLOSURE_OF_GONE);
+          }
+          return removed;
+        });
   }
 
   @SuppressWarnings("unchecked")

@@ -109,6 +109,7 @@ class AuditThroughputTest {
         "%n  audit chain: 1 writer -> %d/s, %d writers -> %d/s%n%n", alone, WRITERS, together);
 
     assertThat(storage.brokenValues()).isEmpty();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
   }
 
   private long appendsPerSecond(int writers, int each) throws Exception {
@@ -164,6 +165,56 @@ class AuditThroughputTest {
 
     assertThat(rowCount()).isEqualTo(total);
     assertThat(storage.brokenValues()).isEmpty();
+    // The chain, which is what this test is named after. Asserting only brokenValues() checked the
+    // value DAG -- a structure these writers never contend on -- so the test passed with the
+    // trail forked in sixteen places.
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+  }
+
+  /**
+   * The chain must survive an isolation level the library did not choose.
+   *
+   * <p>A REPEATABLE READ transaction takes its snapshot when its <i>first</i> statement runs, and
+   * here that statement is the one acquiring the advisory lock. So every appender queues correctly
+   * and then reads the head as it was before it queued: several lines commit naming the same
+   * predecessor, and the trail reports itself tampered with on a system nobody attacked. Connection
+   * pools configured REPEATABLE READ are ordinary, so the library has to pin this rather than hope.
+   */
+  @Test
+  @DisplayName("survives a pool that defaults to REPEATABLE READ")
+  void survives_a_pool_that_defaults_to_repeatable_read() throws Exception {
+    setDefaultIsolation("repeatable read");
+    try {
+      List<Callable<Integer>> work = new ArrayList<>();
+      for (int writer = 0; writer < WRITERS; writer++) {
+        work.add(
+            () -> {
+              for (int i = 0; i < EACH; i++) {
+                notes.conceal("a note");
+              }
+              return EACH;
+            });
+      }
+      try (ExecutorService pool = Executors.newFixedThreadPool(WRITERS)) {
+        for (Future<Integer> done : pool.invokeAll(work)) {
+          done.get();
+        }
+      }
+
+      assertThat(rowCount()).isEqualTo(WRITERS * EACH);
+      assertThat(storage.firstBrokenEntry()).isEmpty();
+    } finally {
+      setDefaultIsolation("read committed");
+    }
+  }
+
+  private void setDefaultIsolation(String level) throws Exception {
+    try (Connection connection = storageConnection();
+        var statement = connection.createStatement()) {
+      statement.execute(
+          "ALTER DATABASE \"%s\" SET default_transaction_isolation = '%s'"
+              .formatted(POSTGRES.getDatabaseName(), level));
+    }
   }
 
   private int rowCount() throws Exception {
