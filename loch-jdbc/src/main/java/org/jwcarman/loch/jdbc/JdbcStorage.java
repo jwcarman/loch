@@ -109,6 +109,16 @@ public final class JdbcStorage implements Storage {
       ON CONFLICT (child_id, parent_id) DO NOTHING
       """;
 
+  // Column names, read back through ResultSet#getBytes/getString often enough that the literal
+  // itself is worth naming once.
+  private static final String COL_ENTRY_ID = "entry_id";
+  private static final String COL_VALUE_ID = "value_id";
+  private static final String COL_VALUE_TYPE = "value_type";
+  private static final String COL_LABEL = "label";
+  private static final String COL_DERIVATION = "derivation";
+  private static final String COL_DIGEST = "digest";
+  private static final String COL_PAYLOAD = "payload";
+
   /**
    * Everything reachable from a value, walked at the moment of erasing rather than maintained.
    *
@@ -190,7 +200,7 @@ public final class JdbcStorage implements Storage {
   }
 
   @Override
-  public void put(String id, StoredValue value, AuditRecord record) {
+  public void put(String id, StoredValue value, AuditRecord auditRecord) {
     inTransaction(
         "could not store " + id,
         connection -> {
@@ -202,7 +212,7 @@ public final class JdbcStorage implements Storage {
           }
           insertValue(connection, id, value);
           insertLineage(connection, id, value.lineage());
-          insertAudit(connection, record);
+          insertAudit(connection, auditRecord);
         });
   }
 
@@ -263,7 +273,7 @@ public final class JdbcStorage implements Storage {
   private static void rollbackQuietly(Connection connection) {
     try {
       connection.rollback();
-    } catch (SQLException e) {
+    } catch (SQLException _) {
       // Nothing to do with it that would not hide why we are here.
     }
   }
@@ -296,8 +306,8 @@ public final class JdbcStorage implements Storage {
     // same fact ends up stored twice.
     Predecessor head = lockTrailHead(connection);
     byte[] previous = head.digest();
-    byte[] detail = protected_(entry.detail());
-    byte[] label = protected_(entry.label());
+    byte[] detail = protect(entry.detail());
+    byte[] label = protect(entry.label());
     // Encrypted ONCE, then both signed and stored. A StorageCodec is free to be non-deterministic
     // -- an authenticated cipher uses a fresh nonce every time -- so encrypting a second copy for
     // the digest signs bytes no column ever held, and every line fails its own check on read-back.
@@ -325,19 +335,8 @@ public final class JdbcStorage implements Storage {
     }
   }
 
-  private static void feed(java.security.MessageDigest sha, byte[] field) {
-    int length = field == null ? -1 : field.length;
-    sha.update(
-        new byte[] {
-          (byte) (length >>> 24), (byte) (length >>> 16), (byte) (length >>> 8), (byte) length
-        });
-    if (field != null) {
-      sha.update(field);
-    }
-  }
-
   /** Label-shaped, so it goes to disk the way a label does and never in the clear. */
-  private byte[] protected_(java.util.Optional<String> value) {
+  private byte[] protect(java.util.Optional<String> value) {
     return value.map(text -> storageCodec.encode(text.getBytes(UTF_8))).orElse(null);
   }
 
@@ -368,7 +367,6 @@ public final class JdbcStorage implements Storage {
     }
   }
 
-  /** What this value was made from, in the order it was made from them. */
   /**
    * What this value was made from, locked against disappearing underneath it.
    *
@@ -382,17 +380,16 @@ public final class JdbcStorage implements Storage {
   private List<byte[]> parentDigests(Connection connection, StoredValue value) throws SQLException {
     List<String> parents = value.lineage().parents();
     List<byte[]> digests = new java.util.ArrayList<>();
-    for (String parent : parents) {
-      try (PreparedStatement statement =
-          connection.prepareStatement(
-              "SELECT digest FROM loch_value WHERE value_id = ? FOR SHARE")) {
+    try (PreparedStatement statement =
+        connection.prepareStatement("SELECT digest FROM loch_value WHERE value_id = ? FOR SHARE")) {
+      for (String parent : parents) {
         statement.setString(1, parent);
         try (ResultSet rows = statement.executeQuery()) {
           if (!rows.next()) {
             throw new IllegalStateException(
                 "cannot derive from " + parent + ", which this store is not holding");
           }
-          digests.add(rows.getBytes("digest"));
+          digests.add(rows.getBytes(COL_DIGEST));
         }
       }
     }
@@ -400,18 +397,7 @@ public final class JdbcStorage implements Storage {
   }
 
   /**
-   * What a value hashes to: its own bytes, and whatever it was derived from.
-   *
-   * <p>Position matters, so a derivation over the same parents in a different order is a different
-   * value. Every field is length-prefixed, so no two different graphs encode to the same bytes by
-   * running one value into the next.
-   *
-   * <p>Keyed by the root. Rooted in a constant this is tamper-evident: an edit is visible, but
-   * somebody with write access can recompute the graph below it. Rooted in a secret the database
-   * does not hold, no node can be forged at all.
-   */
-  /**
-   * The digest, or null when this row cannot be checked at all.
+   * The digest, or empty when this row cannot be checked at all.
    *
    * <p>A row naming a root nothing supplies is a finding, not a crash. Letting that throw handed an
    * attacker a way to turn "broken at this value" into "the verifier does not run": rewrite one
@@ -428,11 +414,22 @@ public final class JdbcStorage implements Storage {
       List<byte[]> parents) {
     try {
       return digestOf(under, id, type, payload, label, derivation, parents);
-    } catch (IllegalStateException e) {
-      return null;
+    } catch (IllegalStateException _) {
+      return new byte[0];
     }
   }
 
+  /**
+   * What a value hashes to: its own bytes, and whatever it was derived from.
+   *
+   * <p>Position matters, so a derivation over the same parents in a different order is a different
+   * value. Every field is length-prefixed, so no two different graphs encode to the same bytes by
+   * running one value into the next.
+   *
+   * <p>Keyed by the root. Rooted in a constant this is tamper-evident: an edit is visible, but
+   * somebody with write access can recompute the graph below it. Rooted in a secret the database
+   * does not hold, no node can be forged at all.
+   */
   private byte[] digestOf(
       String under,
       String id,
@@ -459,12 +456,6 @@ public final class JdbcStorage implements Storage {
   }
 
   /**
-   * Keyed by a root, which is why none of this can be recomputed by whoever can write.
-   *
-   * <p>Named, so rotating a root does not invalidate what was written under the last one. The id is
-   * signed too, so two stores sharing a secret still produce different digests.
-   */
-  /**
    * What kind of thing is being signed.
    *
    * <p>One key signs both the value graph and the trail. Without a tag they share a MAC, so a
@@ -476,6 +467,12 @@ public final class JdbcStorage implements Storage {
     LINE
   }
 
+  /**
+   * Keyed by a root, which is why none of this can be recomputed by whoever can write.
+   *
+   * <p>Named, so rotating a root does not invalidate what was written under the last one. The id is
+   * signed too, so two stores sharing a secret still produce different digests.
+   */
   private javax.crypto.Mac keyed(Domain domain, String id) {
     byte[] secret = roots.apply(id);
     if (secret == null) {
@@ -562,7 +559,32 @@ public final class JdbcStorage implements Storage {
    * <p>It costs nothing. The lock had to be taken anyway, and a statement that takes it can return
    * a column while it is at it.
    */
-  private record Predecessor(byte[] digest, Instant recordedAt) {}
+  private record Predecessor(byte[] digest, Instant recordedAt) {
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof Predecessor that)) {
+        return false;
+      }
+      return java.util.Arrays.equals(digest, that.digest) && recordedAt.equals(that.recordedAt);
+    }
+
+    @Override
+    public int hashCode() {
+      return java.util.Objects.hash(java.util.Arrays.hashCode(digest), recordedAt);
+    }
+
+    @Override
+    public String toString() {
+      return "Predecessor[digest="
+          + java.util.Arrays.toString(digest)
+          + ", recordedAt="
+          + recordedAt
+          + "]";
+    }
+  }
 
   private static Predecessor lockTrailHead(Connection connection) throws SQLException {
     Instant recordedAt;
@@ -578,7 +600,7 @@ public final class JdbcStorage implements Storage {
             connection.prepareStatement(
                 "SELECT digest FROM loch_audit ORDER BY entry_id DESC LIMIT 1");
         ResultSet rows = statement.executeQuery()) {
-      return new Predecessor(rows.next() ? rows.getBytes("digest") : null, recordedAt);
+      return new Predecessor(rows.next() ? rows.getBytes(COL_DIGEST) : null, recordedAt);
     }
   }
 
@@ -588,6 +610,24 @@ public final class JdbcStorage implements Storage {
    * <p>Over what actually reaches the columns, ciphertext included, so verifying reads the table as
    * it is. Keyed, so nobody can recompute the tail after removing something from the middle.
    */
+  /**
+   * The fields of one line that are not already parameters in their own right: bundled so the
+   * method that signs a line stays under the parameter count this project holds every method to,
+   * without changing which bytes are fed or in what order.
+   */
+  private record LineFacts(
+      String operation, String value, String target, String outcome, String reason) {
+
+    private static LineFacts of(AuditRecord entry) {
+      return new LineFacts(
+          entry.operation().name(),
+          entry.value(),
+          entry.target().orElse(null),
+          entry.outcome().name(),
+          entry.reason().orElse(null));
+    }
+  }
+
   private byte[] lineDigest(
       String under,
       byte[] previous,
@@ -596,44 +636,45 @@ public final class JdbcStorage implements Storage {
       byte[] detail,
       byte[] label,
       byte[] context) {
-    return lineDigest(
-        under,
-        previous,
-        recordedAt,
-        entry.operation().name(),
-        entry.value(),
-        entry.target().orElse(null),
-        entry.outcome().name(),
-        entry.reason().orElse(null),
-        detail,
-        label,
-        context);
+    return lineDigest(under, previous, recordedAt, LineFacts.of(entry), detail, label, context);
   }
 
   private byte[] lineDigest(
       String under,
       byte[] previous,
       Instant recordedAt,
-      String operation,
-      String value,
-      String target,
-      String outcome,
-      String reason,
+      LineFacts facts,
       byte[] detail,
       byte[] label,
       byte[] context) {
     javax.crypto.Mac mac = keyed(Domain.LINE, under);
     feed(mac, previous);
     feed(mac, recordedAt.toString().getBytes(UTF_8));
-    feed(mac, operation.getBytes(UTF_8));
-    feed(mac, value.getBytes(UTF_8));
-    feed(mac, target == null ? null : target.getBytes(UTF_8));
-    feed(mac, outcome.getBytes(UTF_8));
-    feed(mac, reason == null ? null : reason.getBytes(UTF_8));
+    feed(mac, facts.operation().getBytes(UTF_8));
+    feed(mac, facts.value().getBytes(UTF_8));
+    feed(mac, facts.target() == null ? null : facts.target().getBytes(UTF_8));
+    feed(mac, facts.outcome().getBytes(UTF_8));
+    feed(mac, facts.reason() == null ? null : facts.reason().getBytes(UTF_8));
     feed(mac, detail);
     feed(mac, label);
     feed(mac, context);
     return mac.doFinal();
+  }
+
+  /** The digest of one trail line, or {@code null} when it cannot be checked at all. */
+  private byte[] lineDigestOrNull(
+      String under,
+      byte[] previous,
+      Instant recordedAt,
+      LineFacts facts,
+      byte[] detail,
+      byte[] label,
+      byte[] context) {
+    try {
+      return lineDigest(under, previous, recordedAt, facts, detail, label, context);
+    } catch (IllegalStateException _) {
+      return null;
+    }
   }
 
   /**
@@ -652,7 +693,7 @@ public final class JdbcStorage implements Storage {
             connection.prepareStatement(
                 "SELECT digest FROM loch_audit ORDER BY entry_id DESC LIMIT 1");
         ResultSet rows = statement.executeQuery()) {
-      return rows.next() ? rows.getBytes("digest") : new byte[0];
+      return rows.next() ? rows.getBytes(COL_DIGEST) : new byte[0];
     } catch (SQLException e) {
       throw new IllegalStateException("could not read the head of the trail", e);
     }
@@ -681,31 +722,29 @@ public final class JdbcStorage implements Storage {
       while (rows.next()) {
         byte[] previous = rows.getBytes("previous");
         if (!java.util.Arrays.equals(previous, expected)) {
-          return java.util.Optional.of(rows.getLong("entry_id"));
+          return java.util.Optional.of(rows.getLong(COL_ENTRY_ID));
         }
         // A root nothing supplies is a broken line, not a crashed verifier. Left to throw, an
         // attacker who could edit a line could rewrite its root_id instead and turn "broken at
         // entry 7" into an exception that reports nothing at all.
-        byte[] digest;
-        try {
-          digest =
-              lineDigest(
-                  rows.getString("root_id"),
-                  previous,
-                  rows.getTimestamp("recorded_at").toInstant(),
-                  rows.getString("operation"),
-                  rows.getString("value_id"),
-                  rows.getString("target"),
-                  rows.getString("outcome"),
-                  rows.getString("reason"),
-                  rows.getBytes("detail"),
-                  rows.getBytes("label"),
-                  rows.getBytes("context"));
-        } catch (IllegalStateException e) {
-          return java.util.Optional.of(rows.getLong("entry_id"));
-        }
-        if (!java.util.Arrays.equals(digest, rows.getBytes("digest"))) {
-          return java.util.Optional.of(rows.getLong("entry_id"));
+        LineFacts facts =
+            new LineFacts(
+                rows.getString("operation"),
+                rows.getString(COL_VALUE_ID),
+                rows.getString("target"),
+                rows.getString("outcome"),
+                rows.getString("reason"));
+        byte[] digest =
+            lineDigestOrNull(
+                rows.getString("root_id"),
+                previous,
+                rows.getTimestamp("recorded_at").toInstant(),
+                facts,
+                rows.getBytes("detail"),
+                rows.getBytes(COL_LABEL),
+                rows.getBytes("context"));
+        if (digest == null || !java.util.Arrays.equals(digest, rows.getBytes(COL_DIGEST))) {
+          return java.util.Optional.of(rows.getLong(COL_ENTRY_ID));
         }
         expected = digest;
       }
@@ -756,7 +795,7 @@ public final class JdbcStorage implements Storage {
                 """);
         ResultSet rows = statement.executeQuery()) {
       while (rows.next()) {
-        missing.add(rows.getString("value_id"));
+        missing.add(rows.getString(COL_VALUE_ID));
       }
       return missing;
     } catch (SQLException e) {
@@ -772,80 +811,14 @@ public final class JdbcStorage implements Storage {
    * what they were made from.
    */
   public List<String> brokenValues() {
-    List<String> broken = new java.util.ArrayList<>();
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "SELECT value_id, value_type, payload, label, digest, root_id, derivation"
                     + " FROM loch_value ORDER BY value_id");
         ResultSet rows = statement.executeQuery()) {
-      java.util.Map<String, byte[]> seen = new java.util.LinkedHashMap<>();
-      java.util.List<String[]> pending = new java.util.ArrayList<>();
-      java.util.Map<String, byte[]> stored = new java.util.LinkedHashMap<>();
-      java.util.Map<String, byte[]> payloads = new java.util.LinkedHashMap<>();
-      java.util.Map<String, byte[]> labelsById = new java.util.LinkedHashMap<>();
-      java.util.Map<String, String> types = new java.util.LinkedHashMap<>();
-      java.util.Map<String, String> rootIds = new java.util.LinkedHashMap<>();
-      java.util.Map<String, String> derivations = new java.util.LinkedHashMap<>();
-      while (rows.next()) {
-        String id = rows.getString("value_id");
-        pending.add(new String[] {id});
-        stored.put(id, rows.getBytes("digest"));
-        payloads.put(id, rows.getBytes("payload"));
-        labelsById.put(id, rows.getBytes("label"));
-        derivations.put(id, rows.getString("derivation"));
-        types.put(id, rows.getString("value_type"));
-        rootIds.put(id, rows.getString("root_id"));
-      }
-      // To a fixpoint, rather than in one pass over sorted identifiers. A value can only be
-      // checked once its parents have been, and nothing orders the rows that way: ids are v7, so
-      // they happen to sort by creation time, but Storage.freshId is a documented seam an
-      // application may replace, and two writers with skewed clocks interleave anyway. Sorting by
-      // id made a perfectly good child report itself broken because its parent had not been
-      // reached yet.
-      //
-      // Each pass verifies whatever has become checkable. When a pass verifies nothing new, what
-      // is left is genuinely unverifiable: broken, or descended from something broken or missing.
-      java.util.Set<String> unresolved = new java.util.LinkedHashSet<>(stored.keySet());
-      boolean progressing = true;
-      while (progressing) {
-        progressing = false;
-        java.util.Iterator<String> remaining = unresolved.iterator();
-        while (remaining.hasNext()) {
-          String id = remaining.next();
-          List<byte[]> parents = new java.util.ArrayList<>();
-          boolean checkable = true;
-          for (String parent : parentsOf(connection, id)) {
-            byte[] digest = seen.get(parent);
-            if (digest == null) {
-              checkable = false;
-              break;
-            }
-            parents.add(digest);
-          }
-          if (!checkable) {
-            continue;
-          }
-          byte[] computed =
-              digestOfOrNull(
-                  rootIds.get(id),
-                  id,
-                  types.get(id),
-                  payloads.get(id),
-                  labelsById.get(id),
-                  derivations.get(id),
-                  parents);
-          if (computed != null && java.util.Arrays.equals(computed, stored.get(id))) {
-            seen.put(id, computed);
-          } else {
-            broken.add(id);
-          }
-          remaining.remove();
-          progressing = true;
-        }
-      }
-      // Whatever never became checkable hangs off something that is broken or gone.
-      broken.addAll(unresolved);
+      java.util.Map<String, ValueRow> byId = loadValueRows(rows);
+      List<String> broken = verifyToFixpoint(connection, byId);
       broken.sort(java.util.Comparator.naturalOrder());
       return broken;
     } catch (SQLException e) {
@@ -853,12 +826,97 @@ public final class JdbcStorage implements Storage {
     }
   }
 
+  /** One row of {@code loch_value}, read once and passed around rather than re-queried. */
+  private record ValueRow(
+      byte[] digest, byte[] payload, byte[] label, String derivation, String type, String rootId) {}
+
+  private java.util.Map<String, ValueRow> loadValueRows(ResultSet rows) throws SQLException {
+    java.util.Map<String, ValueRow> byId = new java.util.LinkedHashMap<>();
+    while (rows.next()) {
+      String id = rows.getString(COL_VALUE_ID);
+      byId.put(
+          id,
+          new ValueRow(
+              rows.getBytes(COL_DIGEST),
+              rows.getBytes(COL_PAYLOAD),
+              rows.getBytes(COL_LABEL),
+              rows.getString(COL_DERIVATION),
+              rows.getString(COL_VALUE_TYPE),
+              rows.getString("root_id")));
+    }
+    return byId;
+  }
+
+  /**
+   * Verifies whatever can be verified, to a fixpoint, rather than in one pass over sorted
+   * identifiers. A value can only be checked once its parents have been, and nothing orders the
+   * rows that way: ids are v7, so they happen to sort by creation time, but {@code Storage.freshId}
+   * is a documented seam an application may replace, and two writers with skewed clocks interleave
+   * anyway. Sorting by id made a perfectly good child report itself broken because its parent had
+   * not been reached yet.
+   *
+   * <p>Each pass verifies whatever has become checkable. When a pass verifies nothing new, what is
+   * left is genuinely unverifiable: broken, or descended from something broken or missing.
+   */
+  private List<String> verifyToFixpoint(Connection connection, java.util.Map<String, ValueRow> byId)
+      throws SQLException {
+    java.util.Map<String, byte[]> seen = new java.util.LinkedHashMap<>();
+    List<String> broken = new java.util.ArrayList<>();
+    java.util.Set<String> unresolved = new java.util.LinkedHashSet<>(byId.keySet());
+    boolean progressing = true;
+    while (progressing) {
+      progressing = false;
+      java.util.Iterator<String> remaining = unresolved.iterator();
+      while (remaining.hasNext()) {
+        String id = remaining.next();
+        List<byte[]> parents = checkableParents(connection, id, seen);
+        if (parents == null) {
+          continue;
+        }
+        ValueRow row = byId.get(id);
+        byte[] computed =
+            digestOfOrNull(
+                row.rootId(),
+                id,
+                row.type(),
+                row.payload(),
+                row.label(),
+                row.derivation(),
+                parents);
+        if (java.util.Arrays.equals(computed, row.digest())) {
+          seen.put(id, computed);
+        } else {
+          broken.add(id);
+        }
+        remaining.remove();
+        progressing = true;
+      }
+    }
+    // Whatever never became checkable hangs off something that is broken or gone.
+    broken.addAll(unresolved);
+    return broken;
+  }
+
+  /** A value's parents' digests, already verified -- or {@code null} when one of them is not. */
+  private List<byte[]> checkableParents(
+      Connection connection, String id, java.util.Map<String, byte[]> seen) throws SQLException {
+    List<byte[]> parents = new java.util.ArrayList<>();
+    for (String parent : parentsOf(connection, id)) {
+      byte[] digest = seen.get(parent);
+      if (digest == null) {
+        return null;
+      }
+      parents.add(digest);
+    }
+    return parents;
+  }
+
   private void insertLineage(Connection connection, String id, Lineage lineage)
       throws SQLException {
     List<String> parents = lineage.parents();
-    for (int i = 0; i < parents.size(); i++) {
-      try (PreparedStatement parent = connection.prepareStatement(INSERT_PARENT)) {
-        parent.setString(1, id);
+    try (PreparedStatement parent = connection.prepareStatement(INSERT_PARENT)) {
+      parent.setString(1, id);
+      for (int i = 0; i < parents.size(); i++) {
         parent.setString(2, parents.get(i));
         parent.setInt(3, i);
         parent.executeUpdate();
@@ -875,13 +933,13 @@ public final class JdbcStorage implements Storage {
         if (!rows.next()) {
           return Optional.empty();
         }
-        Label label = Label.decode(protectedMap.decode(rows.getBytes("label")), axes);
-        String derivation = rows.getString("derivation");
+        Label label = Label.decode(protectedMap.decode(rows.getBytes(COL_LABEL)), axes);
+        String derivation = rows.getString(COL_DERIVATION);
         Lineage lineage =
             derivation == null
                 ? Lineage.concealed()
                 : Lineage.derivedFrom(parentsOf(connection, id), derivation);
-        return Optional.of(new StoredMetadata(rows.getString("value_type"), label, lineage));
+        return Optional.of(new StoredMetadata(rows.getString(COL_VALUE_TYPE), label, lineage));
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not read " + id, e);
@@ -899,14 +957,14 @@ public final class JdbcStorage implements Storage {
       java.util.Map<String, StoredMetadata> found = new java.util.LinkedHashMap<>();
       try (ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
-          String id = rows.getString("value_id");
-          Label label = Label.decode(protectedMap.decode(rows.getBytes("label")), axes);
-          String derivation = rows.getString("derivation");
+          String id = rows.getString(COL_VALUE_ID);
+          Label label = Label.decode(protectedMap.decode(rows.getBytes(COL_LABEL)), axes);
+          String derivation = rows.getString(COL_DERIVATION);
           Lineage lineage =
               derivation == null
                   ? Lineage.concealed()
                   : Lineage.derivedFrom(parentsOf(connection, id), derivation);
-          found.put(id, new StoredMetadata(rows.getString("value_type"), label, lineage));
+          found.put(id, new StoredMetadata(rows.getString(COL_VALUE_TYPE), label, lineage));
         }
       }
       return found;
@@ -926,8 +984,8 @@ public final class JdbcStorage implements Storage {
       java.util.Map<String, Object> found = new java.util.LinkedHashMap<>();
       try (ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
-          String id = rows.getString("value_id");
-          found.put(id, codecFor(wanted.get(id)).decode(rows.getBytes("payload")));
+          String id = rows.getString(COL_VALUE_ID);
+          found.put(id, codecFor(wanted.get(id)).decode(rows.getBytes(COL_PAYLOAD)));
         }
       }
       return found;
@@ -945,7 +1003,7 @@ public final class JdbcStorage implements Storage {
         if (!rows.next()) {
           return Optional.empty();
         }
-        return Optional.of(codecFor(type).decode(rows.getBytes("payload")));
+        return Optional.of(codecFor(type).decode(rows.getBytes(COL_PAYLOAD)));
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not read " + id, e);
@@ -992,7 +1050,7 @@ public final class JdbcStorage implements Storage {
             statement.setString(1, root);
             try (ResultSet rows = statement.executeQuery()) {
               while (rows.next()) {
-                removed.add(rows.getString("value_id"));
+                removed.add(rows.getString(COL_VALUE_ID));
               }
             }
           }
