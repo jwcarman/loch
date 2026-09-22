@@ -47,6 +47,16 @@
     cardholder data and untrusted mail.</description>
 
   <properties>
+    <!-- Ahead of what Boot 4.1.1 manages (11.0.24), which carries three criticals: a FORM auth
+         authorization flaw, a DIGEST capture-replay bypass, and an access-control flaw. This
+         module is the only one that serves HTTP, so no published module is exposed. A security
+         library shipping a demo on a known-vulnerable server is its own argument. Remove when
+         Boot catches up.
+
+         A property works here because this module inherits spring-boot-starter-parent. The root
+         pom imports the Boot BOM instead, and an imported BOM resolves its own properties, so the
+         same line there would do nothing. -->
+    <tomcat.version>11.0.25</tomcat.version>
     <java.version>25</java.version>
     <codec.version>0.9.0</codec.version>
     <testcontainers.version>2.0.5</testcontainers.version>
