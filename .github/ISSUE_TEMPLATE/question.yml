@@ -8,8 +8,8 @@ body:
         Have a question? We're here to help!
 
         Before asking, please check:
-        - [README documentation](https://github.com/jwcarman/nessy#readme)
-        - [Existing issues](https://github.com/jwcarman/nessy/issues)
+        - [README documentation](https://github.com/jwcarman/loch#readme)
+        - [Existing issues](https://github.com/jwcarman/loch/issues)
 
   - type: textarea
     id: question
