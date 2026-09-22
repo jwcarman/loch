@@ -90,7 +90,7 @@ public final class JdbcStorage implements Storage {
   private static final String INSERT_VALUE =
       """
       INSERT INTO loch_value
-        (value_id, value_type, payload, label, derivation, held_at, digest, root_id)
+        (value_id, value_type, payload, label, derivation, concealed_at, digest, root_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
@@ -277,17 +277,27 @@ public final class JdbcStorage implements Storage {
       throws SQLException {
     byte[] payload = encode(value.type().type(), value.value());
     byte[] label = labels.encode(value.label().encode());
+    // Signed, and the same value reaches the column. When a value was taken in is a fact somebody
+    // would want to change, so leaving it out of the digest left it free to change.
+    Instant concealedAt = clock().instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     // From the parents, which are immutable and already written, so nothing here is locked and two
     // derivations never wait on each other. A fresh value has none and starts its own graph.
     byte[] digest =
-        digestOf(rootId, id, value.type().name(), payload, label, parentDigests(connection, value));
+        digestOf(
+            rootId,
+            id,
+            value.type().name(),
+            payload,
+            label,
+            concealedAt,
+            parentDigests(connection, value));
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id);
       statement.setString(2, value.type().name());
       statement.setBytes(3, payload);
       statement.setBytes(4, label);
       statement.setString(5, value.lineage().derivation().orElse(null));
-      statement.setTimestamp(6, Timestamp.from(Instant.now()));
+      statement.setTimestamp(6, Timestamp.from(concealedAt));
       statement.setBytes(7, digest);
       statement.setString(8, rootId);
       statement.executeUpdate();
@@ -326,7 +336,13 @@ public final class JdbcStorage implements Storage {
    * does not hold, no node can be forged at all.
    */
   private byte[] digestOf(
-      String under, String id, String type, byte[] payload, byte[] label, List<byte[]> parents) {
+      String under,
+      String id,
+      String type,
+      byte[] payload,
+      byte[] label,
+      Instant concealedAt,
+      List<byte[]> parents) {
     javax.crypto.Mac mac = keyed(under);
     for (byte[] parent : parents) {
       feed(mac, parent);
@@ -335,6 +351,7 @@ public final class JdbcStorage implements Storage {
     feed(mac, type.getBytes(UTF_8));
     feed(mac, payload);
     feed(mac, label);
+    feed(mac, concealedAt.toString().getBytes(UTF_8));
     return mac.doFinal();
   }
 
@@ -518,8 +535,8 @@ public final class JdbcStorage implements Storage {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "SELECT value_id, value_type, payload, label, digest, root_id FROM loch_value"
-                    + " ORDER BY held_at, value_id");
+                "SELECT value_id, value_type, payload, label, digest, root_id, concealed_at"
+                    + " FROM loch_value ORDER BY concealed_at, value_id");
         ResultSet rows = statement.executeQuery()) {
       java.util.Map<String, byte[]> seen = new java.util.LinkedHashMap<>();
       java.util.List<String[]> pending = new java.util.ArrayList<>();
@@ -528,6 +545,7 @@ public final class JdbcStorage implements Storage {
       java.util.Map<String, byte[]> labelsById = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> types = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> rootIds = new java.util.LinkedHashMap<>();
+      java.util.Map<String, Instant> concealedAt = new java.util.LinkedHashMap<>();
       while (rows.next()) {
         String id = rows.getString("value_id");
         pending.add(new String[] {id});
@@ -536,6 +554,7 @@ public final class JdbcStorage implements Storage {
         labelsById.put(id, rows.getBytes("label"));
         types.put(id, rows.getString("value_type"));
         rootIds.put(id, rows.getString("root_id"));
+        concealedAt.put(id, rows.getTimestamp("concealed_at").toInstant());
       }
       for (String[] row : pending) {
         String id = row[0];
@@ -557,6 +576,7 @@ public final class JdbcStorage implements Storage {
                     types.get(id),
                     payloads.get(id),
                     labelsById.get(id),
+                    concealedAt.get(id),
                     parents)
                 : null;
         if (computed == null || !java.util.Arrays.equals(computed, stored.get(id))) {

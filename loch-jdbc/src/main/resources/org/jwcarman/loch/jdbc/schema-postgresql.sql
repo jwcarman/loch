@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS loch_value (
   payload      BYTEA       NOT NULL,
   label        BYTEA       NOT NULL,
   derivation   TEXT,
-  held_at      TIMESTAMPTZ NOT NULL,
+  concealed_at      TIMESTAMPTZ NOT NULL,
   -- What this value hashes to, over its own bytes and the digests of whatever it was made from.
   --
   -- Every fresh value starts its own graph: it has no parents, so it hashes from the root alone.

@@ -15,7 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -229,7 +228,7 @@ final class Engine {
       Label label,
       AccessContext context) {
     return new AuditRecord(
-        Instant.now(),
+        storage.clock().instant(),
         operation,
         value,
         Optional.ofNullable(target),
