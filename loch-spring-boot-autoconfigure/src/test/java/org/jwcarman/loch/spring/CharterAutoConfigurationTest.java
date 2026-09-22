@@ -24,11 +24,14 @@ import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.DefaultCharter;
 import org.jwcarman.loch.MemoryStorage;
+import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateType;
 import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
+import org.jwcarman.loch.lattice.Ceiling;
+import org.jwcarman.loch.lattice.Constraint;
 import org.jwcarman.loch.lattice.Label;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -82,6 +85,17 @@ class CharterAutoConfigurationTest {
       return charter.source(
           "notes", NOTE, ctx -> Label.of(TENANT, "acme").with(CLEARANCE, Clearance.OPEN));
     }
+
+    @Bean
+    Reveal<String> reporting(Charter charter) {
+      return charter
+          .destination(
+              "reporting",
+              Ceiling.of(TENANT, Constraint.any())
+                  .with(CLEARANCE, Constraint.atMost(Clearance.OPEN)),
+              NOTE)
+          .reading(NOTE);
+    }
   }
 
   @Test
@@ -116,7 +130,10 @@ class CharterAutoConfigurationTest {
 
               Surrogate<String> held = context.getBean(Conceal.class).conceal("a note");
 
-              assertThat(context.getBean(Charter.class).holds(held)).isTrue();
+              // The value coming back out is the evidence. A portal that refuses at request time
+              // is exactly what a charter that was never sealed produces, and it is what this
+              // test exists to catch.
+              assertThat(context.getBean(Reveal.class).reveal(held).granted()).contains("a note");
             });
   }
 

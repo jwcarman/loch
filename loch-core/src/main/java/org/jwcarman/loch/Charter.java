@@ -41,15 +41,18 @@ import org.jwcarman.loch.lattice.Label;
  * destroy customer data" is <i>none, structurally</i>. If that changes, erasure earns a portal like
  * every other operation, rather than a method on the object everybody is handed.
  *
- * <p>{@code label}, which says how a value is labelled, is not here either, and it is the one whose
- * absence is easiest to argue with -- it moves no value anywhere. But a label names a tenant or a
- * project codeword, which is why storage encrypts it on disk and why the audit protects it exactly
- * like a value. Offering it from the object every bean is handed, with no ceiling and no line in
- * the record, said the opposite: that a label is ordinary. It could not be both.
+ * <p>Nor is anything that reports on a <i>value</i>. {@code label} said how a value was labelled,
+ * {@code lineage} said what it was made from, and {@code holds} said whether it was here at all --
+ * none of them moved a value anywhere, which is why they looked harmless. But each answered a
+ * question about real data with no ceiling, no {@code availableTo}, and no line in the record, and
+ * each took a {@code String}, so any identifier could be asked about. A label names a tenant or a
+ * project codeword; storage encrypts it and the audit protects it exactly like a value. Handing it
+ * out from the object every bean is given said the opposite.
  *
- * <p>What is here is declaring and what the system permits. A manifest is a statement about the
- * declarations rather than about any value, so it stays: it says what this application can do, not
- * what any particular value is.
+ * <p>What is left is declaring, and reporting on the <i>declarations</i> rather than on anything
+ * held. That distinction is the whole of it: a manifest says what this application can do, which is
+ * safe to publish because it describes the system and never a value. Whoever constructs a charter
+ * keeps the rest, the same way it keeps {@code seal} and {@code erase}.
  */
 public interface Charter {
 
@@ -141,16 +144,4 @@ public interface Charter {
    * release, and fail on a change nobody meant to make.
    */
   Manifest manifest();
-
-  /** Where a value came from. */
-  Lineage lineage(Surrogate<?> surrogate);
-
-  /** The same, for an identifier that arrived without its type. */
-  Lineage lineage(String id);
-
-  /** Whether this charter is holding a value at all. */
-  boolean holds(Surrogate<?> surrogate);
-
-  /** The same, for an identifier that arrived without its type. */
-  boolean holds(String id);
 }
