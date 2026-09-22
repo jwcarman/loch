@@ -151,8 +151,7 @@ class JdbcCharterTest {
     try (Connection connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
       statement.execute(
-          "DROP TABLE IF EXISTS loch_audit_head, loch_audit, loch_lineage_closure,"
-              + " loch_lineage, loch_value");
+          "DROP TABLE IF EXISTS loch_audit, loch_lineage_closure, loch_lineage, loch_value");
     }
 
     KeyGenerator generator = KeyGenerator.getInstance("AES");

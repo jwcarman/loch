@@ -86,6 +86,10 @@ public final class JdbcStorage implements Storage {
       INSERT INTO loch_value (value_id, value_type, payload, label, derivation, held_at)
       VALUES (?, ?, ?, ?, ?, ?)
       """;
+
+  /** One name every appender waits on, so the trail has one order. */
+  private static final long CHAIN_LOCK = 0x10C_A0D17L;
+
   private static final String SELECT_METADATA =
       "SELECT value_type, label, derivation FROM loch_value WHERE value_id = ?";
   private static final String SELECT_PAYLOAD = "SELECT payload FROM loch_value WHERE value_id = ?";
@@ -231,17 +235,20 @@ public final class JdbcStorage implements Storage {
       statement.setString(11, entry.context().toString());
       statement.executeUpdate();
     }
-    try (PreparedStatement statement =
-        connection.prepareStatement("UPDATE loch_audit_head SET digest = ?")) {
-      statement.setBytes(1, digest);
-      statement.executeUpdate();
-    }
   }
 
   /** The digest of the last line written, held until this transaction ends. */
   private static byte[] lockChainHead(Connection connection) throws SQLException {
+    // Held until this transaction ends. An advisory lock rather than a row, because the first
+    // append has no row to lock and inventing one only to lock it is how the same fact ends up
+    // stored twice.
+    try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+      lock.setLong(1, CHAIN_LOCK);
+      lock.execute();
+    }
     try (PreparedStatement statement =
-            connection.prepareStatement("SELECT digest FROM loch_audit_head FOR UPDATE");
+            connection.prepareStatement(
+                "SELECT digest FROM loch_audit ORDER BY entry_id DESC LIMIT 1");
         ResultSet rows = statement.executeQuery()) {
       return rows.next() ? rows.getBytes("digest") : null;
     }

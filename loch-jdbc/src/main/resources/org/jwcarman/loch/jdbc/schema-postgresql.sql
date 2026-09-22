@@ -52,26 +52,6 @@ CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
 -- same reason: they name a tenant, and in the clear they would describe every value in the system
 -- to anyone who could read this table. `detail` is where a refusal says which label it turned away
 -- and against which ceiling, which is exactly the thing a refusal must never tell its caller.
--- The head of the chain, one row, locked while a line is written.
---
--- Two threads cannot both append, because each needs the digest of whatever came last. An audit
--- that can be appended to concurrently is an audit whose order can be argued with.
---
--- Measured before believing anything about it: one writer managed about 180 appends a second and
--- eight managed about 900, so the lock is not the ceiling it looks like. It is held only for the
--- insert and this update, while most of an operation is the value, its lineage, encoding and the
--- network -- writers overlap on all of that and queue only at the end.
---
--- If that ever stops being true the answer is a Merkle tree over batches rather than a chain, the
--- way Certificate Transparency does it: concurrent appends, same detection, no total order. Not
--- worth its machinery at these numbers.
-CREATE TABLE IF NOT EXISTS loch_audit_head (
-  only_row    BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (only_row),
-  digest      BYTEA
-);
-
-INSERT INTO loch_audit_head (only_row, digest) VALUES (TRUE, NULL) ON CONFLICT DO NOTHING;
-
 CREATE TABLE IF NOT EXISTS loch_audit (
   entry_id    BIGSERIAL PRIMARY KEY,
   at          TIMESTAMPTZ NOT NULL,
@@ -88,6 +68,16 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   --
   -- The digest covers what is actually stored, ciphertext included, so verifying needs no key --
   -- whoever can read the table can check it, and cannot quietly edit it.
+  --
+  -- The chain lives here and nowhere else. An earlier version also kept the latest digest in a
+  -- one-row table, which was never a second source of truth -- verification never read it -- only
+  -- somewhere to take a lock. Storing the same fact twice earned exactly what it usually does: a
+  -- test reset this table and not that one, and got a chain that reported itself broken.
+  --
+  -- Appending takes an advisory lock instead, which needs no row and works when the table is
+  -- empty. Measured at about 180 appends a second from one writer and 900 from eight, so the
+  -- serialisation is not the ceiling it looks like: it is held for the read and the insert, while
+  -- most of an operation is the value, its lineage, encoding and the network.
   previous    BYTEA,
   digest      BYTEA       NOT NULL,
   who         TEXT        NOT NULL
