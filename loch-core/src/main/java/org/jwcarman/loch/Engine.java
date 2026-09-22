@@ -376,12 +376,6 @@ final class Engine {
           Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
     }
     refused.set(entry.label());
-    if (!entry.typeName().equals(spec.inputType().name())) {
-      return new Answer.Refused(
-          Answer.Reason.WRONG_TYPE,
-          "'%s' asks about a %s, but %s is a %s"
-              .formatted(name, spec.inputType().name(), held.id(), entry.typeName()));
-    }
     Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Answer.Refused(
@@ -392,6 +386,12 @@ final class Engine {
       because.set(because(entry.label(), ceiling));
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING, held.id() + " may not be looked at by '" + name + "'");
+    }
+    if (!entry.typeName().equals(spec.inputType().name())) {
+      return new Answer.Refused(
+          Answer.Reason.WRONG_TYPE,
+          "'%s' asks about a %s, but %s is a %s"
+              .formatted(name, spec.inputType().name(), held.id(), entry.typeName()));
     }
     I subject = storage.value(held.id(), spec.inputType().type()).orElse(null);
     if (subject == null) {
@@ -497,16 +497,16 @@ final class Engine {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
       }
+      if (!ceiling.permits(entry.label())) {
+        because.set(because(entry.label(), ceiling));
+        return new Derived.Refused<>(
+            Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
+      }
       if (!entry.typeName().equals(expected.name())) {
         return new Derived.Refused<>(
             Derived.Reason.WRONG_TYPE,
             "'%s' reads a %s in position %d, but %s is a %s"
                 .formatted(id, expected.name(), position + 1, parent.id(), entry.typeName()));
-      }
-      if (!ceiling.permits(entry.label())) {
-        because.set(because(entry.label(), ceiling));
-        return new Derived.Refused<>(
-            Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
       }
       wanted.put(parent.id(), expected.type());
       // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
@@ -609,16 +609,10 @@ final class Engine {
           null,
           context);
     }
-    if (!entry.typeName().equals(expected.name())) {
-      return denied(
-          Revealed.Reason.WRONG_TYPE,
-          held.id() + " is a " + entry.typeName() + ", not a " + expected.name(),
-          null,
-          held.id(),
-          to,
-          entry.label(),
-          context);
-    }
+    // The ceiling first, and the type only after it. A reader who may not see this value must not
+    // learn what kind of value it is: "is a card, not an email" is the disclosure this library
+    // exists to prevent, handed over in the refusal. Being told the wrong type is now something
+    // only a reader already entitled to the value can be told.
     Ceiling ceiling = ceilingOf(destination, context);
     if (ceiling == null) {
       return denied(
@@ -635,6 +629,16 @@ final class Engine {
           Revealed.Reason.ABOVE_CEILING,
           held.id() + " may not reach '" + to + "'",
           because(entry.label(), ceiling),
+          held.id(),
+          to,
+          entry.label(),
+          context);
+    }
+    if (!entry.typeName().equals(expected.name())) {
+      return denied(
+          Revealed.Reason.WRONG_TYPE,
+          held.id() + " is a " + entry.typeName() + ", not a " + expected.name(),
+          null,
           held.id(),
           to,
           entry.label(),

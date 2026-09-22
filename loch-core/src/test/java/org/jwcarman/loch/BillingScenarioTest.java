@@ -709,6 +709,37 @@ class BillingScenarioTest {
               denied -> assertThat(denied.reason()).isEqualTo(Revealed.Reason.WRONG_TYPE));
     }
 
+    /**
+     * A refusal must not answer a question the reader was not entitled to ask.
+     *
+     * <p>Knowing that a surrogate is a card rather than a display name is a disclosure in itself,
+     * which is why {@link Surrogate} carries no type at runtime. Checking the type before the
+     * ceiling handed that back in the refusal: a reader whose ceiling could never admit the value
+     * still learned what kind of value it was, just by naming the wrong type at the door.
+     */
+    @Test
+    @DisplayName("does not say what kind of value it is to a reader who may not see it")
+    void does_not_disclose_the_type_to_a_reader_above_the_ceiling() {
+      Surrogate<DisputeClaim> claim =
+          holdAs(
+              "acme",
+              Integrity.UNENDORSED,
+              Tlp.AMBER,
+              DataClass.PII,
+              disputeClaims,
+              new DisputeClaim("INV-1", "x"));
+      Surrogate<String> lying = new Surrogate<>(claim.id());
+
+      globex();
+      Revealed<String> denied = quarantinedLlmText.reveal(lying);
+
+      assertThat(((Revealed.Denied<String>) denied).reason())
+          .isEqualTo(Revealed.Reason.ABOVE_CEILING);
+      assertThat(((Revealed.Denied<String>) denied).detail())
+          .doesNotContain("dispute-claim")
+          .doesNotContain("INV-1");
+    }
+
     @Test
     @DisplayName("tells you the label and the ceiling when it refuses, without leaking the value")
     void explains_a_refusal_without_leaking() {
