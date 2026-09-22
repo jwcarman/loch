@@ -16,7 +16,7 @@
 package org.jwcarman.loch.jdbc;
 
 import java.util.Arrays;
-import org.jwcarman.codec.spi.Codec;
+import org.jwcarman.codec.Codec;
 
 /**
  * Compression that cannot make things worse.

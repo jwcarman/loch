@@ -73,7 +73,7 @@
     <jug.version>5.2.0</jug.version>
     <assertj.version>3.27.7</assertj.version>
 
-    <codec.version>0.9.0</codec.version>
+    <codec.version>0.10.0</codec.version>
     <spring-boot.version>4.1.1</spring-boot.version>
     <postgresql.version>42.7.13</postgresql.version>
     <testcontainers.version>2.0.5</testcontainers.version>

@@ -16,9 +16,9 @@
 package org.jwcarman.loch.jdbc;
 
 import java.util.Objects;
-import org.jwcarman.codec.spi.Codec;
-import org.jwcarman.codec.spi.CodecFactory;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.Codec;
+import org.jwcarman.codec.CodecFactory;
+import org.jwcarman.codec.TypeRef;
 
 /**
  * What happens to every byte a store stores, after a value has been serialised and before it is

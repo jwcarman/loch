@@ -18,7 +18,7 @@ package org.jwcarman.loch;
 import static java.util.Optional.ofNullable;
 
 import java.util.Objects;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.TypeRef;
 
 /**
  * A type this store keeps, and the name it is kept under.

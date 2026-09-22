@@ -16,7 +16,7 @@
 package org.jwcarman.loch;
 
 import java.util.Optional;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.TypeRef;
 
 /**
  * Where a store keeps things.

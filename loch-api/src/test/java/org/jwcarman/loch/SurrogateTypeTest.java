@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.TypeRef;
 
 @DisplayName("A surrogate type")
 class SurrogateTypeTest {

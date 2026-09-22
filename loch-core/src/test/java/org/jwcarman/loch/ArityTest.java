@@ -142,7 +142,7 @@ class ArityTest {
 
     @Override
     public java.util.Map<String, Object> values(
-        java.util.Map<String, org.jwcarman.codec.spi.TypeRef<?>> wanted) {
+        java.util.Map<String, org.jwcarman.codec.TypeRef<?>> wanted) {
       reads.incrementAndGet();
       return kept.values(wanted);
     }
@@ -164,7 +164,7 @@ class ArityTest {
     }
 
     @Override
-    public <T> java.util.Optional<T> value(String id, org.jwcarman.codec.spi.TypeRef<T> type) {
+    public <T> java.util.Optional<T> value(String id, org.jwcarman.codec.TypeRef<T> type) {
       reads.incrementAndGet();
       return kept.value(id, type);
     }

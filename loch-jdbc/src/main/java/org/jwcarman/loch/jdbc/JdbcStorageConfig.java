@@ -17,7 +17,7 @@ package org.jwcarman.loch.jdbc;
 
 import java.util.Objects;
 import javax.sql.DataSource;
-import org.jwcarman.codec.spi.CodecFactory;
+import org.jwcarman.codec.CodecFactory;
 import org.jwcarman.loch.lattice.Axes;
 
 /**

@@ -22,7 +22,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.TypeRef;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;

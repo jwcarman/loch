@@ -1296,7 +1296,7 @@ class BillingScenarioTest {
             }
 
             @Override
-            public <T> java.util.Optional<T> value(String id, org.jwcarman.codec.spi.TypeRef<T> t) {
+            public <T> java.util.Optional<T> value(String id, org.jwcarman.codec.TypeRef<T> t) {
               return kept.value(id, t);
             }
 

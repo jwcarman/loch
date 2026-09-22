@@ -16,8 +16,8 @@
 package org.jwcarman.loch.spring;
 
 import javax.sql.DataSource;
+import org.jwcarman.codec.CodecFactory;
 import org.jwcarman.codec.jackson.JacksonCodecFactory;
-import org.jwcarman.codec.spi.CodecFactory;
 import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.jdbc.JdbcStorage;

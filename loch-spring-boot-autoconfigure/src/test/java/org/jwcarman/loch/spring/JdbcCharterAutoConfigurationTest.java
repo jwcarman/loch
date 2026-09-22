@@ -85,7 +85,7 @@ class JdbcCharterAutoConfigurationTest {
     StorageCodec storageCodec() {
       // Nothing to hide in a test; the point here is the wiring, not the bytes.
       return StorageCodec.of(
-          new org.jwcarman.codec.spi.Codec<byte[]>() {
+          new org.jwcarman.codec.Codec<byte[]>() {
             @Override
             public byte[] encode(byte[] value) {
               return value;
@@ -206,7 +206,7 @@ class JdbcCharterAutoConfigurationTest {
     @Bean
     StorageCodec storageCodec() {
       return StorageCodec.of(
-          new org.jwcarman.codec.spi.Codec<byte[]>() {
+          new org.jwcarman.codec.Codec<byte[]>() {
             @Override
             public byte[] encode(byte[] value) {
               return value;

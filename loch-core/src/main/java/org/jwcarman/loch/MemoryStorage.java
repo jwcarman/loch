@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.TypeRef;
 
 /**
  * Storage in a map.

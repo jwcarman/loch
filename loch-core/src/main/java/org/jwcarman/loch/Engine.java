@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import org.jwcarman.codec.spi.TypeRef;
+import org.jwcarman.codec.TypeRef;
 import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;

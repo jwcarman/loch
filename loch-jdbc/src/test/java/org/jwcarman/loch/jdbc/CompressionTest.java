@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.jwcarman.codec.spi.Codec;
+import org.jwcarman.codec.Codec;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 
 /** No database needed: {@link Compression} is a plain byte transform. */

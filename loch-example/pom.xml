@@ -43,11 +43,6 @@
   <description>A billing support desk: an ordinary Spring Boot service that happens to handle
     cardholder data and untrusted mail.</description>
 
-  <properties>
-    <spring-boot.version>4.1.1</spring-boot.version>
-    <codec.version>0.9.0</codec.version>
-  </properties>
-
   <dependencyManagement>
     <dependencies>
       <!-- Ahead of what Boot 4.1.1 manages (11.0.24), which carries three criticals: a FORM auth
