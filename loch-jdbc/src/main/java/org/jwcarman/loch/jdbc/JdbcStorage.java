@@ -312,7 +312,14 @@ public final class JdbcStorage implements Storage {
     // From the parents, which are immutable and already written, so nothing here is locked and two
     // derivations never wait on each other. A fresh value has none and starts its own graph.
     byte[] digest =
-        digestOf(rootId, id, value.type().name(), payload, label, parentDigests(connection, value));
+        digestOf(
+            rootId,
+            id,
+            value.type().name(),
+            payload,
+            label,
+            value.lineage().derivation().orElse(null),
+            parentDigests(connection, value));
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id);
       statement.setString(2, value.type().name());
@@ -357,8 +364,17 @@ public final class JdbcStorage implements Storage {
    * does not hold, no node can be forged at all.
    */
   private byte[] digestOf(
-      String under, String id, String type, byte[] payload, byte[] label, List<byte[]> parents) {
-    javax.crypto.Mac mac = keyed(under);
+      String under,
+      String id,
+      String type,
+      byte[] payload,
+      byte[] label,
+      String derivation,
+      List<byte[]> parents) {
+    javax.crypto.Mac mac = keyed(Domain.VALUE, under);
+    // Counted before they are fed. The parents are the only run whose length varies, so without a
+    // count a value with two parents and a value with one could be fed identical bytes.
+    feedCount(mac, parents.size());
     for (byte[] parent : parents) {
       feed(mac, parent);
     }
@@ -366,6 +382,9 @@ public final class JdbcStorage implements Storage {
     feed(mac, type.getBytes(UTF_8));
     feed(mac, payload);
     feed(mac, label);
+    // What made it. Left out, it was free to change: the parents stayed right, the digest stayed
+    // right, and lineage() named a derivation that had never run.
+    feed(mac, derivation == null ? null : derivation.getBytes(UTF_8));
     return mac.doFinal();
   }
 
@@ -375,7 +394,19 @@ public final class JdbcStorage implements Storage {
    * <p>Named, so rotating a root does not invalidate what was written under the last one. The id is
    * signed too, so two stores sharing a secret still produce different digests.
    */
-  private javax.crypto.Mac keyed(String id) {
+  /**
+   * What kind of thing is being signed.
+   *
+   * <p>One key signs both the value graph and the trail. Without a tag they share a MAC, so a
+   * construction in one is a construction in the other. Fed before anything an attacker influences,
+   * so no value's bytes can ever be read back as a line's.
+   */
+  private enum Domain {
+    VALUE,
+    LINE
+  }
+
+  private javax.crypto.Mac keyed(Domain domain, String id) {
     byte[] secret = roots.apply(id);
     if (secret == null) {
       throw new IllegalStateException(
@@ -384,11 +415,20 @@ public final class JdbcStorage implements Storage {
     try {
       javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
       mac.init(new javax.crypto.spec.SecretKeySpec(secret, "HmacSHA256"));
+      mac.update((byte) domain.ordinal());
       feed(mac, id.getBytes(UTF_8));
       return mac;
     } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
       throw new IllegalStateException("this JVM cannot compute HMAC-SHA256", e);
     }
+  }
+
+  /** How many of whatever follows, so two different shapes cannot feed the same bytes. */
+  private static void feedCount(javax.crypto.Mac mac, int count) {
+    mac.update(
+        new byte[] {
+          (byte) (count >>> 24), (byte) (count >>> 16), (byte) (count >>> 8), (byte) count
+        });
   }
 
   private static void feed(javax.crypto.Mac mac, byte[] field) {
@@ -476,7 +516,7 @@ public final class JdbcStorage implements Storage {
       byte[] detail,
       byte[] label,
       String who) {
-    javax.crypto.Mac mac = keyed(under);
+    javax.crypto.Mac mac = keyed(Domain.LINE, under);
     feed(mac, previous);
     feed(mac, recordedAt.toString().getBytes(UTF_8));
     feed(mac, operation.getBytes(UTF_8));
@@ -622,7 +662,7 @@ public final class JdbcStorage implements Storage {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "SELECT value_id, value_type, payload, label, digest, root_id"
+                "SELECT value_id, value_type, payload, label, digest, root_id, derivation"
                     + " FROM loch_value ORDER BY value_id");
         ResultSet rows = statement.executeQuery()) {
       java.util.Map<String, byte[]> seen = new java.util.LinkedHashMap<>();
@@ -632,12 +672,14 @@ public final class JdbcStorage implements Storage {
       java.util.Map<String, byte[]> labelsById = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> types = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> rootIds = new java.util.LinkedHashMap<>();
+      java.util.Map<String, String> derivations = new java.util.LinkedHashMap<>();
       while (rows.next()) {
         String id = rows.getString("value_id");
         pending.add(new String[] {id});
         stored.put(id, rows.getBytes("digest"));
         payloads.put(id, rows.getBytes("payload"));
         labelsById.put(id, rows.getBytes("label"));
+        derivations.put(id, rows.getString("derivation"));
         types.put(id, rows.getString("value_type"));
         rootIds.put(id, rows.getString("root_id"));
       }
@@ -661,6 +703,7 @@ public final class JdbcStorage implements Storage {
                     types.get(id),
                     payloads.get(id),
                     labelsById.get(id),
+                    derivations.get(id),
                     parents)
                 : null;
         if (computed == null || !java.util.Arrays.equals(computed, stored.get(id))) {
@@ -790,7 +833,7 @@ public final class JdbcStorage implements Storage {
       statement.setString(1, id);
       try (ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
-          parents.add(new String(rows.getString("parent_id")));
+          parents.add(rows.getString("parent_id"));
         }
       }
     }
