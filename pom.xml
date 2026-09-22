@@ -97,6 +97,17 @@
     <!-- The example is a demonstration of the library rather than part of it. Analysing it reports
          on how a sample application is written, which is nobody's quality gate. -->
     <sonar.exclusions>loch-example/**</sonar.exclusions>
+
+    <!-- Rules that are right in general and wrong here. Each one names the file it applies to,
+         so the exception stays as narrow as the reason for it. -->
+    <sonar.issue.ignore.multicriteria>e1</sonar.issue.ignore.multicriteria>
+
+    <!-- S2326: "T is not used". It is used, by the compiler and by nothing else, which is the
+         point. A Surrogate<T> holds only an identifier; T is a phantom parameter that makes
+         reveal(Surrogate<Card>) at a door reading Invoice a compile error rather than a refusal
+         at request time. Erasing it would delete the one guarantee this type exists to give. -->
+    <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S2326</sonar.issue.ignore.multicriteria.e1.ruleKey>
+    <sonar.issue.ignore.multicriteria.e1.resourceKey>**/Surrogate.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
     <sonar.coverage.exclusions>loch-example/**</sonar.coverage.exclusions>
 
     <!-- Each module's own report, and no aggregator. A module's number is then about the tests
