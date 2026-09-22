@@ -289,7 +289,7 @@ public final class JdbcStorage implements Storage {
   }
 
   @Override
-  public void record(AuditRecord entry) {
+  public void append(AuditRecord entry) {
     inTransaction(
         "could not record " + entry.operation(), connection -> insertAudit(connection, entry));
   }

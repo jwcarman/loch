@@ -236,7 +236,7 @@ final class Engine {
       Why why,
       Label label,
       AccessContext context) {
-    storage.record(entry(operation, value, target, outcome, why, label, context));
+    storage.append(entry(operation, value, target, outcome, why, label, context));
   }
 
   private AuditRecord entry(

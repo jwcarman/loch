@@ -1286,8 +1286,8 @@ class BillingScenarioTest {
             }
 
             @Override
-            public void record(AuditRecord entry) {
-              kept.record(entry);
+            public void append(AuditRecord entry) {
+              kept.append(entry);
             }
 
             @Override

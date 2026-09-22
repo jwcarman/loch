@@ -1055,7 +1055,7 @@ class JdbcCharterTest {
             .storage(Axes.of(TENANT, INTEGRITY, DATA));
     AuditRecord line = aQueryLine("x");
 
-    assertThatThrownBy(() -> unreachable.record(line))
+    assertThatThrownBy(() -> unreachable.append(line))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("could not record");
   }
@@ -1165,7 +1165,7 @@ class JdbcCharterTest {
             .storage(Axes.of(TENANT, INTEGRITY, DATA));
     AuditRecord line = aQueryLine("x");
 
-    assertThatThrownBy(() -> overFailingRollback.record(line))
+    assertThatThrownBy(() -> overFailingRollback.append(line))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("could not record")
         .hasCauseInstanceOf(SQLException.class);
@@ -1209,7 +1209,7 @@ class JdbcCharterTest {
     JdbcStorage storage = rooted("ghost", Map.of(), Axes.of(TENANT, INTEGRITY, DATA));
     AuditRecord line = aQueryLine("x");
 
-    assertThatThrownBy(() -> storage.record(line))
+    assertThatThrownBy(() -> storage.append(line))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("nothing supplies the root 'ghost'");
   }
@@ -1222,7 +1222,7 @@ class JdbcCharterTest {
             "r1",
             Map.of("r1", "secret".getBytes(StandardCharsets.UTF_8)),
             Axes.of(TENANT, INTEGRITY, DATA));
-    rootedStorage.record(aQueryLine("x"));
+    rootedStorage.append(aQueryLine("x"));
     assertThat(rootedStorage.firstBrokenEntry()).isEmpty();
 
     try (Connection connection = dataSource.getConnection();
@@ -1512,7 +1512,7 @@ class JdbcCharterTest {
             .rootedIn("r1", secret)
             .withoutMigration()
             .storage(axes);
-    single.record(aQueryLine("x"));
+    single.append(aQueryLine("x"));
     assertThat(single.firstBrokenEntry()).isEmpty();
 
     // "r1" is the only root this configuration knows about; the same secret under another name

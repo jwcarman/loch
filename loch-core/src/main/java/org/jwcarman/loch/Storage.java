@@ -44,7 +44,7 @@ public interface Storage {
    * <p>Most of the trail is this. A refusal produces no value at all, and refusals are what an
    * auditor came to look at.
    */
-  void record(AuditRecord entry);
+  void append(AuditRecord entry);
 
   /** The label, the lineage and what it was stored as -- without decoding the value. */
   Optional<StoredMetadata> metadata(String id);

@@ -63,7 +63,7 @@ public final class MemoryStorage implements Storage {
   }
 
   @Override
-  public void record(AuditRecord entry) {
+  public void append(AuditRecord entry) {
     audit.add(entry);
   }
 
@@ -71,7 +71,7 @@ public final class MemoryStorage implements Storage {
 
   @Override
   public void put(String id, StoredValue value, AuditRecord entry) {
-    record(entry);
+    append(entry);
     values.put(id, value);
   }
 
@@ -121,7 +121,7 @@ public final class MemoryStorage implements Storage {
         removed.add(id);
       }
     }
-    removed.forEach(id -> record(lineFor.apply(id)));
+    removed.forEach(id -> append(lineFor.apply(id)));
     return removed;
   }
 }

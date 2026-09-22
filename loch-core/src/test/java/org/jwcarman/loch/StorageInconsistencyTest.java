@@ -50,8 +50,8 @@ class StorageInconsistencyTest {
     }
 
     @Override
-    public void record(AuditRecord entry) {
-      delegate.record(entry);
+    public void append(AuditRecord entry) {
+      delegate.append(entry);
     }
 
     @Override
@@ -90,8 +90,8 @@ class StorageInconsistencyTest {
     }
 
     @Override
-    public void record(AuditRecord entry) {
-      delegate.record(entry);
+    public void append(AuditRecord entry) {
+      delegate.append(entry);
     }
 
     @Override
