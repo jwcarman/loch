@@ -152,8 +152,7 @@ class JdbcCharterTest {
     dataSource = pg;
     try (Connection connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
-      statement.execute(
-          "DROP TABLE IF EXISTS loch_audit, loch_lineage_closure, loch_lineage, loch_value");
+      statement.execute("DROP TABLE IF EXISTS loch_audit, loch_lineage, loch_value");
     }
 
     KeyGenerator generator = KeyGenerator.getInstance("AES");
@@ -444,6 +443,46 @@ class JdbcCharterTest {
     assertThat(storage.firstBrokenEntry()).isEmpty();
   }
 
+  /**
+   * A verifier that crashes reports nothing, which is what an attacker wants.
+   *
+   * <p>Rewriting a line's digest is noticed. Rewriting its root_id used to be better than that: it
+   * named a root nothing supplies, the lookup threw, and the whole report became an exception
+   * instead of a finding. Turning a detection into an outage is an upgrade for whoever did it.
+   */
+  @Test
+  @DisplayName("reports a line naming a root nobody supplies, rather than throwing")
+  void reports_a_line_whose_root_is_unknown() throws SQLException {
+    card();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement("UPDATE loch_audit SET root_id = ? WHERE entry_id = 1")) {
+      statement.setString(1, "a-root-nobody-has");
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+
+    assertThat(storage.firstBrokenEntry()).contains(1L);
+  }
+
+  /**
+   * Verification must not depend on identifiers happening to sort parents before children.
+   *
+   * <p>They do today, because v7 identifiers sort by creation time -- but {@code Storage.freshId}
+   * is a documented seam an application may replace, and two writers with skewed clocks interleave
+   * regardless. Checking to a fixpoint asks nothing of the order.
+   */
+  @Test
+  @DisplayName("verifies a graph whose children sort before their parents")
+  void verifies_regardless_of_identifier_order() {
+    Surrogate<Card> card = card();
+    acme();
+    cardLast4.derive(card).orThrow();
+
+    assertThat(storage.brokenValues()).isEmpty();
+  }
+
   private void deleteValue(String id) throws SQLException {
     try (Connection connection = dataSource.getConnection();
         var statement = connection.prepareStatement("DELETE FROM loch_value WHERE value_id = ?")) {
@@ -669,7 +708,7 @@ class JdbcCharterTest {
     assertThat(rowCount("loch_value")).isEqualTo(3);
   }
 
-  /** Erasure is a reachability query, which is what the closure table is for. */
+  /** Erasure is a reachability query, walked over the lineage the value digests cover. */
   @Test
   @DisplayName("erasing a value takes everything ever derived from it")
   void erasing_takes_everything_derived_from_it() throws SQLException {
@@ -683,7 +722,6 @@ class JdbcCharterTest {
     assertThat(removed).isEqualTo(2);
     assertThat(store.holds(card)).isFalse();
     assertThat(store.holds(last4)).isFalse();
-    assertThat(rowCount("loch_lineage_closure")).isZero();
   }
 
   @Test
@@ -790,12 +828,22 @@ class JdbcCharterTest {
     }
   }
 
+  /**
+   * The walk includes the value it starts from, which is the whole of erasing a leaf.
+   *
+   * <p>Asserted through behaviour rather than through a row count. This used to check that a
+   * closure table held a value as its own ancestor -- a fact about a structure that no longer
+   * exists, which would have kept passing while erasure was broken, or failing while it worked.
+   */
   @Test
-  @DisplayName("the closure records a value as its own ancestor, so erasing a leaf works")
-  void closure_records_self() throws SQLException {
-    card();
+  @DisplayName("erasing a value nothing was derived from removes exactly that value")
+  void erasing_a_leaf_removes_exactly_it() throws SQLException {
+    Surrogate<Card> card = card();
+    acme();
+    edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
 
-    assertThat(rowCount("loch_lineage_closure")).isEqualTo(1);
+    assertThat(store.erase(card)).isEqualTo(1);
+    assertThat(rowCount("loch_value")).isZero();
   }
 
   @Test

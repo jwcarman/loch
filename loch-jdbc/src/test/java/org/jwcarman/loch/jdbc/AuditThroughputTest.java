@@ -77,8 +77,7 @@ class AuditThroughputTest {
     pg.setPassword(POSTGRES.getPassword());
     try (Connection connection = pg.getConnection();
         var statement = connection.createStatement()) {
-      statement.execute(
-          "DROP TABLE IF EXISTS loch_audit, loch_lineage_closure, loch_lineage, loch_value");
+      statement.execute("DROP TABLE IF EXISTS loch_audit, loch_lineage, loch_value");
     }
 
     DefaultCharter charter = new DefaultCharter(TENANT);

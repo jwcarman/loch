@@ -45,20 +45,16 @@ CREATE TABLE IF NOT EXISTS loch_lineage (
   FOREIGN KEY (child_id) REFERENCES loch_value (value_id) ON DELETE CASCADE
 );
 
--- Reachability, maintained as values are derived, so that erasing a customer is one indexed query
--- rather than a recursive walk. Lineage is a DAG and not a tree -- a value can have several parents
--- -- so this is a closure table rather than a materialised path, whose rows would multiply at every
--- merge. Here the row count is the number of genuinely reachable pairs, which is the smallest
--- honest representation of "everything downstream of this".
-CREATE TABLE IF NOT EXISTS loch_lineage_closure (
-  ancestor_id   TEXT    NOT NULL,
-  descendant_id TEXT    NOT NULL,
-  depth         INTEGER NOT NULL,
-  PRIMARY KEY (ancestor_id, descendant_id)
-);
-
-CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
-  ON loch_lineage_closure (descendant_id);
+-- Erasure walks this, so it needs the parent side indexed as well as the child side.
+--
+-- There used to be a closure table beside it, maintained as values were derived, because "erase
+-- this customer" is a reachability question and a recursive walk looked expensive. It decided what
+-- erasure destroyed and nothing signed it, so deleting one of its rows left a value derived from
+-- erased customer data alive with no verifier the wiser. This table is covered: a value hashes
+-- from its parents, so rewriting who something was made from breaks that value and everything
+-- below it. Computing reachability from the signed structure removes the trusted one rather than
+-- adding a signature to it.
+CREATE INDEX IF NOT EXISTS loch_lineage_parent ON loch_lineage (parent_id);
 
 -- Every access, allowed or refused, written in the same transaction as the value it concerns.
 --

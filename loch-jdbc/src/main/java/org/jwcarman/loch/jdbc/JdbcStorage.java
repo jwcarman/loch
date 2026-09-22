@@ -108,28 +108,28 @@ public final class JdbcStorage implements Storage {
       INSERT INTO loch_lineage (child_id, parent_id, position) VALUES (?, ?, ?)
       ON CONFLICT (child_id, parent_id) DO NOTHING
       """;
-  private static final String INSERT_SELF_CLOSURE =
-      """
-      INSERT INTO loch_lineage_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, 0)
-      ON CONFLICT (ancestor_id, descendant_id) DO NOTHING
-      """;
-  private static final String INSERT_CLOSURE =
-      """
-      INSERT INTO loch_lineage_closure (ancestor_id, descendant_id, depth)
-      SELECT c.ancestor_id, ?, c.depth + 1 FROM loch_lineage_closure c WHERE c.descendant_id = ?
-      ON CONFLICT (ancestor_id, descendant_id) DO NOTHING
-      """;
+
+  /**
+   * Everything reachable from a value, walked at the moment of erasing rather than maintained.
+   *
+   * <p>Computed from loch_lineage, which is covered by the value digests: a child hashes from its
+   * parents, so altering who a value was made from breaks that value and everything below it. It
+   * used to read a closure table that nothing signed, which decided what erasure destroyed -- so
+   * deleting one closure row left a value derived from erased customer data alive, and no verifier
+   * noticed. Deriving the answer from the signed structure removes the trusted one rather than
+   * protecting it.
+   */
   private static final String DELETE_REACHABLE =
       """
-      DELETE FROM loch_value WHERE value_id IN
-        (SELECT descendant_id FROM loch_lineage_closure WHERE ancestor_id = ?)
+      WITH RECURSIVE reachable (value_id) AS (
+        SELECT CAST(? AS TEXT)
+        UNION
+        SELECT lineage.child_id
+          FROM loch_lineage lineage
+          JOIN reachable ON lineage.parent_id = reachable.value_id
+      )
+      DELETE FROM loch_value WHERE value_id IN (SELECT value_id FROM reachable)
       RETURNING value_id
-      """;
-  private static final String DELETE_CLOSURE_OF_GONE =
-      """
-      DELETE FROM loch_lineage_closure
-       WHERE descendant_id NOT IN (SELECT value_id FROM loch_value)
-          OR ancestor_id NOT IN (SELECT value_id FROM loch_value)
       """;
 
   private final DataSource dataSource;
@@ -363,12 +363,23 @@ public final class JdbcStorage implements Storage {
   }
 
   /** What this value was made from, in the order it was made from them. */
+  /**
+   * What this value was made from, locked against disappearing underneath it.
+   *
+   * <p>{@code FOR SHARE} rather than a plain read. Without it a derivation could read its parents,
+   * an erasure of those parents could commit, and the derivation could then commit a child of
+   * values that no longer exist -- a descendant of data somebody asked to have destroyed, left
+   * alive because the two transactions never saw each other. A share lock lets any number of
+   * derivations read the same parents at once and makes the erasure wait, which is the right way
+   * round: erasing is rare and must be complete, deriving is common and must not block itself.
+   */
   private List<byte[]> parentDigests(Connection connection, StoredValue value) throws SQLException {
     List<String> parents = value.lineage().parents();
     List<byte[]> digests = new java.util.ArrayList<>();
     for (String parent : parents) {
       try (PreparedStatement statement =
-          connection.prepareStatement("SELECT digest FROM loch_value WHERE value_id = ?")) {
+          connection.prepareStatement(
+              "SELECT digest FROM loch_value WHERE value_id = ? FOR SHARE")) {
         statement.setString(1, parent);
         try (ResultSet rows = statement.executeQuery()) {
           if (!rows.next()) {
@@ -393,6 +404,29 @@ public final class JdbcStorage implements Storage {
    * somebody with write access can recompute the graph below it. Rooted in a secret the database
    * does not hold, no node can be forged at all.
    */
+  /**
+   * The digest, or null when this row cannot be checked at all.
+   *
+   * <p>A row naming a root nothing supplies is a finding, not a crash. Letting that throw handed an
+   * attacker a way to turn "broken at this value" into "the verifier does not run": rewrite one
+   * root_id and the whole report becomes an exception. It is also what an ordinary rotation looks
+   * like once an old root is retired.
+   */
+  private byte[] digestOfOrNull(
+      String under,
+      String id,
+      String type,
+      byte[] payload,
+      byte[] label,
+      String derivation,
+      List<byte[]> parents) {
+    try {
+      return digestOf(under, id, type, payload, label, derivation, parents);
+    } catch (IllegalStateException e) {
+      return null;
+    }
+  }
+
   private byte[] digestOf(
       String under,
       String id,
@@ -608,19 +642,27 @@ public final class JdbcStorage implements Storage {
         if (!java.util.Arrays.equals(previous, expected)) {
           return java.util.Optional.of(rows.getLong("entry_id"));
         }
-        byte[] digest =
-            lineDigest(
-                rows.getString("root_id"),
-                previous,
-                rows.getTimestamp("recorded_at").toInstant(),
-                rows.getString("operation"),
-                rows.getString("value_id"),
-                rows.getString("target"),
-                rows.getString("outcome"),
-                rows.getString("reason"),
-                rows.getBytes("detail"),
-                rows.getBytes("label"),
-                rows.getBytes("context"));
+        // A root nothing supplies is a broken line, not a crashed verifier. Left to throw, an
+        // attacker who could edit a line could rewrite its root_id instead and turn "broken at
+        // entry 7" into an exception that reports nothing at all.
+        byte[] digest;
+        try {
+          digest =
+              lineDigest(
+                  rows.getString("root_id"),
+                  previous,
+                  rows.getTimestamp("recorded_at").toInstant(),
+                  rows.getString("operation"),
+                  rows.getString("value_id"),
+                  rows.getString("target"),
+                  rows.getString("outcome"),
+                  rows.getString("reason"),
+                  rows.getBytes("detail"),
+                  rows.getBytes("label"),
+                  rows.getBytes("context"));
+        } catch (IllegalStateException e) {
+          return java.util.Optional.of(rows.getLong("entry_id"));
+        }
         if (!java.util.Arrays.equals(digest, rows.getBytes("digest"))) {
           return java.util.Optional.of(rows.getLong("entry_id"));
         }
@@ -714,35 +756,56 @@ public final class JdbcStorage implements Storage {
         types.put(id, rows.getString("value_type"));
         rootIds.put(id, rows.getString("root_id"));
       }
-      for (String[] row : pending) {
-        String id = row[0];
-        List<byte[]> parents = new java.util.ArrayList<>();
-        boolean reachable = true;
-        for (String parent : parentsOf(connection, id)) {
-          byte[] digest = seen.get(parent);
-          if (digest == null) {
-            reachable = false;
-            break;
+      // To a fixpoint, rather than in one pass over sorted identifiers. A value can only be
+      // checked once its parents have been, and nothing orders the rows that way: ids are v7, so
+      // they happen to sort by creation time, but Storage.freshId is a documented seam an
+      // application may replace, and two writers with skewed clocks interleave anyway. Sorting by
+      // id made a perfectly good child report itself broken because its parent had not been
+      // reached yet.
+      //
+      // Each pass verifies whatever has become checkable. When a pass verifies nothing new, what
+      // is left is genuinely unverifiable: broken, or descended from something broken or missing.
+      java.util.Set<String> unresolved = new java.util.LinkedHashSet<>(stored.keySet());
+      boolean progressing = true;
+      while (progressing) {
+        progressing = false;
+        java.util.Iterator<String> remaining = unresolved.iterator();
+        while (remaining.hasNext()) {
+          String id = remaining.next();
+          List<byte[]> parents = new java.util.ArrayList<>();
+          boolean checkable = true;
+          for (String parent : parentsOf(connection, id)) {
+            byte[] digest = seen.get(parent);
+            if (digest == null) {
+              checkable = false;
+              break;
+            }
+            parents.add(digest);
           }
-          parents.add(digest);
-        }
-        byte[] computed =
-            reachable
-                ? digestOf(
-                    rootIds.get(id),
-                    id,
-                    types.get(id),
-                    payloads.get(id),
-                    labelsById.get(id),
-                    derivations.get(id),
-                    parents)
-                : null;
-        if (computed == null || !java.util.Arrays.equals(computed, stored.get(id))) {
-          broken.add(id);
-        } else {
-          seen.put(id, computed);
+          if (!checkable) {
+            continue;
+          }
+          byte[] computed =
+              digestOfOrNull(
+                  rootIds.get(id),
+                  id,
+                  types.get(id),
+                  payloads.get(id),
+                  labelsById.get(id),
+                  derivations.get(id),
+                  parents);
+          if (computed != null && java.util.Arrays.equals(computed, stored.get(id))) {
+            seen.put(id, computed);
+          } else {
+            broken.add(id);
+          }
+          remaining.remove();
+          progressing = true;
         }
       }
+      // Whatever never became checkable hangs off something that is broken or gone.
+      broken.addAll(unresolved);
+      broken.sort(java.util.Comparator.naturalOrder());
       return broken;
     } catch (SQLException e) {
       throw new IllegalStateException("could not read the values back", e);
@@ -751,11 +814,6 @@ public final class JdbcStorage implements Storage {
 
   private void insertLineage(Connection connection, String id, Lineage lineage)
       throws SQLException {
-    try (PreparedStatement self = connection.prepareStatement(INSERT_SELF_CLOSURE)) {
-      self.setString(1, id);
-      self.setString(2, id);
-      self.executeUpdate();
-    }
     List<String> parents = lineage.parents();
     for (int i = 0; i < parents.size(); i++) {
       try (PreparedStatement parent = connection.prepareStatement(INSERT_PARENT)) {
@@ -763,11 +821,6 @@ public final class JdbcStorage implements Storage {
         parent.setString(2, parents.get(i));
         parent.setInt(3, i);
         parent.executeUpdate();
-      }
-      try (PreparedStatement closure = connection.prepareStatement(INSERT_CLOSURE)) {
-        closure.setString(1, id);
-        closure.setString(2, parents.get(i));
-        closure.executeUpdate();
       }
     }
   }
@@ -900,9 +953,6 @@ public final class JdbcStorage implements Storage {
                 removed.add(rows.getString("value_id"));
               }
             }
-          }
-          try (Statement tidy = connection.createStatement()) {
-            tidy.executeUpdate(DELETE_CLOSURE_OF_GONE);
           }
           // In this transaction, with the deletes. A value destroyed without a line saying so is
           // indistinguishable from one somebody deleted behind the library's back.
