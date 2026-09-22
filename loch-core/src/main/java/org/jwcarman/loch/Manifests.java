@@ -28,9 +28,9 @@ import org.jwcarman.loch.lattice.Label;
 /**
  * Rendering a {@link Manifest} from what a charter has been told, and nothing else.
  *
- * <p>Package-private and entirely pure: it reads a frozen {@link DefaultCharter.Configuration} and
- * produces a report. It decides nothing and holds nothing, which is why it does not live on the
- * charter -- reporting is not one of a charter's powers, it is a reading of one.
+ * <p>Package-private and entirely pure: it reads a frozen {@link Configuration} and produces a
+ * report. It decides nothing and holds nothing, which is why it does not live on the charter --
+ * reporting is not one of a charter's powers, it is a reading of one.
  */
 final class Manifests {
 
@@ -40,7 +40,7 @@ final class Manifests {
   private Manifests() {}
 
   /** What this configuration permits, rendered for one access. */
-  static Manifest of(DefaultCharter.Configuration configuration, AccessContext as) {
+  static Manifest of(Configuration configuration, AccessContext as) {
     return new Manifest(
         String.valueOf(Label.nothing()),
         sourceEntries(configuration),
@@ -51,7 +51,7 @@ final class Manifests {
         as);
   }
 
-  private static List<Manifest.Entry> sourceEntries(DefaultCharter.Configuration configuration) {
+  private static List<Manifest.Entry> sourceEntries(Configuration configuration) {
     List<Manifest.Entry> ways = new ArrayList<>();
     for (var source : configuration.sources().entrySet()) {
       ways.add(
@@ -66,7 +66,7 @@ final class Manifests {
   }
 
   private static List<Manifest.Entry> destinationEntries(
-      DefaultCharter.Configuration configuration, AccessContext as) {
+      Configuration configuration, AccessContext as) {
     List<Manifest.Entry> doors = new ArrayList<>();
     for (DestinationSpec destination : configuration.destinations()) {
       doors.add(
@@ -81,8 +81,7 @@ final class Manifests {
     return doors;
   }
 
-  private static List<Manifest.Entry> derivationEntries(
-      DefaultCharter.Configuration configuration) {
+  private static List<Manifest.Entry> derivationEntries(Configuration configuration) {
     List<Manifest.Entry> entries = new ArrayList<>();
     for (DerivationSpec<?> derivation : configuration.derivations()) {
       entries.add(
@@ -96,7 +95,7 @@ final class Manifests {
     return entries;
   }
 
-  private static List<Manifest.Entry> queryEntries(DefaultCharter.Configuration configuration) {
+  private static List<Manifest.Entry> queryEntries(Configuration configuration) {
     List<Manifest.Entry> questions = new ArrayList<>();
     for (QuerySpec<?, ?> query : configuration.queries()) {
       questions.add(
@@ -123,7 +122,7 @@ final class Manifests {
    * both functions of the access, so "can an unendorsed value reach the vendor model" has no
    * general answer -- only one per caller. That is what rendering a manifest for an access is for.
    */
-  private static List<Manifest.Finding> findings(DefaultCharter.Configuration configuration) {
+  private static List<Manifest.Finding> findings(Configuration configuration) {
     List<Manifest.Finding> findings = new ArrayList<>();
     Set<String> produced = producedTypes(configuration);
     Set<String> read = readTypes(configuration);
@@ -136,7 +135,7 @@ final class Manifests {
   }
 
   /** Every type something in this charter can produce: a source's, or a derivation's output. */
-  private static Set<String> producedTypes(DefaultCharter.Configuration configuration) {
+  private static Set<String> producedTypes(Configuration configuration) {
     Set<String> produced = new LinkedHashSet<>();
     configuration.sources().values().forEach(type -> produced.add(type.name()));
     for (DerivationSpec<?> derivation : configuration.derivations()) {
@@ -146,7 +145,7 @@ final class Manifests {
   }
 
   /** Every type something in this charter reads: a door's, a derivation's, or a question's. */
-  private static Set<String> readTypes(DefaultCharter.Configuration configuration) {
+  private static Set<String> readTypes(Configuration configuration) {
     Set<String> read = new LinkedHashSet<>();
     configuration.destinationReads().values().forEach(read::addAll);
     for (DerivationSpec<?> derivation : configuration.derivations()) {
@@ -160,7 +159,7 @@ final class Manifests {
 
   /** Whether this charter has any door in and any door out at all. */
   private static void declarationPresenceFindings(
-      DefaultCharter.Configuration configuration, List<Manifest.Finding> findings) {
+      Configuration configuration, List<Manifest.Finding> findings) {
     if (configuration.sources().isEmpty()) {
       findings.add(
           new Manifest.Finding(
@@ -180,7 +179,7 @@ final class Manifests {
    * a door reads. Walked rather than assumed: a derivation in the middle is easy to miss.
    */
   private static void unreachableSourceFindings(
-      DefaultCharter.Configuration configuration, List<Manifest.Finding> findings) {
+      Configuration configuration, List<Manifest.Finding> findings) {
     for (var source : configuration.sources().entrySet()) {
       if (!reaches(source.getValue().name(), configuration)) {
         findings.add(
@@ -195,9 +194,7 @@ final class Manifests {
 
   /** A door that reads a type nothing in this charter can ever produce. */
   private static void unproducedDestinationReadFindings(
-      DefaultCharter.Configuration configuration,
-      Set<String> produced,
-      List<Manifest.Finding> findings) {
+      Configuration configuration, Set<String> produced, List<Manifest.Finding> findings) {
     for (var door : configuration.destinationReads().entrySet()) {
       for (String type : door.getValue()) {
         if (!produced.contains(type)) {
@@ -213,7 +210,7 @@ final class Manifests {
 
   /** A derivation that reads what nothing produces, or makes what nothing reads. */
   private static void derivationFindings(
-      DefaultCharter.Configuration configuration,
+      Configuration configuration,
       Set<String> produced,
       Set<String> read,
       List<Manifest.Finding> findings) {
@@ -239,9 +236,7 @@ final class Manifests {
 
   /** A question that asks about a type nothing in this charter can ever produce. */
   private static void unproducedQueryFindings(
-      DefaultCharter.Configuration configuration,
-      Set<String> produced,
-      List<Manifest.Finding> findings) {
+      Configuration configuration, Set<String> produced, List<Manifest.Finding> findings) {
     for (QuerySpec<?, ?> query : configuration.queries()) {
       if (!produced.contains(query.inputType().name())) {
         findings.add(
@@ -255,7 +250,7 @@ final class Manifests {
   }
 
   /** Whether any destination reads this type, or a type reachable from it by deriving. */
-  private static boolean reaches(String type, DefaultCharter.Configuration configuration) {
+  private static boolean reaches(String type, Configuration configuration) {
     Set<String> seen = new LinkedHashSet<>();
     Deque<String> pending = new ArrayDeque<>(List.of(type));
     Set<String> doorsRead = new LinkedHashSet<>();

@@ -38,40 +38,6 @@ public final class DefaultCharter implements Charter {
   private static final String THIS_CHARTER = "this charter";
 
   /**
-   * Everything declared, frozen at the moment of sealing.
-   *
-   * <p>Built once rather than per declaration. Writing a charter is single-threaded -- it happens
-   * while an application is being wired, before anything it constitutes can act -- so the
-   * collections below are ordinary and mutable until they are copied in here.
-   *
-   * <p>What crosses threads is this, and it crosses exactly once: the atomic write that seals a
-   * charter publishes it to every request thread that will ever use a portal. That is why it is
-   * immutable and why the copies preserve order -- these are read back into the manifest and into
-   * the refusal naming which types a door reads, and a message that differs between runs is a
-   * message nobody trusts.
-   */
-  record Configuration(
-      java.util.Map<String, SurrogateType<?>> types,
-      java.util.Map<String, SurrogateType<?>> sources,
-      java.util.Map<String, java.util.Set<String>> destinationReads,
-      List<DestinationSpec> destinations,
-      List<DerivationSpec<?>> derivations,
-      List<QuerySpec<?, ?>> queries,
-      AccessContextProvider currentAccess,
-      java.util.function.BiPredicate<Label, AccessContext> mayErase) {
-
-    Configuration {
-      types = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(types));
-      sources = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(sources));
-      destinationReads =
-          java.util.Collections.unmodifiableMap(new LinkedHashMap<>(destinationReads));
-      destinations = List.copyOf(destinations);
-      derivations = List.copyOf(derivations);
-      queries = List.copyOf(queries);
-    }
-  }
-
-  /**
    * Where a charter is in its one irreversible transition.
    *
    * <p>Every portal a charter constitutes shares this one reference, so sealing does not walk them
