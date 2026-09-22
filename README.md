@@ -1,5 +1,9 @@
 # Loch
 
+[![CI](https://github.com/jwcarman/loch/actions/workflows/maven.yml/badge.svg)](https://github.com/jwcarman/loch/actions/workflows/maven.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Java](https://img.shields.io/badge/dynamic/xml?url=https://raw.githubusercontent.com/jwcarman/loch/main/pom.xml&query=//*[local-name()='maven.compiler.release']/text()&label=Java&color=orange)](https://openjdk.org/)
+
 **Opaque references to sensitive values, for Java.**
 
 Some values should not simply become text: personal and regulated data, credentials, untrusted
@@ -21,6 +25,12 @@ Built on Denning's lattice model and on the object-capability model: **authority
 looked up**. There is no registry and no `charter.get("customer-mail")`. Code can perform an
 operation because something handed it the portal that performs it — so "what can this class do?" is
 answered by reading its constructor parameters.
+
+## Read the docs
+
+The [documentation site](https://jwcarman.github.io/loch/) is the manual: concepts, guides, and
+[what Loch does not do](https://jwcarman.github.io/loch/limits/) — which is the page to read first
+if you are deciding whether it fits. This README is the front door.
 
 ---
 

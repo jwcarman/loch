@@ -61,6 +61,11 @@ fits.
     than once, so a database written by one commit is not necessarily readable by the next.
     Migrations begin at the first release.
 
+## Elsewhere
+
+- [Source, issues and security advisories](https://github.com/jwcarman/loch)
+- [Contributing](https://github.com/jwcarman/loch/blob/main/CONTRIBUTING.md)
+
 ## Requirements
 
 Java 25, and Postgres if you want durable storage. A `MemoryStorage` is included for tests and for
