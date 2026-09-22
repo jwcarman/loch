@@ -86,4 +86,25 @@ class ErasingAcrossTenantsTest {
         .isInstanceOf(AccessDeniedException.class);
     assertThat(config.holds(globexRecord.id())).isTrue();
   }
+
+  /**
+   * Asking to destroy something that is not here is still an attempt.
+   *
+   * <p>A trail recording only the attempts that found something cannot show a probe, which looks
+   * exactly like this, repeatedly. Every other operation writes a line whether or not the value was
+   * there; this one used to return zero in silence.
+   */
+  @Test
+  @DisplayName("records an attempt to erase a value that is not here")
+  void records_an_attempt_to_erase_what_is_not_here() {
+    MemoryStorage storage = new MemoryStorage();
+    DefaultCharter config = new DefaultCharter(TENANT, LEVEL).mayErase((label, ctx) -> true);
+    config.seal(storage);
+
+    assertThat(config.erase(Surrogate.of("sur_never-existed"))).isZero();
+
+    assertThat(storage.audit(AuditRecord.Operation.ERASE))
+        .isNotEmpty()
+        .allSatisfy(line -> assertThat(line.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
+  }
 }

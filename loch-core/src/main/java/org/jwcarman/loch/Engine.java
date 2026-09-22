@@ -323,6 +323,17 @@ final class Engine {
     AccessContext asking = asking();
     StoredMetadata entry = storage.metadata(root.id()).orElse(null);
     if (entry == null) {
+      // Recorded like every other operation. Asking to destroy something that is not here is an
+      // event worth seeing -- a probe looks exactly like this, repeatedly -- and a trail that
+      // records only the attempts that found something cannot show it.
+      audit(
+          AuditRecord.Operation.ERASE,
+          root.id(),
+          null,
+          AuditRecord.Outcome.REFUSED,
+          Why.of("no such value"),
+          null,
+          asking);
       return 0;
     }
     // Application code, so it throws, and a gate that could not decide has not said yes. Left to
@@ -618,11 +629,29 @@ final class Engine {
             Why.of(reasonFor(spec, joined, parentIds.size())),
             label,
             context);
-    storage.put(
-        newId,
-        new StoredValue(
-            produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
-        entry);
+    try {
+      storage.put(
+          newId,
+          new StoredValue(
+              produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
+          entry);
+    } catch (RuntimeException e) {
+      // A parent can be erased while the derivation function is running: every check passed, the
+      // plaintext was read, and by the time the child is written its ancestry is gone. The read
+      // happened, so this is a refusal that has to be recorded, not an exception that escapes
+      // past the audit -- the same rule that covers application code failing after it has seen
+      // the value.
+      audit(
+          AuditRecord.Operation.DERIVE,
+          newId,
+          id,
+          AuditRecord.Outcome.REFUSED,
+          Why.of("could not be written"),
+          label,
+          context);
+      return new Derived.Refused<>(
+          Derived.Reason.NO_SUCH_VALUE, "'" + id + "' could not be completed");
+    }
     return new Derived.Made<>(new Surrogate<>(newId));
   }
 
