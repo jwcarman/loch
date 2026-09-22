@@ -171,7 +171,7 @@ class LabelTest {
   @Test
   @DisplayName("says nothing, legibly, when it was told nothing")
   void says_nothing_legibly() {
-    assertThat(Label.nothing().toString()).isEqualTo("{}");
+    assertThat(Label.nothing()).hasToString("{}");
   }
 
   @Test

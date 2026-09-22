@@ -94,13 +94,13 @@ class MintedAfterwardsTest {
   @Test
   @DisplayName("cannot be a sink with a ceiling of its own choosing")
   void cannot_be_a_sink() {
-    assertThatThrownBy(
-            () ->
-                config
-                    .destination("forged", ctx -> Ceiling.nothing(), TOKEN_TYPE)
-                    .reading(TOKEN_TYPE))
+    assertThatThrownBy(this::forgedDestinationReadingTokens)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("has been sealed");
+  }
+
+  private Reveal<Token> forgedDestinationReadingTokens() {
+    return config.destination("forged", ctx -> Ceiling.nothing(), TOKEN_TYPE).reading(TOKEN_TYPE);
   }
 
   @Test

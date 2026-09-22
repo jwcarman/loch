@@ -49,11 +49,6 @@ public record Manifest(
     AccessContext renderedFor) {
 
   /**
-   * One line of the report.
-   *
-   * @param weakens whether this operation can make a label less constrained
-   */
-  /**
    * One line of the report, and what it does with values.
    *
    * <p>The types are structured rather than left in {@code detail}, so a report can be filtered and
@@ -102,13 +97,6 @@ public record Manifest(
     questions = List.copyOf(questions);
   }
 
-  /**
-   * Every operation that can weaken a label: the ones a reviewer is actually looking for.
-   *
-   * <p>One list, because there is one kind of operation. Derivations over several values were once
-   * a separate type, and were quietly missing from this report for exactly as long as nobody
-   * looked.
-   */
   /** Findings of one kind, for a build that cares about some and not others. */
   public List<Finding> findings(String kind) {
     return findings.stream().filter(finding -> kind.equals(finding.kind())).toList();
@@ -132,6 +120,13 @@ public record Manifest(
         renderedFor);
   }
 
+  /**
+   * Every operation that can weaken a label: the ones a reviewer is actually looking for.
+   *
+   * <p>One list, because there is one kind of operation. Derivations over several values were once
+   * a separate type, and were quietly missing from this report for exactly as long as nobody
+   * looked.
+   */
   public List<Entry> weakening() {
     return derivations.stream().filter(Entry::weakens).toList();
   }

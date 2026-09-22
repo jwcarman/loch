@@ -202,7 +202,7 @@ class PolicyThatCannotDecideTest {
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.DECLINED);
     assertThat(storage.audit()).isNotEmpty();
     assertThat(storage.audit())
-        .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
+        .allSatisfy(entry -> assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }
 
   /**
@@ -282,6 +282,6 @@ class PolicyThatCannotDecideTest {
 
     assertThat(storage.audit()).hasSize(9);
     assertThat(storage.audit())
-        .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
+        .allSatisfy(entry -> assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }
 }

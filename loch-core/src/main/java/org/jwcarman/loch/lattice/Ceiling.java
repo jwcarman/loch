@@ -70,7 +70,7 @@ public final class Ceiling {
 
   private static <T> Bound bound(Axis<T> axis, Constraint<T> constraint) {
     return switch (constraint) {
-      case Constraint.AtMost<T> atMost -> new Bound(axis.lift(atMost.value()), false);
+      case Constraint.AtMost<T>(T value) -> new Bound(axis.lift(value), false);
       case Constraint.Any<T>() -> new Bound(null, true);
     };
   }

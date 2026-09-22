@@ -40,11 +40,11 @@ import java.util.stream.Collectors;
  */
 public final class Axes implements Iterable<Axis<?>> {
 
-  private final List<Axis<?>> axes;
+  private final List<Axis<?>> ordered;
   private final Map<String, Axis<?>> byName;
 
-  private Axes(List<Axis<?>> axes, Map<String, Axis<?>> byName) {
-    this.axes = axes;
+  private Axes(List<Axis<?>> ordered, Map<String, Axis<?>> byName) {
+    this.ordered = ordered;
     this.byName = byName;
   }
 
@@ -82,26 +82,26 @@ public final class Axes implements Iterable<Axis<?>> {
 
   /** How many questions are asked. */
   public int size() {
-    return axes.size();
+    return ordered.size();
   }
 
   @Override
   public Iterator<Axis<?>> iterator() {
-    return axes.iterator();
+    return ordered.iterator();
   }
 
   @Override
   public String toString() {
-    return axes.stream().map(Axis::name).collect(Collectors.joining(", ", "[", "]"));
+    return ordered.stream().map(Axis::name).collect(Collectors.joining(", ", "[", "]"));
   }
 
   @Override
   public boolean equals(Object other) {
-    return other instanceof Axes that && axes.equals(that.axes);
+    return other instanceof Axes that && ordered.equals(that.ordered);
   }
 
   @Override
   public int hashCode() {
-    return axes.hashCode();
+    return ordered.hashCode();
   }
 }

@@ -329,7 +329,7 @@ class BillingScenarioTest {
           SUMMARISE,
           STRING_TYPE,
           REPORT_TYPE,
-          notes -> new Report(String.join(" / ", notes)),
+          parts -> new Report(String.join(" / ", parts)),
           // An internal reporting job, entitled to read across tenants. The point
           // of the test below is what happens to what it produces, not whether it
           // may read: a ceiling would refuse the combination earlier, and then
@@ -358,7 +358,7 @@ class BillingScenarioTest {
           SUMMARISE_FOR_RELEASE,
           STRING_TYPE,
           REPORT_TYPE,
-          notes -> new Report("redacted summary of " + notes.size()),
+          parts -> new Report("redacted summary of " + parts.size()),
           d ->
               d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
                   .lowering(joined -> joined.with(DATA_CLASS, DataClass.NONE)));
@@ -976,7 +976,7 @@ class BillingScenarioTest {
     void the_report_keeps_registration_order() {
       Manifest manifest = config.manifest();
 
-      assertThat(manifest.toString()).isEqualTo(config.manifest().toString());
+      assertThat(manifest).hasToString(config.manifest().toString());
       assertThat(manifest.destinations()).extracting(Manifest.Entry::name).startsWith("vendor-llm");
     }
 
@@ -1109,12 +1109,12 @@ class BillingScenarioTest {
       assertThat(storage.audit()).isNotEmpty();
       assertThat(storage.audit())
           .anySatisfy(
-              record -> {
-                assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
+              entry -> {
+                assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED);
                 // The code stays in the clear, so the trail can be queried on it.
-                assertThat(record.reason()).contains("ABOVE_CEILING");
+                assertThat(entry.reason()).contains("ABOVE_CEILING");
                 // The part that names a label does not, and is protected like a label.
-                assertThat(record.detail())
+                assertThat(entry.detail())
                     .hasValueSatisfying(why -> assertThat(why).contains("PII"));
               });
     }
@@ -1279,13 +1279,13 @@ class BillingScenarioTest {
       Storage broken =
           new Storage() {
             @Override
-            public void put(String id, StoredValue value, AuditRecord record) {
+            public void put(String id, StoredValue value, AuditRecord entry) {
               throw new IllegalStateException("the record could not be written");
             }
 
             @Override
-            public void record(AuditRecord record) {
-              kept.record(record);
+            public void record(AuditRecord entry) {
+              kept.record(entry);
             }
 
             @Override

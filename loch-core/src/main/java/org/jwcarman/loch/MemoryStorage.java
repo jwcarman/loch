@@ -70,8 +70,8 @@ public final class MemoryStorage implements Storage {
   private final Map<String, StoredValue> values = new ConcurrentHashMap<>();
 
   @Override
-  public void put(String id, StoredValue value, AuditRecord record) {
-    record(record);
+  public void put(String id, StoredValue value, AuditRecord entry) {
+    record(entry);
     values.put(id, value);
   }
 

@@ -36,17 +36,9 @@ import org.jwcarman.loch.lattice.Label;
  */
 public final class DefaultCharter implements Charter {
 
-  /**
-   * Everything declared so far, replaced rather than mutated.
-   *
-   * <p>Immutable so that declaring can be a single atomic transition and therefore cannot race
-   * sealing. A mutable map here would reopen that race: a declaration could check that the charter
-   * was open, be overtaken by a seal, and then add authority to a charter already in force.
-   *
-   * <p>Copying the whole thing per declaration is quadratic in the number of portals. At dozens of
-   * portals that is nothing, and it is the price of the invariant -- do not "optimise" it back into
-   * a mutable map.
-   */
+  private static final String NO_WRITER = "no-writer";
+  private static final String THIS_CHARTER = "this charter";
+
   /**
    * Everything declared, frozen at the moment of sealing.
    *
@@ -292,7 +284,13 @@ public final class DefaultCharter implements Charter {
     return source(name, type, (value, context) -> label);
   }
 
-  /** The same, for a label that does not depend on what is arriving. */
+  /**
+   * The same, for a label that does not depend on what is arriving.
+   *
+   * <p>The common case: a door knows what it is, so mail from customers is untrusted whatever it
+   * says. Reach for the other form when the label is a property of the value -- a classification
+   * marking inside a document, a sender the ingest verified, a scan that found card numbers.
+   */
   public <T> Conceal<T> source(
       String name,
       SurrogateType<T> type,
@@ -312,12 +310,12 @@ public final class DefaultCharter implements Charter {
       throw new IllegalStateException("two sources are registered as '" + name + "'");
     }
     recording(type);
-    var lifecycle = lifecycle();
+    var ref = lifecycle();
     String what = "source '" + name + "'";
     return new Conceal<T>() {
       @Override
       public Surrogate<T> conceal(T value) {
-        return engineOf(lifecycle, what).concealVia(name, type, labelling, value);
+        return engineOf(ref, what).concealVia(name, type, labelling, value);
       }
 
       @Override
@@ -327,14 +325,6 @@ public final class DefaultCharter implements Charter {
     };
   }
 
-  /**
-   * The same, for a label that does not depend on what is arriving.
-   *
-   * <p>The common case: a door knows what it is, so mail from customers is untrusted whatever it
-   * says. Reach for the other form when the label is a property of the value -- a classification
-   * marking inside a document, a sender the ingest verified, a scan that found card numbers.
-   */
-  /** A source whose label depends on neither who is acting nor what is arriving. */
   /**
    * Declares somewhere values may go: what may reach it, and what it reads.
    *
@@ -426,8 +416,9 @@ public final class DefaultCharter implements Charter {
    * has faced this made the same choice: {@code kotlinx.coroutines} gives {@code Flow.combine}
    * overloads for two through five flows, as do RxJava and Reactor for {@code zip}. Beyond five, or
    * where the parents share a type, use {@link #fold}.
+   *
+   * <p>The same, for types already declared.
    */
-  /** The same, for types already declared. */
   @Override
   public <I, O> Derivation<I, O> derivation(
       String name,
@@ -443,20 +434,17 @@ public final class DefaultCharter implements Charter {
             Optional.ofNullable(function.apply(input.type().rawClass().cast(values.getFirst()))),
         false,
         customizer,
-        (spec, lifecycle) ->
-            new Derivation<I, O>() {
-              @Override
-              public Derived<O> derive(Surrogate<I> parent) {
-                return engineOf(lifecycle, "\'" + spec.name() + "\'")
-                    .deriveVia(spec, List.of(parent));
-              }
-            });
+        (spec, ref) ->
+            (Derivation<I, O>)
+                parent ->
+                    engineOf(ref, "\'" + spec.name() + "\'").deriveVia(spec, List.of(parent)));
   }
 
   /**
    * The same, for a derivation that may decline: a lookup that finds nothing, a check that fails.
+   *
+   * <p>The same, for types already declared.
    */
-  /** The same, for types already declared. */
   @Override
   public <I, O> Derivation<I, O> checking(
       String name,
@@ -472,14 +460,10 @@ public final class DefaultCharter implements Charter {
             function.apply(input.type().rawClass().cast(values.getFirst()), context),
         false,
         customizer,
-        (spec, lifecycle) ->
-            new Derivation<I, O>() {
-              @Override
-              public Derived<O> derive(Surrogate<I> parent) {
-                return engineOf(lifecycle, "\'" + spec.name() + "\'")
-                    .deriveVia(spec, List.of(parent));
-              }
-            });
+        (spec, ref) ->
+            (Derivation<I, O>)
+                parent ->
+                    engineOf(ref, "\'" + spec.name() + "\'").deriveVia(spec, List.of(parent)));
   }
 
   /**
@@ -487,8 +471,9 @@ public final class DefaultCharter implements Charter {
    *
    * <p>The result carries the join of every parent's label, so folding two tenants' data yields
    * something labelled for both, which no destination admits.
+   *
+   * <p>The same, for types already declared.
    */
-  /** The same, for types already declared. */
   @Override
   public <I, O> Fold<I, O> fold(
       String name,
@@ -505,14 +490,10 @@ public final class DefaultCharter implements Charter {
                 function.apply(values.stream().map(v -> input.type().rawClass().cast(v)).toList())),
         true,
         customizer,
-        (spec, lifecycle) ->
-            new Fold<I, O>() {
-              @Override
-              public Derived<O> fold(List<Surrogate<I>> parents) {
-                return engineOf(lifecycle, "\'" + spec.name() + "\'")
-                    .deriveVia(spec, List.copyOf(parents));
-              }
-            });
+        (spec, ref) ->
+            (Fold<I, O>)
+                parents ->
+                    engineOf(ref, "\'" + spec.name() + "\'").deriveVia(spec, List.copyOf(parents)));
   }
 
   /**
@@ -648,8 +629,9 @@ public final class DefaultCharter implements Charter {
    *
    * <p>Boolean, and registered here rather than named at a call site, for the reasons set out on
    * {@link Query}.
+   *
+   * <p>The same, for a type already declared.
    */
-  /** The same, for a type already declared. */
   @Override
   public <I, Q> Query<I, Q> query(
       String name,
@@ -673,12 +655,12 @@ public final class DefaultCharter implements Charter {
     stillWriting();
     recording(input);
     queries.add(spec);
-    var lifecycle = lifecycle();
+    var ref = lifecycle();
     String what = "query '" + name + "'";
     return new Query<I, Q>() {
       @Override
       public Answer ask(Surrogate<I> about, Q against) {
-        return engineOf(lifecycle, what).askVia(spec, about, against);
+        return engineOf(ref, what).askVia(spec, about, against);
       }
 
       @Override
@@ -730,9 +712,9 @@ public final class DefaultCharter implements Charter {
                   configuration.destinationReads().getOrDefault(destination.name(), Set.of())),
               null));
     }
-    List<Manifest.Entry> derivations = new ArrayList<>();
+    List<Manifest.Entry> derivationEntries = new ArrayList<>();
     for (DerivationSpec<?> derivation : configuration.derivations()) {
-      derivations.add(
+      derivationEntries.add(
           new Manifest.Entry(
               derivation.name(),
               "%s -> %s".formatted(reads(derivation), derivation.outputType().name()),
@@ -754,7 +736,7 @@ public final class DefaultCharter implements Charter {
         String.valueOf(Label.nothing()),
         ways,
         doors,
-        derivations,
+        derivationEntries,
         questions,
         findings(configuration),
         as);
@@ -775,13 +757,28 @@ public final class DefaultCharter implements Charter {
    */
   private static List<Manifest.Finding> findings(Configuration configuration) {
     List<Manifest.Finding> findings = new ArrayList<>();
+    java.util.Set<String> produced = producedTypes(configuration);
+    java.util.Set<String> read = readTypes(configuration);
+    declarationPresenceFindings(configuration, findings);
+    unreachableSourceFindings(configuration, findings);
+    unproducedDestinationReadFindings(configuration, produced, findings);
+    derivationFindings(configuration, produced, read, findings);
+    unproducedQueryFindings(configuration, produced, findings);
+    return findings;
+  }
 
+  /** Every type something in this charter can produce: a source's, or a derivation's output. */
+  private static java.util.Set<String> producedTypes(Configuration configuration) {
     java.util.Set<String> produced = new java.util.LinkedHashSet<>();
     configuration.sources().values().forEach(type -> produced.add(type.name()));
     for (DerivationSpec<?> derivation : configuration.derivations()) {
       produced.add(derivation.outputType().name());
     }
+    return produced;
+  }
 
+  /** Every type something in this charter reads: a door's, a derivation's, or a question's. */
+  private static java.util.Set<String> readTypes(Configuration configuration) {
     java.util.Set<String> read = new java.util.LinkedHashSet<>();
     configuration.destinationReads().values().forEach(read::addAll);
     for (DerivationSpec<?> derivation : configuration.derivations()) {
@@ -790,7 +787,12 @@ public final class DefaultCharter implements Charter {
     for (QuerySpec<?, ?> query : configuration.queries()) {
       read.add(query.inputType().name());
     }
+    return read;
+  }
 
+  /** Whether this charter has any door in and any door out at all. */
+  private static void declarationPresenceFindings(
+      Configuration configuration, List<Manifest.Finding> findings) {
     if (configuration.sources().isEmpty()) {
       findings.add(
           new Manifest.Finding(
@@ -803,9 +805,14 @@ public final class DefaultCharter implements Charter {
               "(charter)",
               "nothing can be revealed anywhere: no destination is declared"));
     }
+  }
 
-    // A value concealed here can reach a door only if some chain of derivations gets its type to
-    // one a door reads. Walked rather than assumed: a derivation in the middle is easy to miss.
+  /**
+   * A value concealed here can reach a door only if some chain of derivations gets its type to one
+   * a door reads. Walked rather than assumed: a derivation in the middle is easy to miss.
+   */
+  private static void unreachableSourceFindings(
+      Configuration configuration, List<Manifest.Finding> findings) {
     for (var source : configuration.sources().entrySet()) {
       if (!reaches(source.getValue().name(), configuration)) {
         findings.add(
@@ -816,25 +823,38 @@ public final class DefaultCharter implements Charter {
                     .formatted(source.getValue().name())));
       }
     }
+  }
 
+  /** A door that reads a type nothing in this charter can ever produce. */
+  private static void unproducedDestinationReadFindings(
+      Configuration configuration,
+      java.util.Set<String> produced,
+      List<Manifest.Finding> findings) {
     for (var door : configuration.destinationReads().entrySet()) {
       for (String type : door.getValue()) {
         if (!produced.contains(type)) {
           findings.add(
               new Manifest.Finding(
-                  "no-writer",
+                  NO_WRITER,
                   door.getKey(),
                   "reads '%s', which nothing in this charter can produce".formatted(type)));
         }
       }
     }
+  }
 
+  /** A derivation that reads what nothing produces, or makes what nothing reads. */
+  private static void derivationFindings(
+      Configuration configuration,
+      java.util.Set<String> produced,
+      java.util.Set<String> read,
+      List<Manifest.Finding> findings) {
     for (DerivationSpec<?> derivation : configuration.derivations()) {
       for (SurrogateType<?> input : derivation.inputTypes()) {
         if (!produced.contains(input.name())) {
           findings.add(
               new Manifest.Finding(
-                  "no-writer",
+                  NO_WRITER,
                   derivation.name(),
                   "reads a %s, which nothing in this charter can produce".formatted(input.name())));
         }
@@ -847,18 +867,23 @@ public final class DefaultCharter implements Charter {
                 "makes '%s', which nothing reads".formatted(derivation.outputType().name())));
       }
     }
+  }
 
+  /** A question that asks about a type nothing in this charter can ever produce. */
+  private static void unproducedQueryFindings(
+      Configuration configuration,
+      java.util.Set<String> produced,
+      List<Manifest.Finding> findings) {
     for (QuerySpec<?, ?> query : configuration.queries()) {
       if (!produced.contains(query.inputType().name())) {
         findings.add(
             new Manifest.Finding(
-                "no-writer",
+                NO_WRITER,
                 query.name(),
                 "asks about a %s, which nothing in this charter can produce"
                     .formatted(query.inputType().name())));
       }
     }
-    return findings;
   }
 
   /** Whether any destination reads this type, or a type reachable from it by deriving. */
@@ -887,13 +912,6 @@ public final class DefaultCharter implements Charter {
   }
 
   /**
-   * What a door accepts, for the manifest only.
-   *
-   * <p>Evaluated against an empty access, because a manifest is a statement about the system rather
-   * than about one request. A ceiling that reads a tenant will refuse to answer that, and saying so
-   * is more honest than printing what it would allow nobody.
-   */
-  /**
    * What this door accepts for one access.
    *
    * <p>A ceiling that reads the tenant out of the access cannot be rendered without one, and in a
@@ -901,12 +919,17 @@ public final class DefaultCharter implements Charter {
    * printed "could not be evaluated" against every door, which is the report being useless in
    * exactly the case it exists for. It is rendered for an access because there is no such thing as
    * what a door accepts in general.
+   *
+   * <p>For the manifest only, and evaluated against an empty access when the caller does not supply
+   * one, because a manifest is a statement about the system rather than about one request. A
+   * ceiling that reads a tenant will refuse to answer that, and saying so is more honest than
+   * printing what it would allow nobody.
    */
   private static String accepts(DestinationSpec destination, AccessContext as) {
     try {
       Ceiling ceiling = destination.ceiling(as);
       return ceiling == null ? "(said nothing for this access)" : ceiling.toString();
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       return "(could not decide for this access)";
     }
   }
@@ -934,7 +957,7 @@ public final class DefaultCharter implements Charter {
 
   /** The same, for an identifier that arrived without its type. */
   public Label label(String id) {
-    return engineOf(lifecycle, "this charter").label(id);
+    return engineOf(lifecycle, THIS_CHARTER).label(id);
   }
 
   /** Where a value came from. */
@@ -944,7 +967,7 @@ public final class DefaultCharter implements Charter {
 
   /** The same, for an identifier that arrived without its type. */
   public Lineage lineage(String id) {
-    return engineOf(lifecycle, "this charter").lineage(id);
+    return engineOf(lifecycle, THIS_CHARTER).lineage(id);
   }
 
   /** Whether this charter is holding a value at all. */
@@ -954,7 +977,7 @@ public final class DefaultCharter implements Charter {
 
   /** The same, for an identifier that arrived without its type. */
   public boolean holds(String id) {
-    return engineOf(lifecycle, "this charter").holds(id);
+    return engineOf(lifecycle, THIS_CHARTER).holds(id);
   }
 
   /**
@@ -964,6 +987,6 @@ public final class DefaultCharter implements Charter {
    * portal, which makes it the last authority here that is checked rather than held.
    */
   public int erase(Surrogate<?> root) {
-    return engineOf(lifecycle, "this charter").erase(root);
+    return engineOf(lifecycle, THIS_CHARTER).erase(root);
   }
 }
