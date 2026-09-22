@@ -1032,13 +1032,14 @@ class JdbcCharterTest {
   @Test
   @DisplayName("cannot create the schema when the database cannot be reached")
   void cannot_migrate_when_the_database_is_unreachable() {
-    assertThatThrownBy(
-            () ->
-                new JdbcStorageConfig()
-                    .dataSource(unreachableDataSource())
-                    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
-                    .storedPlainly()
-                    .storage(Axes.of(TENANT, INTEGRITY, DATA)))
+    JdbcStorageConfig unreachableConfig =
+        new JdbcStorageConfig()
+            .dataSource(unreachableDataSource())
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly();
+    Axes axes = Axes.of(TENANT, INTEGRITY, DATA);
+
+    assertThatThrownBy(() -> unreachableConfig.storage(axes))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("could not create the store schema");
   }
@@ -1206,10 +1207,10 @@ class JdbcCharterTest {
   @Test
   @DisplayName("cannot sign anything under a root nobody configured")
   void cannot_sign_under_a_root_nobody_configured() {
-    JdbcStorage storage = rooted("ghost", Map.of(), Axes.of(TENANT, INTEGRITY, DATA));
+    JdbcStorage ghostRootedStorage = rooted("ghost", Map.of(), Axes.of(TENANT, INTEGRITY, DATA));
     AuditRecord line = aQueryLine("x");
 
-    assertThatThrownBy(() -> storage.append(line))
+    assertThatThrownBy(() -> ghostRootedStorage.append(line))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("nothing supplies the root 'ghost'");
   }

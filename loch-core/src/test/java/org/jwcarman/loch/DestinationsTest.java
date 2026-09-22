@@ -37,7 +37,9 @@ class DestinationsTest {
   @Test
   @DisplayName("fixed refuses a null name")
   void fixed_refuses_a_null_name() {
-    assertThatThrownBy(() -> Destinations.fixed(null, Ceiling.nothing()))
+    Ceiling ceiling = Ceiling.nothing();
+
+    assertThatThrownBy(() -> Destinations.fixed(null, ceiling))
         .isInstanceOf(NullPointerException.class);
   }
 

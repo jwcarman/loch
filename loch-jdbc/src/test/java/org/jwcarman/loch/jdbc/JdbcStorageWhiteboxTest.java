@@ -72,8 +72,7 @@ class JdbcStorageWhiteboxTest {
     Object first = newPredecessor("digest".getBytes(StandardCharsets.UTF_8), recordedAt);
     Object second = newPredecessor("digest".getBytes(StandardCharsets.UTF_8), recordedAt);
 
-    assertThat(first).isEqualTo(second);
-    assertThat(first).hasSameHashCodeAs(second);
+    assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
   }
 
   @Test
@@ -93,8 +92,7 @@ class JdbcStorageWhiteboxTest {
     Object differentMoment =
         newPredecessor("digest".getBytes(StandardCharsets.UTF_8), Instant.EPOCH);
 
-    assertThat(baseline).isNotEqualTo(differentDigest);
-    assertThat(baseline).isNotEqualTo(differentMoment);
+    assertThat(baseline).isNotEqualTo(differentDigest).isNotEqualTo(differentMoment);
   }
 
   @Test
@@ -139,8 +137,7 @@ class JdbcStorageWhiteboxTest {
     Object first = aValueRow();
     Object second = aValueRow();
 
-    assertThat(first).isEqualTo(second);
-    assertThat(first).hasSameHashCodeAs(second);
+    assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
   }
 
   @Test
@@ -245,8 +242,12 @@ class JdbcStorageWhiteboxTest {
   void value_row_prints_without_its_bytes() throws ReflectiveOperationException {
     String printed = aValueRow().toString();
 
-    assertThat(printed).contains("card").contains("Card.last4").contains("r1");
-    assertThat(printed).doesNotContain("payload").doesNotContain("label");
+    assertThat(printed)
+        .contains("card")
+        .contains("Card.last4")
+        .contains("r1")
+        .doesNotContain("payload")
+        .doesNotContain("label");
   }
 
   /**

@@ -832,13 +832,21 @@ public final class JdbcStorage implements Storage {
 
     @Override
     public boolean equals(Object other) {
-      return other instanceof ValueRow that
-          && java.util.Arrays.equals(digest, that.digest)
-          && java.util.Arrays.equals(payload, that.payload)
-          && java.util.Arrays.equals(label, that.label)
-          && java.util.Objects.equals(derivation, that.derivation)
-          && java.util.Objects.equals(type, that.type)
-          && java.util.Objects.equals(rootId, that.rootId);
+      return other
+              instanceof
+              ValueRow(
+                  byte[] otherDigest,
+                  byte[] otherPayload,
+                  byte[] otherLabel,
+                  String otherDerivation,
+                  String otherType,
+                  String otherRootId)
+          && java.util.Arrays.equals(digest, otherDigest)
+          && java.util.Arrays.equals(payload, otherPayload)
+          && java.util.Arrays.equals(label, otherLabel)
+          && java.util.Objects.equals(derivation, otherDerivation)
+          && java.util.Objects.equals(type, otherType)
+          && java.util.Objects.equals(rootId, otherRootId);
     }
 
     @Override
@@ -927,7 +935,6 @@ public final class JdbcStorage implements Storage {
     return broken;
   }
 
-  /** A value's parents' digests, already verified -- or {@code null} when one of them is not. */
   /**
    * The parents' digests, or empty when this value cannot be checked yet.
    *
