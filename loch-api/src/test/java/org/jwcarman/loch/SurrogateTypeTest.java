@@ -74,14 +74,18 @@ class SurrogateTypeTest {
   @Test
   @DisplayName("refuses a null name")
   void refuses_a_null_name() {
-    assertThatThrownBy(() -> new SurrogateType<>(null, TypeRef.of(String.class)))
+    TypeRef<String> type = TypeRef.of(String.class);
+
+    assertThatThrownBy(() -> new SurrogateType<>(null, type))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
   @DisplayName("refuses a blank name")
   void refuses_a_blank_name() {
-    assertThatThrownBy(() -> new SurrogateType<>("  ", TypeRef.of(String.class)))
+    TypeRef<String> type = TypeRef.of(String.class);
+
+    assertThatThrownBy(() -> new SurrogateType<>("  ", type))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

@@ -53,7 +53,7 @@ class ArityTest {
           "join",
           NOTE,
           NOTE,
-          notes -> new Note(notes.stream().map(Note::text).reduce("", String::concat)),
+          parts -> new Note(parts.stream().map(Note::text).reduce("", String::concat)),
           d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())));
 
   {

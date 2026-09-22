@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jwcarman.codec.spi.TypeRef;
@@ -567,16 +568,19 @@ final class Engine {
 
     Optional<O> produced;
     try {
-      produced = spec.function().apply(List.copyOf(inputs), context);
+      // Normalised where it arrives, not checked later. A function that answers null has broken
+      // its own contract, but it has already been handed the plaintext -- so this is the same
+      // event as one that threw, and both end as a recorded refusal rather than a
+      // NullPointerException thrown out of the library, past the audit, after the value was read.
+      produced =
+          Objects.requireNonNullElse(
+              spec.function().apply(List.copyOf(inputs), context), Optional.empty());
     } catch (RuntimeException _) {
       // It has already seen the plaintext, so this refusal has to be recorded like any other.
       return new Derived.Refused<>(
           Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
     }
-    // A null Optional is the same event as a thrown one: application code that has been handed
-    // the plaintext and did not come back with an answer. Letting it reach isEmpty() would throw
-    // a NullPointerException out of the library, past the audit, after the value had been read.
-    if (produced == null || produced.isEmpty()) {
+    if (produced.isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
 

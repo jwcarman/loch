@@ -352,16 +352,18 @@ class BillingScenarioTest {
           (claim, ctx) -> java.util.Optional.empty(),
           d -> d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII)));
 
-  // A fold that lowers is as privileged as a derivation that lowers.
-  private final Fold<String, Report> summariseForRelease =
-      config.fold(
-          SUMMARISE_FOR_RELEASE,
-          STRING_TYPE,
-          REPORT_TYPE,
-          parts -> new Report("redacted summary of " + parts.size()),
-          d ->
-              d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
-                  .lowering(joined -> joined.with(DATA_CLASS, DataClass.NONE)));
+  // A fold that lowers is as privileged as a derivation that lowers. Declared rather than kept:
+  // no test calls this one, but the manifest has to list it, and a test asserts that it does.
+  {
+    config.fold(
+        SUMMARISE_FOR_RELEASE,
+        STRING_TYPE,
+        REPORT_TYPE,
+        parts -> new Report("redacted summary of " + parts.size()),
+        d ->
+            d.accepting(reading(Integrity.UNENDORSED, Tlp.AMBER, DataClass.PII))
+                .lowering(joined -> joined.with(DATA_CLASS, DataClass.NONE)));
+  }
 
   // The whole account never leaves the store to answer one question about it.
   private final Query<Account, String> ownedBy =

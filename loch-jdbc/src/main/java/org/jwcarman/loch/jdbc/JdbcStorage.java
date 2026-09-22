@@ -565,10 +565,10 @@ public final class JdbcStorage implements Storage {
       if (this == other) {
         return true;
       }
-      if (!(other instanceof Predecessor that)) {
+      if (!(other instanceof Predecessor(byte[] thatDigest, Instant thatRecordedAt))) {
         return false;
       }
-      return java.util.Arrays.equals(digest, that.digest) && recordedAt.equals(that.recordedAt);
+      return java.util.Arrays.equals(digest, thatDigest) && recordedAt.equals(thatRecordedAt);
     }
 
     @Override
@@ -604,12 +604,6 @@ public final class JdbcStorage implements Storage {
     }
   }
 
-  /**
-   * What one line of the trail signs: the line before it, and everything stored about this one.
-   *
-   * <p>Over what actually reaches the columns, ciphertext included, so verifying reads the table as
-   * it is. Keyed, so nobody can recompute the tail after removing something from the middle.
-   */
   /**
    * The fields of one line that are not already parameters in their own right: bundled so the
    * method that signs a line stays under the parameter count this project holds every method to,
@@ -826,9 +820,44 @@ public final class JdbcStorage implements Storage {
     }
   }
 
-  /** One row of {@code loch_value}, read once and passed around rather than re-queried. */
+  /**
+   * One row of {@code loch_value}, read once and passed around rather than re-queried.
+   *
+   * <p>Arrays compare by identity, so a record holding them gets an equals that answers "no" for
+   * two rows carrying the same bytes. Nothing here compares one today; written out anyway, because
+   * the first thing to put one in a set would get a silently wrong answer.
+   */
   private record ValueRow(
-      byte[] digest, byte[] payload, byte[] label, String derivation, String type, String rootId) {}
+      byte[] digest, byte[] payload, byte[] label, String derivation, String type, String rootId) {
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof ValueRow that
+          && java.util.Arrays.equals(digest, that.digest)
+          && java.util.Arrays.equals(payload, that.payload)
+          && java.util.Arrays.equals(label, that.label)
+          && java.util.Objects.equals(derivation, that.derivation)
+          && java.util.Objects.equals(type, that.type)
+          && java.util.Objects.equals(rootId, that.rootId);
+    }
+
+    @Override
+    public int hashCode() {
+      return java.util.Objects.hash(
+          java.util.Arrays.hashCode(digest),
+          java.util.Arrays.hashCode(payload),
+          java.util.Arrays.hashCode(label),
+          derivation,
+          type,
+          rootId);
+    }
+
+    @Override
+    public String toString() {
+      // Never the bytes: a payload is the value this library exists to keep out of a log line.
+      return "ValueRow[type=%s, derivation=%s, rootId=%s]".formatted(type, derivation, rootId);
+    }
+  }
 
   private java.util.Map<String, ValueRow> loadValueRows(ResultSet rows) throws SQLException {
     java.util.Map<String, ValueRow> byId = new java.util.LinkedHashMap<>();
@@ -869,10 +898,11 @@ public final class JdbcStorage implements Storage {
       java.util.Iterator<String> remaining = unresolved.iterator();
       while (remaining.hasNext()) {
         String id = remaining.next();
-        List<byte[]> parents = checkableParents(connection, id, seen);
-        if (parents == null) {
+        Optional<List<byte[]>> checkable = checkableParents(connection, id, seen);
+        if (checkable.isEmpty()) {
           continue;
         }
+        List<byte[]> parents = checkable.get();
         ValueRow row = byId.get(id);
         byte[] computed =
             digestOfOrNull(
@@ -898,17 +928,24 @@ public final class JdbcStorage implements Storage {
   }
 
   /** A value's parents' digests, already verified -- or {@code null} when one of them is not. */
-  private List<byte[]> checkableParents(
+  /**
+   * The parents' digests, or empty when this value cannot be checked yet.
+   *
+   * <p>An Optional rather than a null list, because "not checkable yet" and "no parents" are
+   * different answers and a value with no parents is the ordinary case: a freshly concealed value
+   * has none and verifies on its own.
+   */
+  private Optional<List<byte[]>> checkableParents(
       Connection connection, String id, java.util.Map<String, byte[]> seen) throws SQLException {
     List<byte[]> parents = new java.util.ArrayList<>();
     for (String parent : parentsOf(connection, id)) {
       byte[] digest = seen.get(parent);
       if (digest == null) {
-        return null;
+        return Optional.empty();
       }
       parents.add(digest);
     }
-    return parents;
+    return Optional.of(parents);
   }
 
   private void insertLineage(Connection connection, String id, Lineage lineage)
@@ -919,8 +956,10 @@ public final class JdbcStorage implements Storage {
       for (int i = 0; i < parents.size(); i++) {
         parent.setString(2, parents.get(i));
         parent.setInt(3, i);
-        parent.executeUpdate();
+        parent.addBatch();
       }
+      // One round trip rather than one per parent. A fold over ten values wrote ten times here.
+      parent.executeBatch();
     }
   }
 

@@ -41,7 +41,7 @@ class SurrogateTest {
   void prints_as_the_identifier_and_nothing_else() {
     Surrogate<String> surrogate = Surrogate.of("abc-123");
 
-    assertThat(surrogate.toString()).isEqualTo("abc-123");
+    assertThat(surrogate).hasToString("abc-123");
   }
 
   @Test

@@ -19,7 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -54,7 +53,7 @@ class AccessContextTest {
   void answers_empty_for_an_unset_attribute() {
     AccessContext context = AccessContext.empty();
 
-    assertThat(context.get("tenant")).isEqualTo(Optional.empty());
+    assertThat(context.get("tenant")).isEmpty();
   }
 
   @Test
@@ -89,6 +88,6 @@ class AccessContextTest {
     mutable.put("clearance", "cardholder");
 
     assertThat(context.get("tenant")).contains("acme");
-    assertThat(context.get("clearance")).isEqualTo(Optional.empty());
+    assertThat(context.get("clearance")).isEmpty();
   }
 }

@@ -85,12 +85,9 @@ class TypeNamesTest {
     var c = config();
     c.source("cards", SurrogateType.of("thing", Card.class), ctx -> Label.of(TENANT, "acme"));
 
-    assertThatThrownBy(
-            () ->
-                c.source(
-                    "invoices",
-                    SurrogateType.of("thing", Invoice.class),
-                    ctx -> Label.of(TENANT, "acme")))
+    SurrogateType<Invoice> sameName = SurrogateType.of("thing", Invoice.class);
+
+    assertThatThrownBy(() -> c.source("invoices", sameName, ctx -> Label.of(TENANT, "acme")))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("both want the name 'thing'");
   }
