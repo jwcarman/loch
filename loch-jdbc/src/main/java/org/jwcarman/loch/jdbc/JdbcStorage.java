@@ -89,6 +89,10 @@ public final class JdbcStorage implements Storage {
   private static final String SELECT_METADATA =
       "SELECT value_type, label, derivation FROM loch_value WHERE value_id = ?";
   private static final String SELECT_PAYLOAD = "SELECT payload FROM loch_value WHERE value_id = ?";
+  private static final String SELECT_METADATA_MANY =
+      "SELECT value_id, value_type, label, derivation FROM loch_value WHERE value_id = ANY (?)";
+  private static final String SELECT_PAYLOAD_MANY =
+      "SELECT value_id, payload FROM loch_value WHERE value_id = ANY (?)";
   private static final String SELECT_PARENTS =
       "SELECT parent_id FROM loch_lineage WHERE child_id = ? ORDER BY position";
   private static final String INSERT_PARENT =
@@ -367,6 +371,54 @@ public final class JdbcStorage implements Storage {
       }
     } catch (SQLException e) {
       throw new IllegalStateException("could not read " + id, e);
+    }
+  }
+
+  @Override
+  public java.util.Map<String, StoredMetadata> metadata(java.util.List<String> ids) {
+    if (ids.isEmpty()) {
+      return java.util.Map.of();
+    }
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(SELECT_METADATA_MANY)) {
+      statement.setArray(1, connection.createArrayOf("text", ids.toArray()));
+      java.util.Map<String, StoredMetadata> found = new java.util.LinkedHashMap<>();
+      try (ResultSet rows = statement.executeQuery()) {
+        while (rows.next()) {
+          String id = rows.getString("value_id");
+          Label label = Label.decode(labels.decode(rows.getBytes("label")), axes);
+          String derivation = rows.getString("derivation");
+          Lineage lineage =
+              derivation == null
+                  ? Lineage.held()
+                  : Lineage.derivedFrom(parentsOf(connection, id), derivation);
+          found.put(id, new StoredMetadata(rows.getString("value_type"), label, lineage));
+        }
+      }
+      return found;
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not read " + ids, e);
+    }
+  }
+
+  @Override
+  public java.util.Map<String, Object> values(java.util.Map<String, TypeRef<?>> wanted) {
+    if (wanted.isEmpty()) {
+      return java.util.Map.of();
+    }
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(SELECT_PAYLOAD_MANY)) {
+      statement.setArray(1, connection.createArrayOf("text", wanted.keySet().toArray()));
+      java.util.Map<String, Object> found = new java.util.LinkedHashMap<>();
+      try (ResultSet rows = statement.executeQuery()) {
+        while (rows.next()) {
+          String id = rows.getString("value_id");
+          found.put(id, codecFor(wanted.get(id)).decode(rows.getBytes("payload")));
+        }
+      }
+      return found;
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not read " + wanted.keySet(), e);
     }
   }
 

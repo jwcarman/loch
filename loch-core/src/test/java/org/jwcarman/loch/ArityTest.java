@@ -88,4 +88,95 @@ class ArityTest {
 
     assertThat(config.label(result.id())).isEqualTo(Label.of(TENANT, "acme"));
   }
+
+  /**
+   * A fold over many parents is two reads, not two per parent.
+   *
+   * <p>It used to be one round trip for each parent's label and another for each parent's value, so
+   * ten parents meant twenty. Labels are fetched together, every ceiling is checked against them,
+   * and only then are the values that survived read -- which is both fewer trips and the same order
+   * of operations: nothing decrypts before a label has been looked at.
+   */
+  @Test
+  @DisplayName("reads many parents in two goes rather than two each")
+  void reads_many_parents_in_two_goes() {
+    java.util.concurrent.atomic.AtomicInteger reads =
+        new java.util.concurrent.atomic.AtomicInteger();
+    Counting counting = new Counting(reads);
+    DefaultCharter counted = new DefaultCharter(TENANT);
+    Conceal<Note> intake = counted.source("notes", NOTE, ctx -> Label.of(TENANT, "acme"));
+    Fold<Note, Note> joinAll =
+        counted.fold(
+            "notes.join",
+            NOTE,
+            NOTE,
+            notes -> new Note(notes.size() + " notes"),
+            d -> d.accepting(Ceiling.of(TENANT, Constraint.atMost("acme"))));
+    counted.seal(counting);
+
+    java.util.List<Surrogate<Note>> parents = new java.util.ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      parents.add(intake.conceal(new Note("note " + i)));
+    }
+    reads.set(0);
+
+    assertThat(joinAll.fold(parents).made()).isPresent();
+    assertThat(reads.get()).isEqualTo(2);
+  }
+
+  /** A storage that counts the trips a read takes, and otherwise keeps everything in memory. */
+  private static final class Counting implements Storage {
+
+    private final MemoryStorage kept = new MemoryStorage();
+    private final java.util.concurrent.atomic.AtomicInteger reads;
+
+    private Counting(java.util.concurrent.atomic.AtomicInteger reads) {
+      this.reads = reads;
+    }
+
+    @Override
+    public java.util.Map<String, StoredMetadata> metadata(java.util.List<String> ids) {
+      reads.incrementAndGet();
+      return kept.metadata(ids);
+    }
+
+    @Override
+    public java.util.Map<String, Object> values(
+        java.util.Map<String, org.jwcarman.codec.spi.TypeRef<?>> wanted) {
+      reads.incrementAndGet();
+      return kept.values(wanted);
+    }
+
+    @Override
+    public void put(String id, StoredValue value, AuditRecord record) {
+      kept.put(id, value, record);
+    }
+
+    @Override
+    public void record(AuditRecord record) {
+      kept.record(record);
+    }
+
+    @Override
+    public java.util.Optional<StoredMetadata> metadata(String id) {
+      reads.incrementAndGet();
+      return kept.metadata(id);
+    }
+
+    @Override
+    public <T> java.util.Optional<T> value(String id, org.jwcarman.codec.spi.TypeRef<T> type) {
+      reads.incrementAndGet();
+      return kept.value(id, type);
+    }
+
+    @Override
+    public boolean contains(String id) {
+      return kept.contains(id);
+    }
+
+    @Override
+    public int erase(String root) {
+      return kept.erase(root);
+    }
+  }
 }

@@ -57,6 +57,36 @@ public interface Storage {
    */
   <T> Optional<T> value(String id, TypeRef<T> type);
 
+  /**
+   * Several labels at once, for an operation reading several values.
+   *
+   * <p>A fold over ten parents was ten round trips before this, then ten more for the values. The
+   * default keeps that behaviour so an implementation need not care; a durable one should.
+   *
+   * <p>Ids it is not holding are simply absent from the result, which is what lets one missing
+   * parent be reported without a second lookup to find out which.
+   */
+  default java.util.Map<String, StoredMetadata> metadata(java.util.List<String> ids) {
+    java.util.Map<String, StoredMetadata> found = new java.util.LinkedHashMap<>();
+    for (String id : ids) {
+      metadata(id).ifPresent(entry -> found.put(id, entry));
+    }
+    return found;
+  }
+
+  /**
+   * Several values at once, each read as the type its caller expects.
+   *
+   * <p>Separate from {@link #metadata(java.util.List)} on purpose, and called after it. A label is
+   * checked before a payload is decrypted, so a read that is going to be refused never decrypts
+   * anything -- merging the two would be one fewer round trip and one more place plaintext exists.
+   */
+  default java.util.Map<String, Object> values(java.util.Map<String, TypeRef<?>> wanted) {
+    java.util.Map<String, Object> found = new java.util.LinkedHashMap<>();
+    wanted.forEach((id, type) -> value(id, type).ifPresent(value -> found.put(id, value)));
+    return found;
+  }
+
   boolean contains(String id);
 
   /**

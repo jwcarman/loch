@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
@@ -483,13 +484,20 @@ final class Engine {
           "'" + id + "' could not say what it accepts, so it does not accept this");
     }
 
-    List<Object> inputs = new ArrayList<>();
+    // Labels first, for every parent at once, and no plaintext anywhere near this. A fold over ten
+    // parents used to be ten round trips here and ten more below; it is one and one.
     List<String> parentIds = new ArrayList<>();
+    for (Surrogate<?> parent : parents) {
+      parentIds.add(parent.id());
+    }
+    java.util.Map<String, StoredMetadata> labels = storage.metadata(parentIds);
+
+    java.util.Map<String, TypeRef<?>> wanted = new java.util.LinkedHashMap<>();
     Label joined = null;
     for (int position = 0; position < parents.size(); position++) {
       Surrogate<?> parent = parents.get(position);
       SurrogateType<?> expected = spec.typeAt(position);
-      StoredMetadata entry = storage.metadata(parent.id()).orElse(null);
+      StoredMetadata entry = labels.get(parent.id());
       if (entry == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
@@ -505,16 +513,22 @@ final class Engine {
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
       }
-      Object input = storage.value(parent.id(), expected.type()).orElse(null);
+      wanted.put(parent.id(), expected.type());
+      // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
+      joined = joined == null ? entry.label() : joined.join(entry.label());
+      refused.set(joined);
+    }
+
+    // Only now, and only for parents every check above let through.
+    java.util.Map<String, Object> read = storage.values(wanted);
+    List<Object> inputs = new ArrayList<>();
+    for (Surrogate<?> parent : parents) {
+      Object input = read.get(parent.id());
       if (input == null) {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
       }
       inputs.add(input);
-      parentIds.add(parent.id());
-      // Every parent contributes. This is the line that makes a mixed-tenant value unusable.
-      joined = joined == null ? entry.label() : joined.join(entry.label());
-      refused.set(joined);
     }
 
     Optional<O> produced;
