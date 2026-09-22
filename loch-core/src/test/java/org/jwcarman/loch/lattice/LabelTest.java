@@ -266,4 +266,10 @@ class LabelTest {
 
     assertThat(oneWay).isEqualTo(theOther).hasSameHashCodeAs(theOther);
   }
+
+  @Test
+  @DisplayName("is not equal to something that is not a label at all")
+  void is_not_equal_to_something_that_is_not_a_label() {
+    assertThat(Label.of(TENANT, "acme")).isNotEqualTo("acme");
+  }
 }

@@ -16,6 +16,7 @@
 package org.jwcarman.loch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.util.Map;
@@ -106,5 +107,106 @@ class ErasingAcrossTenantsTest {
     assertThat(storage.audit(AuditRecord.Operation.ERASE))
         .isNotEmpty()
         .allSatisfy(line -> assertThat(line.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
+  }
+
+  /**
+   * Removes a root and everything derived from it, however deeply, and writes one line per value
+   * removed -- the trail being the only thing afterwards that can say a value ever existed.
+   */
+  @Test
+  @DisplayName("removes a root and everything derived from it, one line per value")
+  void removes_a_root_and_everything_derived_from_it() {
+    MemoryStorage storage = new MemoryStorage();
+    DefaultCharter config = new DefaultCharter(TENANT, LEVEL).mayErase((label, ctx) -> true);
+    Conceal<Record> records =
+        config.source(
+            "records", RECORD_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
+    Derivation<Record, Record> copy =
+        config.derivation(
+            "copy",
+            RECORD_TYPE,
+            RECORD_TYPE,
+            r -> new Record(r.text() + "-copy"),
+            d -> d.accepting(Ceiling.of(TENANT, Constraint.any()).with(LEVEL, Constraint.any())));
+    config.seal(storage);
+
+    Surrogate<Record> root = records.conceal(new Record("root"));
+    Surrogate<Record> child = copy.derive(root).orThrow();
+
+    int removed = config.erase(root);
+
+    assertThat(removed).isEqualTo(2);
+    assertThat(config.holds(root)).isFalse();
+    assertThat(config.holds(child)).isFalse();
+    assertThat(storage.audit(AuditRecord.Operation.ERASE))
+        .hasSize(2)
+        .allSatisfy(line -> assertThat(line.outcome()).isEqualTo(AuditRecord.Outcome.ALLOWED));
+  }
+
+  /**
+   * A value reached by more than one path from the root -- a fold combining two of the root's own
+   * children -- must still be removed exactly once, not once per path that finds it.
+   */
+  @Test
+  @DisplayName("removes a value reached by two different paths from the root only once")
+  void removes_a_value_reached_by_two_paths_only_once() {
+    record Branch(String tag) {}
+    record Combined(String tag) {}
+    SurrogateType<Branch> branchType = SurrogateType.of(Branch.class);
+    SurrogateType<Combined> combinedType = SurrogateType.of(Combined.class);
+
+    MemoryStorage storage = new MemoryStorage();
+    DefaultCharter config = new DefaultCharter(TENANT, LEVEL).mayErase((label, ctx) -> true);
+    Conceal<Record> records =
+        config.source(
+            "records", RECORD_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
+    Ceiling anything = Ceiling.of(TENANT, Constraint.any()).with(LEVEL, Constraint.any());
+    Derivation<Record, Branch> left =
+        config.derivation(
+            "left", RECORD_TYPE, branchType, r -> new Branch("left"), d -> d.accepting(anything));
+    Derivation<Record, Branch> right =
+        config.derivation(
+            "right", RECORD_TYPE, branchType, r -> new Branch("right"), d -> d.accepting(anything));
+    Fold<Branch, Combined> combine =
+        config.fold(
+            "combine",
+            branchType,
+            combinedType,
+            branches -> new Combined(branches.size() + " branches"),
+            d -> d.accepting(anything));
+    config.seal(storage);
+
+    Surrogate<Record> root = records.conceal(new Record("root"));
+    Surrogate<Branch> leftChild = left.derive(root).orThrow();
+    Surrogate<Branch> rightChild = right.derive(root).orThrow();
+    Surrogate<Combined> combined = combine.fold(java.util.List.of(leftChild, rightChild)).orThrow();
+
+    int removed = config.erase(root);
+
+    assertThat(removed).isEqualTo(4);
+    assertThat(config.holds(combined)).isFalse();
+    assertThat(storage.audit(AuditRecord.Operation.ERASE)).hasSize(4);
+  }
+
+  /** A policy is application code, and a policy that cannot decide has not said yes. */
+  @Test
+  @DisplayName("refuses when the erasure policy itself throws, rather than propagating the crash")
+  void refuses_when_the_erasure_policy_throws() {
+    MemoryStorage storage = new MemoryStorage();
+    DefaultCharter config =
+        new DefaultCharter(TENANT, LEVEL)
+            .mayErase(
+                (label, ctx) -> {
+                  throw new IllegalStateException("cannot decide");
+                });
+    Conceal<Record> records =
+        config.source(
+            "records", RECORD_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.LOW));
+    config.seal(storage);
+
+    Surrogate<Record> root = records.conceal(new Record("root"));
+
+    assertThatThrownBy(() -> config.erase(root)).isInstanceOf(AccessDeniedException.class);
+    assertThat(config.holds(root)).isTrue();
   }
 }

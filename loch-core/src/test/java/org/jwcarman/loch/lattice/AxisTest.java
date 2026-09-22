@@ -112,6 +112,44 @@ class AxisTest {
               () -> Axis.ladder("sensitivity", Sensitivity.ORDINARY, Sensitivity.ORDINARY))
           .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("refuses to be built with no rungs at all")
+    void refuses_to_be_built_with_no_rungs() {
+      assertThatThrownBy(() -> Axis.<Sensitivity>ladder("sensitivity"))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("sensitivity");
+    }
+
+    @Test
+    @DisplayName("refuses to be built with a null array of rungs")
+    void refuses_to_be_built_with_a_null_array_of_rungs() {
+      assertThatThrownBy(() -> Axis.ladder("sensitivity", (Sensitivity[]) null))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("sensitivity");
+    }
+
+    @Test
+    @DisplayName("names itself when printed")
+    void names_itself_when_printed() {
+      assertThat(sensitivity).hasToString("sensitivity");
+    }
+
+    /**
+     * A ladder built with fewer rungs than the enum has is a real declaration, not a mistake: an
+     * application may deliberately leave a constant unreachable. Lifting one anyway has to refuse
+     * rather than silently rank it.
+     */
+    @Test
+    @DisplayName("refuses to lift a rung it was not built with")
+    void refuses_to_lift_a_rung_it_was_not_built_with() {
+      Axis<Sensitivity> narrow =
+          Axis.ladder("sensitivity", Sensitivity.ORDINARY, Sensitivity.PERSONAL);
+
+      assertThatThrownBy(() -> narrow.lift(Sensitivity.CARDHOLDER))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("sensitivity");
+    }
   }
 
   @Nested
@@ -213,6 +251,35 @@ class AxisTest {
 
       assertThat(tenant.render(tenant.bottom())).isEqualTo("(unsaid)");
       assertThat(tenant.render(mixed)).isEqualTo("(mixed)");
+    }
+
+    /** Bottom is the identity on either side of the combination, not only on the left. */
+    @Test
+    @DisplayName("leaves an unsaid value below every ceiling from either side of the combination")
+    void leaves_an_unsaid_value_below_every_ceiling_from_either_side() {
+      assertThat(tenant.join(tenant.lift("acme"), tenant.bottom())).isEqualTo(tenant.lift("acme"));
+    }
+
+    /** Once either side is a mixture, the result is a mixture, whichever side carries it. */
+    @Test
+    @DisplayName("stays a mixture once either side already is one")
+    void stays_a_mixture_once_either_side_already_is_one() {
+      Object mixed = tenant.join(tenant.lift("acme"), tenant.lift("globex"));
+
+      Object mixedOnTheLeft = tenant.join(mixed, tenant.lift("acme"));
+      Object mixedOnTheRight = tenant.join(tenant.lift("acme"), mixed);
+
+      assertThat(tenant.render(mixedOnTheLeft)).isEqualTo("(mixed)");
+      assertThat(tenant.render(mixedOnTheRight)).isEqualTo("(mixed)");
+    }
+
+    /** A value written by a schema this store no longer understands is refused, not misread. */
+    @Test
+    @DisplayName("refuses to decode a value in a shape it does not recognise")
+    void refuses_to_decode_an_unrecognised_shape() {
+      assertThatThrownBy(() -> tenant.decode("garbage"))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("garbage");
     }
   }
 }

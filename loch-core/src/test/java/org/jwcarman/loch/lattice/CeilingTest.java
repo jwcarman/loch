@@ -181,4 +181,27 @@ class CeilingTest {
 
     assertThat(reporting.toString()).contains("tenant=(any)").contains("sensitivity=ORDINARY");
   }
+
+  @Test
+  @DisplayName("says it is entitled to nothing, legibly, before it has said anything")
+  void says_it_is_entitled_to_nothing_legibly() {
+    assertThat(Ceiling.nothing()).hasToString("{}");
+  }
+
+  @Test
+  @DisplayName("is equal to another ceiling entitled to exactly the same things")
+  void is_equal_to_another_ceiling_entitled_to_the_same_things() {
+    Ceiling oneWay = entitledTo("acme", Integrity.ENDORSED, Sensitivity.CARDHOLDER);
+    Ceiling theOther = entitledTo("acme", Integrity.ENDORSED, Sensitivity.CARDHOLDER);
+
+    assertThat(oneWay).isEqualTo(theOther).hasSameHashCodeAs(theOther);
+  }
+
+  @Test
+  @DisplayName("is not equal to a ceiling entitled to less, or to something else entirely")
+  void is_not_equal_to_a_different_ceiling_or_to_something_else() {
+    Ceiling narrower = entitledTo("acme", Integrity.ENDORSED, Sensitivity.ORDINARY);
+
+    assertThat(paymentProcessor).isNotEqualTo(narrower).isNotEqualTo("acme");
+  }
 }
