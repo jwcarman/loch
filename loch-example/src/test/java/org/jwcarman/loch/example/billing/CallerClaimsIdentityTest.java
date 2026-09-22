@@ -68,9 +68,8 @@ class CallerClaimsIdentityTest {
    * to any class willing to name the type in its constructor. That is obtaining authority by naming
    * it, which is the thing this design removed. Portals are private fields of the services entitled
    * to them, and nothing can ask the context for one.
-   */
-  /**
-   * The charter, unlike everything else, <b>is</b> published -- and that is the one deliberate
+   *
+   * <p>The charter, unlike everything else, <b>is</b> published -- and that is the one deliberate
    * concession in the arrangement.
    *
    * <p>Declaring a portal means holding a charter, so it has to be reachable by whatever declares

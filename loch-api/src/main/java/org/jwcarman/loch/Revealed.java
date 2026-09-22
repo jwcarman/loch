@@ -60,7 +60,7 @@ public sealed interface Revealed<T> {
 
   /** The value when the gate allowed it, empty when it did not. */
   default Optional<T> granted() {
-    return this instanceof Allowed<T> allowed ? Optional.of(allowed.value()) : Optional.empty();
+    return this instanceof Allowed<T>(T value) ? Optional.of(value) : Optional.empty();
   }
 
   default boolean allowed() {
@@ -73,8 +73,8 @@ public sealed interface Revealed<T> {
    * <p>For code that genuinely cannot continue without it, and whose caller is not a prompt.
    */
   default T orThrow() {
-    if (this instanceof Allowed<T> allowed) {
-      return allowed.value();
+    if (this instanceof Allowed<T>(T value)) {
+      return value;
     }
     Denied<T> denied = (Denied<T>) this;
     throw new AccessDeniedException(denied.reason(), denied.detail());

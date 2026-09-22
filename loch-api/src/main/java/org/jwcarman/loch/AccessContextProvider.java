@@ -38,9 +38,8 @@ import java.util.function.Supplier;
  * <p>Returning an empty context is allowed and means nobody is acting. That is not a way through:
  * an empty context has no tenant, no role and no clearance, so a ceiling that asks for any of them
  * refuses, and a source whose label needs one refuses to write.
- */
-/**
- * A {@link Supplier} with a name on it. The contract is the JDK's, so anything that already
+ *
+ * <p>A {@link Supplier} with a name on it. The contract is the JDK's, so anything that already
  * supplies an {@code AccessContext} satisfies it; the name exists so a container can wire one by
  * type, and so a reviewer reading a constructor parameter can tell what it is for.
  */

@@ -158,8 +158,8 @@ class CharterAutoConfigurationTest {
               CharterEndpoint endpoint = context.getBean(CharterEndpoint.class);
 
               Map<String, Object> all = endpoint.charter();
-              assertThat(all.get("sealed")).isEqualTo(true);
-              assertThat(all.get("axes")).isEqualTo(List.of("tenant", "clearance"));
+              assertThat(all).containsEntry("sealed", true);
+              assertThat(all).containsEntry("axes", List.of("tenant", "clearance"));
               assertThat(entries(all, "sources")).contains("notes");
               assertThat(entries(all, "destinations")).contains("reporting");
 
@@ -169,7 +169,7 @@ class CharterAutoConfigurationTest {
 
               // Everything about the one type, and nothing about anything else.
               Map<String, Object> note = endpoint.named("types", "note");
-              assertThat(note.get("type")).isEqualTo("note");
+              assertThat(note).containsEntry("type", "note");
               assertThat(entries(note, "concealedBy")).contains("notes");
               assertThat(entries(note, "revealedAt")).contains("reporting");
 

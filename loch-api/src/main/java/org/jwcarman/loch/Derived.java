@@ -51,7 +51,7 @@ public sealed interface Derived<O> {
   }
 
   default Optional<Surrogate<O>> made() {
-    return this instanceof Made<O> made ? Optional.of(made.value()) : Optional.empty();
+    return this instanceof Made<O>(Surrogate<O> value) ? Optional.of(value) : Optional.empty();
   }
 
   default boolean succeeded() {
@@ -60,8 +60,8 @@ public sealed interface Derived<O> {
 
   /** The handle, or an exception naming the refusal. */
   default Surrogate<O> orThrow() {
-    if (this instanceof Made<O> made) {
-      return made.value();
+    if (this instanceof Made<O>(Surrogate<O> value)) {
+      return value;
     }
     Refused<O> refused = (Refused<O>) this;
     throw new DerivationRefusedException(refused.reason(), refused.detail());

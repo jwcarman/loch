@@ -23,8 +23,6 @@ import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.jdbc.JdbcStorage;
 import org.jwcarman.loch.jdbc.JdbcStorageConfig;
 import org.jwcarman.loch.jdbc.StorageCodec;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -54,8 +52,6 @@ import tools.jackson.databind.json.JsonMapper;
     afterName = "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration")
 @ConditionalOnClass({JdbcStorage.class, DataSource.class})
 public class JdbcCharterAutoConfiguration {
-
-  private static final Logger log = LoggerFactory.getLogger(JdbcCharterAutoConfiguration.class);
 
   /** How values are serialised, before they are compressed and sealed. */
   @Bean

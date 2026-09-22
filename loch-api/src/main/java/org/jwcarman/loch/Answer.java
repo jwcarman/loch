@@ -39,12 +39,12 @@ public sealed interface Answer {
 
   /** True only when the check ran and said yes. A refusal is not a yes. */
   default boolean isTrue() {
-    return this instanceof Answered answered && answered.value();
+    return this instanceof Answered(boolean value) && value;
   }
 
   /** True only when the check ran and said no. A refusal is not a no either. */
   default boolean isFalse() {
-    return this instanceof Answered answered && !answered.value();
+    return this instanceof Answered(boolean value) && !value;
   }
 
   default boolean ran() {
@@ -58,8 +58,8 @@ public sealed interface Answer {
    * "no" should be handled differently, which is usually.
    */
   default boolean orThrow() {
-    if (this instanceof Answered answered) {
-      return answered.value();
+    if (this instanceof Answered(boolean value)) {
+      return value;
     }
     Refused refused = (Refused) this;
     throw new AccessDeniedException(refused.reason().name(), refused.detail());

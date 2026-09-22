@@ -230,7 +230,7 @@ public class CharterEndpoint {
               rendered.put("name", entry.name());
               rendered.put("reads", entry.reads());
               rendered.put("ceiling", "depends on the caller; render a manifest for one to see it");
-              return (Map<String, Object>) rendered;
+              return rendered;
             })
         .toList();
   }

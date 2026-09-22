@@ -46,6 +46,15 @@ public class CharterAutoConfiguration {
   private static final Logger log = LoggerFactory.getLogger(CharterAutoConfiguration.class);
 
   /**
+   * The one reference able to seal, kept by the thing that made it.
+   *
+   * <p>Not published. The bean below hands out {@link Charter}, which cannot seal and cannot erase,
+   * so no application bean can reach either by naming a type in its constructor. This field is how
+   * the sealer finds the instance again without the container being able to hand it to anyone else.
+   */
+  private DefaultCharter constituted;
+
+  /**
    * The charter itself, constructed here rather than by the application.
    *
    * <p>Ownership is the whole point. Whoever constructs a charter holds the thing that can seal it
@@ -56,15 +65,6 @@ public class CharterAutoConfiguration {
    * <p>Conditional on the application having said what it asks about every value. Guessing a
    * vocabulary would be the worst thing this could do.
    */
-  /**
-   * The one reference able to seal, kept by the thing that made it.
-   *
-   * <p>Not published. The bean below hands out {@link Charter}, which cannot seal and cannot erase,
-   * so no application bean can reach either by naming a type in its constructor. This field is how
-   * the sealer finds the instance again without the container being able to hand it to anyone else.
-   */
-  private DefaultCharter constituted;
-
   @Bean
   @ConditionalOnBean(Axes.class)
   @ConditionalOnMissingBean
