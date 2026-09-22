@@ -39,7 +39,8 @@ public final class JdbcStorageConfig {
 
   private DataSource dataSource;
   private CodecFactory codecs;
-  private java.util.function.Supplier<byte[]> root = () -> ROOTED_IN_THE_OPEN;
+  private String rootId = "open";
+  private java.util.function.Function<String, byte[]> roots = id -> ROOTED_IN_THE_OPEN;
   private StorageCodec storageCodec;
   private boolean migrate = true;
 
@@ -126,7 +127,8 @@ public final class JdbcStorageConfig {
    */
   public JdbcStorage storage(Axes axes) {
     JdbcStorage storage =
-        JdbcStorage.of(dataSourceOrFail(), codecsOrFail(), storageCodecOrFail(), axes, root);
+        JdbcStorage.of(
+            dataSourceOrFail(), codecsOrFail(), storageCodecOrFail(), axes, rootId, roots);
     if (migrates()) {
       storage.migrate();
     }
@@ -142,11 +144,24 @@ public final class JdbcStorageConfig {
    * it -- an edit is still visible to anyone holding an earlier copy of a digest, but it can be
    * covered up. Given a secret this database does not hold, no node can be forged at all.
    *
-   * <p>A supplier rather than a value, so the secret can come from wherever secrets come from and
+   * <p>A lookup rather than a value, so the secret can come from wherever secrets come from and
    * need never be written down beside the thing it protects.
+   *
+   * <p>Named, because a root that cannot be rotated is one nobody will rotate. Each value and each
+   * line records which root it was written under, and verifying asks for that one -- so a new root
+   * takes effect for what comes next without invalidating everything already stored. The same shape
+   * the payload codec uses for its keys, and the id is signed as well, so two stores sharing a
+   * secret still produce different digests.
    */
-  public JdbcStorageConfig rootedIn(java.util.function.Supplier<byte[]> root) {
-    this.root = Objects.requireNonNull(root, "a root must not be null");
+  public JdbcStorageConfig rootedIn(String id, java.util.function.Function<String, byte[]> roots) {
+    this.rootId = Objects.requireNonNull(id, "a root needs a name");
+    this.roots = Objects.requireNonNull(roots, "a root must not be null");
     return this;
+  }
+
+  /** The same, for an application that has only ever had one root. */
+  public JdbcStorageConfig rootedIn(String id, byte[] secret) {
+    byte[] only = secret.clone();
+    return rootedIn(id, asked -> id.equals(asked) ? only : null);
   }
 }

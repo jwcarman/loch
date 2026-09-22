@@ -448,11 +448,61 @@ class JdbcCharterTest {
             .dataSource(dataSource)
             .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
             .storedPlainly()
-            .rootedIn(() -> "somebody else's key".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            .rootedIn(
+                "open", "somebody else's key".getBytes(java.nio.charset.StandardCharsets.UTF_8))
             .withoutMigration()
             .storage(Axes.of(TENANT, INTEGRITY, DATA));
 
     assertThat(underAnotherRoot.firstBrokenEntry()).isPresent();
+  }
+
+  /**
+   * A root can be rotated without invalidating what was written under the last one.
+   *
+   * <p>Every value and every line records which root signed it, so verifying asks for that one.
+   * Rotating writes new rows under the new root and leaves the old ones readable -- the
+   * alternative, re-signing everything on the way past, is the one operation an append-only trail
+   * must not support.
+   */
+  @Test
+  @DisplayName("verifies what an older root signed after a new one takes over")
+  void verifies_across_a_rotation() {
+    byte[] first = "the first root".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    byte[] second = "the second root".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    Axes axes = Axes.of(TENANT, INTEGRITY, DATA);
+
+    DefaultCharter under1 = new DefaultCharter(axes);
+    under1.currentAccess(edge::get);
+    Conceal<Card> early =
+        under1.source(
+            "cards", CARD, ctx -> labelFor(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    under1.seal(rooted("r1", java.util.Map.of("r1", first), axes));
+    edge.set(AccessContext.of("tenant", "acme"));
+    early.conceal(new Card("4111111111114821", "CARMAN"));
+
+    java.util.Map<String, byte[]> both = java.util.Map.of("r1", first, "r2", second);
+    DefaultCharter under2 = new DefaultCharter(axes);
+    under2.currentAccess(edge::get);
+    Conceal<Card> later =
+        under2.source(
+            "cards", CARD, ctx -> labelFor(ctx, Integrity.ENDORSED, DataClass.CARDHOLDER));
+    JdbcStorage rotated = rooted("r2", both, axes);
+    under2.seal(rotated);
+    later.conceal(new Card("4111111111119999", "CARMAN"));
+
+    // Both eras, one verification, and nothing had to be re-signed.
+    assertThat(rotated.firstBrokenEntry()).isEmpty();
+    assertThat(rotated.brokenValues()).isEmpty();
+  }
+
+  private JdbcStorage rooted(String id, java.util.Map<String, byte[]> roots, Axes axes) {
+    return new JdbcStorageConfig()
+        .dataSource(dataSource)
+        .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+        .storedPlainly()
+        .rootedIn(id, roots::get)
+        .withoutMigration()
+        .storage(axes);
   }
 
   @Test

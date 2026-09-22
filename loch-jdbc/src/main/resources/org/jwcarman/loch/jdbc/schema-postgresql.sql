@@ -24,7 +24,12 @@ CREATE TABLE IF NOT EXISTS loch_value (
   -- The root is where that stops being merely expensive. Rooted in a constant, somebody with write
   -- access can recompute a graph after editing it. Rooted in a secret the database does not hold,
   -- they cannot forge a single node.
-  digest       BYTEA       NOT NULL
+  digest       BYTEA       NOT NULL,
+  -- Which root this was written under, so rotating one does not invalidate everything already
+  -- stored. The same shape the payload codec uses for its keys: a current id to write with, and a
+  -- lookup to read older rows back. The id is signed as well, so two stores sharing a secret still
+  -- produce different digests.
+  root_id      TEXT        NOT NULL
 );
 
 -- The immediate parentage, in the order the parents were given.
@@ -91,6 +96,7 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   -- and queue only at the end.
   previous    BYTEA,
   digest      BYTEA       NOT NULL,
+  root_id     TEXT        NOT NULL,
   who         TEXT        NOT NULL
 );
 

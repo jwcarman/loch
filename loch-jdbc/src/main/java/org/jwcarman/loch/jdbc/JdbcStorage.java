@@ -74,22 +74,24 @@ public final class JdbcStorage implements Storage {
       CodecFactory codecs,
       StorageCodec storageCodec,
       Axes axes,
-      java.util.function.Supplier<byte[]> root) {
-    return new JdbcStorage(dataSource, codecs, storageCodec, axes, root);
+      String rootId,
+      java.util.function.Function<String, byte[]> roots) {
+    return new JdbcStorage(dataSource, codecs, storageCodec, axes, rootId, roots);
   }
 
   private static final String INSERT_AUDIT =
       """
       INSERT INTO loch_audit
-        (at, operation, value_id, target, outcome, reason, detail, label, previous, digest, who)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (at, operation, value_id, target, outcome, reason, detail, label, previous, digest,
+         root_id, who)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
   private static final String INSERT_VALUE =
       """
       INSERT INTO loch_value
-        (value_id, value_type, payload, label, derivation, held_at, digest)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (value_id, value_type, payload, label, derivation, held_at, digest, root_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
   private static final String SELECT_METADATA =
@@ -134,7 +136,8 @@ public final class JdbcStorage implements Storage {
   private final StorageCodec storageCodec;
   private final Codec<java.util.Map<String, String>> labels;
   private final Axes axes;
-  private final java.util.function.Supplier<byte[]> root;
+  private final String rootId;
+  private final java.util.function.Function<String, byte[]> roots;
   private final Map<String, Codec<?>> byType = new ConcurrentHashMap<>();
 
   private JdbcStorage(
@@ -142,12 +145,14 @@ public final class JdbcStorage implements Storage {
       CodecFactory codecs,
       StorageCodec storageCodec,
       Axes axes,
-      java.util.function.Supplier<byte[]> root) {
+      String rootId,
+      java.util.function.Function<String, byte[]> roots) {
     this.dataSource = dataSource;
     this.codecs = codecs;
     this.storageCodec = storageCodec;
     this.axes = axes;
-    this.root = root;
+    this.rootId = rootId;
+    this.roots = roots;
     // One axis at a time, keyed by name. A record would have gone to disk positionally, and then
     // declaring a fourth axis would make every row already written undecodable.
     this.labels =
@@ -234,7 +239,7 @@ public final class JdbcStorage implements Storage {
     // Instant.now() offers nanoseconds, so signing what was in hand rather than what reached the
     // column made every line fail its own check the moment it was read back.
     Instant at = entry.at().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    byte[] digest = lineDigest(previous, at, entry, detail, label);
+    byte[] digest = lineDigest(rootId, previous, at, entry, detail, label);
     try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
       statement.setTimestamp(1, Timestamp.from(at));
       statement.setString(2, entry.operation().name());
@@ -246,7 +251,8 @@ public final class JdbcStorage implements Storage {
       statement.setBytes(8, label);
       statement.setBytes(9, previous);
       statement.setBytes(10, digest);
-      statement.setString(11, entry.context().toString());
+      statement.setString(11, rootId);
+      statement.setString(12, entry.context().toString());
       statement.executeUpdate();
     }
   }
@@ -274,7 +280,7 @@ public final class JdbcStorage implements Storage {
     // From the parents, which are immutable and already written, so nothing here is locked and two
     // derivations never wait on each other. A fresh value has none and starts its own graph.
     byte[] digest =
-        digestOf(id, value.type().name(), payload, label, parentDigests(connection, value));
+        digestOf(rootId, id, value.type().name(), payload, label, parentDigests(connection, value));
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id);
       statement.setString(2, value.type().name());
@@ -283,6 +289,7 @@ public final class JdbcStorage implements Storage {
       statement.setString(5, value.lineage().derivation().orElse(null));
       statement.setTimestamp(6, Timestamp.from(Instant.now()));
       statement.setBytes(7, digest);
+      statement.setString(8, rootId);
       statement.executeUpdate();
     }
   }
@@ -319,8 +326,8 @@ public final class JdbcStorage implements Storage {
    * does not hold, no node can be forged at all.
    */
   private byte[] digestOf(
-      String id, String type, byte[] payload, byte[] label, List<byte[]> parents) {
-    javax.crypto.Mac mac = keyed();
+      String under, String id, String type, byte[] payload, byte[] label, List<byte[]> parents) {
+    javax.crypto.Mac mac = keyed(under);
     for (byte[] parent : parents) {
       feed(mac, parent);
     }
@@ -331,11 +338,22 @@ public final class JdbcStorage implements Storage {
     return mac.doFinal();
   }
 
-  /** Keyed by the root, which is why none of this can be recomputed by whoever can write. */
-  private javax.crypto.Mac keyed() {
+  /**
+   * Keyed by a root, which is why none of this can be recomputed by whoever can write.
+   *
+   * <p>Named, so rotating a root does not invalidate what was written under the last one. The id is
+   * signed too, so two stores sharing a secret still produce different digests.
+   */
+  private javax.crypto.Mac keyed(String id) {
+    byte[] secret = roots.apply(id);
+    if (secret == null) {
+      throw new IllegalStateException(
+          "nothing supplies the root '" + id + "', which some of this was written under");
+    }
     try {
       javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
-      mac.init(new javax.crypto.spec.SecretKeySpec(root.get(), "HmacSHA256"));
+      mac.init(new javax.crypto.spec.SecretKeySpec(secret, "HmacSHA256"));
+      feed(mac, id.getBytes(UTF_8));
       return mac;
     } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
       throw new IllegalStateException("this JVM cannot compute HMAC-SHA256", e);
@@ -376,8 +394,9 @@ public final class JdbcStorage implements Storage {
    * it is. Keyed, so nobody can recompute the tail after removing something from the middle.
    */
   private byte[] lineDigest(
-      byte[] previous, Instant at, AuditRecord entry, byte[] detail, byte[] label) {
+      String under, byte[] previous, Instant at, AuditRecord entry, byte[] detail, byte[] label) {
     return lineDigest(
+        under,
         previous,
         at,
         entry.operation().name(),
@@ -391,6 +410,7 @@ public final class JdbcStorage implements Storage {
   }
 
   private byte[] lineDigest(
+      String under,
       byte[] previous,
       Instant at,
       String operation,
@@ -401,7 +421,7 @@ public final class JdbcStorage implements Storage {
       byte[] detail,
       byte[] label,
       String who) {
-    javax.crypto.Mac mac = keyed();
+    javax.crypto.Mac mac = keyed(under);
     feed(mac, previous);
     feed(mac, at.toString().getBytes(UTF_8));
     feed(mac, operation.getBytes(UTF_8));
@@ -430,7 +450,7 @@ public final class JdbcStorage implements Storage {
             connection.prepareStatement(
                 """
                 SELECT entry_id, at, operation, value_id, target, outcome, reason, detail, label,
-                       previous, digest, who
+                       previous, digest, root_id, who
                 FROM loch_audit ORDER BY entry_id
                 """);
         ResultSet rows = statement.executeQuery()) {
@@ -442,6 +462,7 @@ public final class JdbcStorage implements Storage {
         }
         byte[] digest =
             lineDigest(
+                rows.getString("root_id"),
                 previous,
                 rows.getTimestamp("at").toInstant(),
                 rows.getString("operation"),
@@ -475,7 +496,7 @@ public final class JdbcStorage implements Storage {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "SELECT value_id, value_type, payload, label, digest FROM loch_value"
+                "SELECT value_id, value_type, payload, label, digest, root_id FROM loch_value"
                     + " ORDER BY held_at, value_id");
         ResultSet rows = statement.executeQuery()) {
       java.util.Map<String, byte[]> seen = new java.util.LinkedHashMap<>();
@@ -484,6 +505,7 @@ public final class JdbcStorage implements Storage {
       java.util.Map<String, byte[]> payloads = new java.util.LinkedHashMap<>();
       java.util.Map<String, byte[]> labelsById = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> types = new java.util.LinkedHashMap<>();
+      java.util.Map<String, String> rootIds = new java.util.LinkedHashMap<>();
       while (rows.next()) {
         String id = rows.getString("value_id");
         pending.add(new String[] {id});
@@ -491,6 +513,7 @@ public final class JdbcStorage implements Storage {
         payloads.put(id, rows.getBytes("payload"));
         labelsById.put(id, rows.getBytes("label"));
         types.put(id, rows.getString("value_type"));
+        rootIds.put(id, rows.getString("root_id"));
       }
       for (String[] row : pending) {
         String id = row[0];
@@ -506,7 +529,13 @@ public final class JdbcStorage implements Storage {
         }
         byte[] computed =
             reachable
-                ? digestOf(id, types.get(id), payloads.get(id), labelsById.get(id), parents)
+                ? digestOf(
+                    rootIds.get(id),
+                    id,
+                    types.get(id),
+                    payloads.get(id),
+                    labelsById.get(id),
+                    parents)
                 : null;
         if (computed == null || !java.util.Arrays.equals(computed, stored.get(id))) {
           broken.add(id);
