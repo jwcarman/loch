@@ -144,6 +144,23 @@ final class Engine {
    * which is below every ceiling, so a value that left a required axis unsaid would be readable by
    * everyone -- silently, and in the direction nobody would notice.
    */
+  /**
+   * Whether a reader holding this ceiling may see a value labelled so.
+   *
+   * <p>Not simply {@link Ceiling#permits}, because a ceiling can only judge the axes a label speaks
+   * to. An axis a label never mentions sits at the bottom of its order, and bottom is below every
+   * ceiling -- so an incomplete label is not refused by everyone, it is admitted by everyone, which
+   * is the exact opposite of what marking an axis required means.
+   *
+   * <p>Concealing refuses an incomplete label, and so does a lowering, but neither covers a row
+   * that was already there: a store that adds {@code required()} to an axis it has been writing
+   * without, or an SPI caller that put a value directly. Checking it here, where a stored label is
+   * read back, is what makes the guarantee about values rather than about writes.
+   */
+  private boolean admits(Ceiling ceiling, Label label) {
+    return !leavesARequiredAxisUnsaid(label) && ceiling.permits(label);
+  }
+
   private boolean leavesARequiredAxisUnsaid(Label label) {
     for (Axis<?> axis : axes) {
       if (label.unsaid(axis)) {
@@ -308,7 +325,15 @@ final class Engine {
     if (entry == null) {
       return 0;
     }
-    if (!mayErase.test(entry.label(), asking)) {
+    // Application code, so it throws, and a gate that could not decide has not said yes. Left to
+    // propagate, an erasure nobody was allowed to attempt left no line saying it was attempted.
+    boolean permitted;
+    try {
+      permitted = mayErase.test(entry.label(), asking);
+    } catch (RuntimeException e) {
+      permitted = false;
+    }
+    if (!permitted) {
       audit(
           AuditRecord.Operation.ERASE,
           root.id(),
@@ -389,7 +414,7 @@ final class Engine {
           Answer.Reason.ABOVE_CEILING,
           "'" + name + "' could not say what it accepts, so it does not accept this");
     }
-    if (!ceiling.permits(entry.label())) {
+    if (!admits(ceiling, entry.label())) {
       because.set(because(entry.label(), ceiling));
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING, held.id() + " may not be looked at by '" + name + "'");
@@ -504,7 +529,7 @@ final class Engine {
         return new Derived.Refused<>(
             Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
       }
-      if (!ceiling.permits(entry.label())) {
+      if (!admits(ceiling, entry.label())) {
         because.set(because(entry.label(), ceiling));
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
@@ -541,7 +566,10 @@ final class Engine {
       return new Derived.Refused<>(
           Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
     }
-    if (produced.isEmpty()) {
+    // A null Optional is the same event as a thrown one: application code that has been handed
+    // the plaintext and did not come back with an answer. Letting it reach isEmpty() would throw
+    // a NullPointerException out of the library, past the audit, after the value had been read.
+    if (produced == null || produced.isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
 
@@ -550,6 +578,12 @@ final class Engine {
       try {
         label = spec.relabel().apply(joined);
       } catch (RuntimeException e) {
+        return new Derived.Refused<>(
+            Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
+      }
+      // Answering with nothing is not answering. The plaintext has already been read, so this
+      // has to be a recorded refusal rather than a NullPointerException thrown past the audit.
+      if (label == null) {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
       }
@@ -631,7 +665,7 @@ final class Engine {
           entry.label(),
           context);
     }
-    if (!ceiling.permits(entry.label())) {
+    if (!admits(ceiling, entry.label())) {
       return denied(
           Revealed.Reason.ABOVE_CEILING,
           held.id() + " may not reach '" + to + "'",

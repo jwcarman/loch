@@ -219,13 +219,19 @@ public final class JdbcStorage implements Storage {
       int isolation = connection.getTransactionIsolation();
       connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
       connection.setAutoCommit(false);
+      boolean committed = false;
       try {
         work.run(connection);
         connection.commit();
-      } catch (SQLException | RuntimeException e) {
-        connection.rollback();
-        throw e;
+        committed = true;
       } finally {
+        // Throwable, not RuntimeException. Restoring auto-commit COMMITS whatever is in flight,
+        // so an Error on its way out -- an OutOfMemoryError inside an application-supplied codec,
+        // say -- would have committed the value rows without the audit line that has to accompany
+        // them. Rolling back first is what makes "restore the connection" safe to do afterwards.
+        if (!committed) {
+          rollbackQuietly(connection);
+        }
         connection.setAutoCommit(autoCommit);
         connection.setTransactionIsolation(isolation);
       }
@@ -240,6 +246,20 @@ public final class JdbcStorage implements Storage {
         new java.util.concurrent.atomic.AtomicReference<>();
     inTransaction(what, connection -> answer.set(work.run(connection)));
     return answer.get();
+  }
+
+  /**
+   * Rolls back without replacing the exception that is already on its way out.
+   *
+   * <p>A rollback that throws used to mask the original failure, which is the one worth reading:
+   * the reason the work failed explains the rollback, never the other way round.
+   */
+  private static void rollbackQuietly(Connection connection) {
+    try {
+      connection.rollback();
+    } catch (SQLException e) {
+      // Nothing to do with it that would not hide why we are here.
+    }
   }
 
   @FunctionalInterface

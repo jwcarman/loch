@@ -141,10 +141,12 @@ public final class Label {
    * declaring an axis has to reckon with the rows carrying it, and failing loudly on read is how it
    * finds out.
    *
-   * <p>The other direction is safe and needs no special handling. An axis declared now but missing
-   * from an older row reads as unsaid, which is the bottom of its order -- and if that matters, the
-   * axis was marked required and the value is refused for being incomplete, by the same rule that
-   * catches a label which never mentioned it in the first place.
+   * <p>The other direction needs no special handling here, but it is not automatically safe. An
+   * axis declared now but missing from an older row reads as unsaid, which is the bottom of its
+   * order and therefore below every ceiling -- so such a row is readable by <i>more</i> readers,
+   * not fewer. What stops that is the engine refusing an incomplete label wherever it reads one
+   * back, not anything this method does; marking an axis {@code required()} is what makes rows
+   * written before it unreadable rather than universally readable.
    */
   public static Label decode(Map<String, String> encoded, Axes declared) {
     Map<Axis<?>, Object> said = new LinkedHashMap<>();

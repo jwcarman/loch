@@ -760,9 +760,12 @@ class JdbcCharterTest {
     edge.set(AccessContext.of(java.util.Map.of("tenant", "acme", "role", "compliance")));
     store.erase(card);
 
+    // Two values erased, so two ERASE lines, and every earlier line is still there. ">= before"
+    // was a tautology: the trail never shrinks, which is the property being claimed, not evidence.
     assertThat(rowCount("loch_value")).isZero();
-    assertThat(rowCount("loch_audit")).isGreaterThanOrEqualTo(before);
-    assertThat(auditColumn("operation")).contains("ERASE");
+    assertThat(rowCount("loch_audit")).isEqualTo(before + 2);
+    assertThat(auditColumn("operation")).filteredOn("ERASE"::equals).hasSize(2);
+    assertThat(auditColumn("outcome")).containsOnly("ALLOWED");
   }
 
   private java.util.List<String> auditColumn(String column) throws SQLException {
@@ -799,7 +802,9 @@ class JdbcCharterTest {
   @DisplayName("lineage of a held value says it was asserted, not computed")
   void lineage_of_a_held_value_says_asserted() {
     assertThat(store.lineage(card()).asserted()).isTrue();
-    assertThat(List.of(store.lineage(card()).parents())).isNotEmpty();
+    // Nothing made it, so it has no parents. This used to wrap the parents list in ANOTHER list
+    // and assert that was non-empty, which is true of every list, and said the opposite besides.
+    assertThat(store.lineage(card()).parents()).isEmpty();
   }
 
   /** Serialise, squeeze, seal. Reversing the last two would cost the same and save nothing. */

@@ -105,6 +105,23 @@ class PolicyThatCannotDecideTest {
           String::toUpperCase,
           d -> d.accepting(ctx -> null));
 
+  /** Answering with nothing, after the plaintext has already been handed over. */
+  private final Derivation<String, String> loweringReturnsNothing =
+      config.derivation(
+          "lowering-null",
+          STRING_TYPE,
+          STRING_TYPE,
+          String::toUpperCase,
+          d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())).lowering(joined -> null));
+
+  private final Derivation<String, String> checkReturnsNothing =
+      config.checking(
+          "checking-null",
+          STRING_TYPE,
+          STRING_TYPE,
+          (value, ctx) -> null,
+          d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())));
+
   private final Derivation<String, String> functionThrows =
       config.derivation(
           "function",
@@ -214,6 +231,39 @@ class PolicyThatCannotDecideTest {
     assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.ABOVE_CEILING);
   }
 
+  /**
+   * The sharp case, in its quiet form.
+   *
+   * <p>The rule this file states is that a crash must not be quieter than a decline, because the
+   * read already happened. Returning {@code null} is the same event as throwing -- application code
+   * handed the plaintext that did not come back with an answer -- and it used to leave the library
+   * through a NullPointerException, past the audit, with no line at all.
+   */
+  @Test
+  @DisplayName("that answers a lowering with nothing is a refusal, not a NullPointerException")
+  void that_answers_a_lowering_with_nothing() {
+    storage.clearAudit();
+
+    Derived<String> result = loweringReturnsNothing.derive(held);
+
+    assertThat(result.made()).isEmpty();
+    assertThat(((Derived.Refused<String>) result).reason())
+        .isEqualTo(Derived.Reason.NOT_A_LOWERING);
+    assertThat(storage.audit()).isNotEmpty();
+  }
+
+  @Test
+  @DisplayName("that answers a check with nothing is a refusal, not a NullPointerException")
+  void that_answers_a_check_with_nothing() {
+    storage.clearAudit();
+
+    Derived<String> result = checkReturnsNothing.derive(held);
+
+    assertThat(result.made()).isEmpty();
+    assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.DECLINED);
+    assertThat(storage.audit()).isNotEmpty();
+  }
+
   /** Nothing above reached the caller as a stack trace, and every one of them was recorded. */
   @Test
   @DisplayName("is recorded as a refusal, never raised as an exception")
@@ -227,8 +277,10 @@ class PolicyThatCannotDecideTest {
     loweringThrows.derive(held);
     queryWhoseCeilingIsNull.ask(held, "secret");
     derivationWhoseCeilingIsNull.derive(held);
+    loweringReturnsNothing.derive(held);
+    checkReturnsNothing.derive(held);
 
-    assertThat(storage.audit()).hasSize(7);
+    assertThat(storage.audit()).hasSize(9);
     assertThat(storage.audit())
         .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }

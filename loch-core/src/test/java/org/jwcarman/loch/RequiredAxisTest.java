@@ -82,8 +82,10 @@ class RequiredAxisTest {
               NOTE_TYPE)
           .reading(NOTE_TYPE);
 
+  private final MemoryStorage kept = new MemoryStorage();
+
   {
-    config.seal(new MemoryStorage());
+    config.seal(kept);
   }
 
   // that used to read `.tenant()` / `.level()` off a stored label are re-expressed against
@@ -133,7 +135,7 @@ class RequiredAxisTest {
         .isInstanceOf(AccessDeniedException.class);
 
     assertThat(own.holds("nothing")).isFalse();
-    assertThat(storage.everything()).isEmpty();
+    assertThat(kept.everything()).isEmpty();
     assertThat(storage.audit(AuditRecord.Operation.CONCEAL))
         .isNotEmpty()
         .allSatisfy(entry -> assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
@@ -193,6 +195,54 @@ class RequiredAxisTest {
         .allSatisfy(entry -> assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }
 
+  /**
+   * The guarantee has to be about values, not about writes.
+   *
+   * <p>Refusing an incomplete label at the door covers everything written through a door. It does
+   * not cover what is already in the store: mark an axis {@code required()} on a system that has
+   * been writing without it, and every row already there leaves it unsaid. Unsaid is the bottom of
+   * its order, which is below every ceiling, so those rows are not unreadable -- they are readable
+   * by <i>everyone</i>, which is the opposite of what the marking was for.
+   *
+   * <p>Written here through the storage SPI, which is what a pre-existing row looks like by the
+   * time the engine reads it back.
+   */
+  @Test
+  @DisplayName("is enforced when a stored label is read back, not only when one is written")
+  void is_enforced_when_a_stored_label_is_read_back() {
+    MemoryStorage storage = new MemoryStorage();
+    DefaultCharter own = new DefaultCharter(TENANT, LEVEL).currentAccess(edge::get);
+    Reveal<Note> anyTenant =
+        own.destination(
+                "reporting",
+                Ceiling.of(TENANT, Constraint.any()).with(LEVEL, Constraint.atMost(Level.HIGH)),
+                NOTE_TYPE)
+            .reading(NOTE_TYPE);
+    own.seal(storage);
+
+    // A row from before the tenant axis was required: it says nothing about tenant at all.
+    storage.put(
+        "sur_from-before",
+        new StoredValue(
+            new Note("whose is this?"),
+            NOTE_TYPE,
+            Label.of(LEVEL, Level.HIGH),
+            Lineage.concealed()),
+        new AuditRecord(
+            AuditRecord.Operation.CONCEAL,
+            "sur_from-before",
+            java.util.Optional.empty(),
+            AuditRecord.Outcome.ALLOWED,
+            java.util.Optional.empty(),
+            java.util.Optional.empty(),
+            java.util.Optional.empty(),
+            java.util.Map.of()));
+
+    edge.set(AccessContext.of(Map.of("tenant", "globex")));
+
+    assertThat(anyTenant.reveal(Surrogate.<Note>of("sur_from-before")).allowed()).isFalse();
+  }
+
   @Test
   @DisplayName("so nothing unattributed is ever there to be read")
   void nothing_unattributed_is_ever_there_to_be_read() {
@@ -201,7 +251,9 @@ class RequiredAxisTest {
     assertThatThrownBy(() -> notes.conceal(new Note("orphan")))
         .isInstanceOf(AccessDeniedException.class);
 
+    // Nothing was stored, so there is nothing for any tenant to read. Asserting against a
+    // fabricated identifier proved nothing: it is refused whether or not the orphan was written.
     edge.set(AccessContext.of(Map.of("tenant", "globex")));
-    assertThat(reporting.reveal(Surrogate.<Note>of("sur_nothing-like-this")).allowed()).isFalse();
+    assertThat(kept.everything()).isEmpty();
   }
 }
