@@ -132,6 +132,54 @@ class WhatACharterPermitsTest {
         .contains("a ceiling is what limits who may ask");
   }
 
+  /**
+   * What an auditor came to find out, and the part of it that is provable.
+   *
+   * <p>Which types anything can produce, which types anything reads, and whether a path exists
+   * between them is a graph over the declarations -- so a door nobody can reach, or one reading a
+   * type nothing makes, is a fact rather than a suspicion. The second is usually a rename that went
+   * half-applied, and without this it fails as a refusal at request time instead of at startup.
+   */
+  @Test
+  @DisplayName("proves that nothing is unreachable when nothing is")
+  void proves_that_nothing_is_unreachable() {
+    assertThat(charter.manifest().findings()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("finds a door that reads a type nothing can produce")
+  void finds_a_door_nothing_can_feed() {
+    DefaultCharter orphan = new DefaultCharter(TENANT, SENSITIVITY);
+    orphan.source("card-intake", CARD, ctx -> Label.of(TENANT, "acme"));
+    orphan.destination("desk", upTo(Sensitivity.ORDINARY), LAST4);
+
+    assertThat(orphan.manifest().findings("no-writer"))
+        .singleElement()
+        .satisfies(
+            finding -> {
+              assertThat(finding.about()).isEqualTo("desk");
+              assertThat(finding.detail()).contains("last4").contains("nothing in this charter");
+            });
+  }
+
+  @Test
+  @DisplayName("finds a source whose values could never be revealed anywhere")
+  void finds_a_source_with_nowhere_to_go() {
+    DefaultCharter stranded = new DefaultCharter(TENANT, SENSITIVITY);
+    stranded.source("card-intake", CARD, ctx -> Label.of(TENANT, "acme"));
+    stranded.destination("desk", upTo(Sensitivity.ORDINARY), LAST4);
+
+    assertThat(stranded.manifest().findings("no-reader"))
+        .anySatisfy(finding -> assertThat(finding.about()).isEqualTo("card-intake"));
+  }
+
+  /** A derivation in the middle is exactly what makes this worth walking rather than assuming. */
+  @Test
+  @DisplayName("follows a derivation when deciding whether a source has a reader")
+  void follows_a_derivation_when_deciding_reachability() {
+    assertThat(charter.manifest().findings("no-reader")).isEmpty();
+  }
+
   @Test
   @DisplayName("is answerable before it has been sealed to anything")
   void is_answerable_before_sealing() {

@@ -41,9 +41,11 @@ import java.util.List;
  */
 public record Manifest(
     String bottom,
+    List<Entry> sources,
     List<Entry> destinations,
     List<Entry> derivations,
     List<Entry> questions,
+    List<Finding> findings,
     AccessContext renderedFor) {
 
   /**
@@ -51,9 +53,50 @@ public record Manifest(
    *
    * @param weakens whether this operation can make a label less constrained
    */
-  public record Entry(String name, String detail, boolean weakens) {}
+  /**
+   * One line of the report, and what it does with values.
+   *
+   * <p>The types are structured rather than left in {@code detail}, so a report can be filtered and
+   * diffed rather than only read. {@code detail} stays because a person reads it.
+   *
+   * @param reads the surrogate types this takes in; empty for a door values only enter through
+   * @param writes the surrogate type this produces, or null when it produces no value at all -- a
+   *     destination hands a value out of the system, and a question answers a bit
+   * @param weakens whether this operation can make a label less constrained
+   */
+  public record Entry(
+      String name, String detail, boolean weakens, List<String> reads, String writes) {
+
+    public Entry {
+      reads = List.copyOf(reads);
+    }
+
+    /** Whether this declaration has anything to do with values of that type. */
+    public boolean touches(String type) {
+      return reads.contains(type) || type.equals(writes);
+    }
+  }
+
+  /**
+   * Something provable about the declarations, without running anything.
+   *
+   * <p>What can be proved here is a question about <b>types</b>: which doors can be reached from
+   * which, and whether anything can ever produce what a door reads. That is a graph over
+   * declarations, and it is complete -- a finding is a fact, not a heuristic.
+   *
+   * <p>What cannot be proved here is a question about <b>labels</b>. A source's label and a
+   * destination's ceiling are both functions of the access, so "can an unendorsed value reach the
+   * vendor model" has no answer in general -- only an answer for a particular caller. Render a
+   * manifest for that caller and read the ceilings.
+   *
+   * @param kind a stable code, so a build can fail on one kind and not another
+   * @param about the declaration this is about
+   */
+  public record Finding(String kind, String about, String detail) {}
 
   public Manifest {
+    sources = List.copyOf(sources);
+    findings = List.copyOf(findings);
     destinations = List.copyOf(destinations);
     derivations = List.copyOf(derivations);
     questions = List.copyOf(questions);
@@ -66,6 +109,29 @@ public record Manifest(
    * a separate type, and were quietly missing from this report for exactly as long as nobody
    * looked.
    */
+  /** Findings of one kind, for a build that cares about some and not others. */
+  public List<Finding> findings(String kind) {
+    return findings.stream().filter(finding -> kind.equals(finding.kind())).toList();
+  }
+
+  /**
+   * Everything this charter declares about one surrogate type, and nothing else.
+   *
+   * <p>The question somebody actually arrives with: not "what does this application permit" but
+   * "what can happen to a card". Which doors it enters through, which doors it leaves by, what can
+   * be made from it and what it can be made from, what may be asked about it.
+   */
+  public Manifest about(String type) {
+    return new Manifest(
+        bottom,
+        sources.stream().filter(entry -> entry.touches(type)).toList(),
+        destinations.stream().filter(entry -> entry.touches(type)).toList(),
+        derivations.stream().filter(entry -> entry.touches(type)).toList(),
+        questions.stream().filter(entry -> entry.touches(type)).toList(),
+        findings.stream().filter(finding -> finding.detail().contains("'" + type + "'")).toList(),
+        renderedFor);
+  }
+
   public List<Entry> weakening() {
     return derivations.stream().filter(Entry::weakens).toList();
   }
@@ -81,6 +147,7 @@ public record Manifest(
     lines.add("");
     lines.add("  unconstrained label (bottom)");
     lines.add("    " + bottom);
+    section(lines, "sources", sources, "  nothing can be concealed: this charter has no doors in");
     section(lines, "destinations", destinations, "  nothing may be dereferenced anywhere");
     if (!destinations.isEmpty()) {
       lines.add(
@@ -105,7 +172,21 @@ public record Manifest(
     } else {
       weakening.forEach(entry -> lines.add("    " + entry.name() + "  " + entry.detail()));
     }
+    lines.add("");
+    if (findings.isEmpty()) {
+      lines.add("  nothing unreachable: every door can be used and every type can exist");
+    } else {
+      lines.add("  " + findings.size() + " finding(s):");
+      int width = findings.stream().mapToInt(f -> f.about().length()).max().orElse(0);
+      for (Finding finding : findings) {
+        lines.add("    %s  %s".formatted(pad(finding.about(), width), finding.detail()));
+      }
+    }
     return String.join(System.lineSeparator(), lines);
+  }
+
+  private static String pad(String value, int width) {
+    return value + " ".repeat(Math.max(0, width - value.length()));
   }
 
   private static void section(

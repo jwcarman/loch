@@ -11,6 +11,12 @@ spring:
 billing:
   key: ${BILLING_KEY:c2hoLXRoaXMtaXMtYS1kZW1vLWtleS0zMi1ieXRlcyE=}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: charter
+
 logging:
   level:
     org.jwcarman.loch.example.billing.LochConfiguration: INFO

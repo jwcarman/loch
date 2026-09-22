@@ -1,0 +1,86 @@
+#
+# Copyright © 2026 James Carman
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+site_name: Loch
+site_description: Opaque references to sensitive values, for Java.
+site_url: https://jwcarman.github.io/loch/
+repo_url: https://github.com/jwcarman/loch
+repo_name: jwcarman/loch
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+# Design records are working notes, not documentation. They stay out of the site.
+exclude_docs: |
+  /design/
+
+theme:
+  name: material
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Concepts:
+      - Axes and Labels: concepts/labels.md
+      - Ceilings: concepts/ceilings.md
+      - Portals: concepts/portals.md
+      - Deriving: concepts/deriving.md
+      - The Record: concepts/the-record.md
+      - Erasing: concepts/erasing.md
+  - Guides:
+      - Getting Started: guides/getting-started.md
+      - Spring Boot: guides/spring-boot.md
+      - Storage: guides/storage.md
+      - Reviewing a Charter: guides/reviewing.md
+  - Reference:
+      - What Loch Does Not Do: limits.md
+      - Security Policy: https://github.com/jwcarman/loch/blob/main/SECURITY.md
+      - Changelog: https://github.com/jwcarman/loch/blob/main/CHANGELOG.md

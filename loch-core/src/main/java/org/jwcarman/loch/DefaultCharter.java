@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
@@ -61,7 +62,8 @@ public final class DefaultCharter implements Charter {
    */
   record Configuration(
       java.util.Map<String, SurrogateType<?>> types,
-      java.util.Set<String> sources,
+      java.util.Map<String, SurrogateType<?>> sources,
+      java.util.Map<String, java.util.Set<String>> destinationReads,
       List<DestinationSpec> destinations,
       List<DerivationSpec<?>> derivations,
       List<QuerySpec<?, ?>> queries,
@@ -70,7 +72,9 @@ public final class DefaultCharter implements Charter {
 
     Configuration {
       types = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(types));
-      sources = java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(sources));
+      sources = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(sources));
+      destinationReads =
+          java.util.Collections.unmodifiableMap(new LinkedHashMap<>(destinationReads));
       destinations = List.copyOf(destinations);
       derivations = List.copyOf(derivations);
       queries = List.copyOf(queries);
@@ -100,7 +104,19 @@ public final class DefaultCharter implements Charter {
   // Sealing copies all of it into an immutable snapshot and publishes that with one atomic write,
   // which is the only moment any of it crosses to the threads that will use a portal.
   private final java.util.Map<String, SurrogateType<?>> types = new LinkedHashMap<>();
-  private final java.util.Set<String> sources = new java.util.LinkedHashSet<>();
+  private final java.util.Map<String, SurrogateType<?>> sources = new LinkedHashMap<>();
+
+  /**
+   * What each door hands out, which the charter did not used to know.
+   *
+   * <p>The readable types lived only in the object handed back to whoever declared the door, so
+   * nothing could report what a destination produces or work out whether anything produces what it
+   * reads. A door nobody can reach is dead authority, and it is also the shape a half-applied
+   * rename takes.
+   */
+  private final java.util.Map<String, java.util.Set<String>> destinationReads =
+      new LinkedHashMap<>();
+
   private final List<DestinationSpec> destinations = new ArrayList<>();
   private final List<DerivationSpec<?>> derivations = new ArrayList<>();
   private final List<QuerySpec<?, ?>> queries = new ArrayList<>();
@@ -145,7 +161,14 @@ public final class DefaultCharter implements Charter {
     }
     Configuration configuration =
         new Configuration(
-            types, sources, destinations, derivations, queries, currentAccess, mayErase);
+            types,
+            sources,
+            destinationReads,
+            destinations,
+            derivations,
+            queries,
+            currentAccess,
+            mayErase);
     Engine engine = new Engine(axes, configuration, storage);
     // One write, and every portal this charter constituted is in force. It is also the only moment
     // any of this crosses a thread, which is why the snapshot above is taken first.
@@ -205,7 +228,14 @@ public final class DefaultCharter implements Charter {
       case State.Active active -> active.configuration();
       case State.Configuring _ ->
           new Configuration(
-              types, sources, destinations, derivations, queries, currentAccess, mayErase);
+              types,
+              sources,
+              destinationReads,
+              destinations,
+              derivations,
+              queries,
+              currentAccess,
+              mayErase);
     };
   }
 
@@ -278,7 +308,7 @@ public final class DefaultCharter implements Charter {
     Objects.requireNonNull(type, "a source needs to know what it accepts");
     Objects.requireNonNull(labelling, "a source needs to say how it labels what arrives");
     stillWriting();
-    if (!sources.add(name)) {
+    if (sources.putIfAbsent(name, type) != null) {
       throw new IllegalStateException("two sources are registered as '" + name + "'");
     }
     recording(type);
@@ -339,6 +369,7 @@ public final class DefaultCharter implements Charter {
     stillWriting();
     recording(reads);
     destinations.add(Destinations.varying(name, ceiling));
+    destinationReads.put(name, java.util.Collections.unmodifiableSet(names));
     return new Door(name, java.util.Collections.unmodifiableSet(names), lifecycle());
   }
 
@@ -609,7 +640,7 @@ public final class DefaultCharter implements Charter {
   }
 
   java.util.Set<String> sources() {
-    return configuration().sources();
+    return configuration().sources().keySet();
   }
 
   /**
@@ -678,11 +709,26 @@ public final class DefaultCharter implements Charter {
   public Manifest manifest(AccessContext as) {
     Objects.requireNonNull(as, "a manifest is rendered for some access, even an empty one");
     Configuration configuration = configuration();
+    List<Manifest.Entry> ways = new ArrayList<>();
+    for (var source : configuration.sources().entrySet()) {
+      ways.add(
+          new Manifest.Entry(
+              source.getKey(),
+              "accepts a " + source.getValue().name(),
+              false,
+              List.of(),
+              source.getValue().name()));
+    }
     List<Manifest.Entry> doors = new ArrayList<>();
     for (DestinationSpec destination : configuration.destinations()) {
       doors.add(
           new Manifest.Entry(
-              destination.name(), "accepts up to " + accepts(destination, as), false));
+              destination.name(),
+              "accepts up to " + accepts(destination, as),
+              false,
+              List.copyOf(
+                  configuration.destinationReads().getOrDefault(destination.name(), Set.of())),
+              null));
     }
     List<Manifest.Entry> derivations = new ArrayList<>();
     for (DerivationSpec<?> derivation : configuration.derivations()) {
@@ -690,14 +736,154 @@ public final class DefaultCharter implements Charter {
           new Manifest.Entry(
               derivation.name(),
               "%s -> %s".formatted(reads(derivation), derivation.outputType().name()),
-              derivation.privileged()));
+              derivation.privileged(),
+              derivation.inputTypes().stream().map(SurrogateType::name).distinct().toList(),
+              derivation.outputType().name()));
     }
     List<Manifest.Entry> questions = new ArrayList<>();
     for (QuerySpec<?, ?> query : configuration.queries()) {
       questions.add(
-          new Manifest.Entry(query.name(), "asks about " + query.inputType().name(), false));
+          new Manifest.Entry(
+              query.name(),
+              "asks about " + query.inputType().name(),
+              false,
+              List.of(query.inputType().name()),
+              null));
     }
-    return new Manifest(String.valueOf(Label.nothing()), doors, derivations, questions, as);
+    return new Manifest(
+        String.valueOf(Label.nothing()),
+        ways,
+        doors,
+        derivations,
+        questions,
+        findings(configuration),
+        as);
+  }
+
+  /**
+   * What can be proved about the declarations without running anything.
+   *
+   * <p>A question about types, and therefore answerable: which types anything can produce, which
+   * types anything reads, and whether a path exists between them. A door nobody can reach is dead
+   * authority; a door that reads a type nothing makes is usually a rename that went half-applied,
+   * and it fails as a refusal at request time rather than at startup, which is the worst moment to
+   * find out.
+   *
+   * <p>Deliberately not a question about labels. A source's label and a destination's ceiling are
+   * both functions of the access, so "can an unendorsed value reach the vendor model" has no
+   * general answer -- only one per caller. That is what rendering a manifest for an access is for.
+   */
+  private static List<Manifest.Finding> findings(Configuration configuration) {
+    List<Manifest.Finding> findings = new ArrayList<>();
+
+    java.util.Set<String> produced = new java.util.LinkedHashSet<>();
+    configuration.sources().values().forEach(type -> produced.add(type.name()));
+    for (DerivationSpec<?> derivation : configuration.derivations()) {
+      produced.add(derivation.outputType().name());
+    }
+
+    java.util.Set<String> read = new java.util.LinkedHashSet<>();
+    configuration.destinationReads().values().forEach(read::addAll);
+    for (DerivationSpec<?> derivation : configuration.derivations()) {
+      derivation.inputTypes().forEach(type -> read.add(type.name()));
+    }
+    for (QuerySpec<?, ?> query : configuration.queries()) {
+      read.add(query.inputType().name());
+    }
+
+    if (configuration.sources().isEmpty()) {
+      findings.add(
+          new Manifest.Finding(
+              "no-sources", "(charter)", "nothing can be concealed: no source is declared"));
+    }
+    if (configuration.destinations().isEmpty()) {
+      findings.add(
+          new Manifest.Finding(
+              "no-destinations",
+              "(charter)",
+              "nothing can be revealed anywhere: no destination is declared"));
+    }
+
+    // A value concealed here can reach a door only if some chain of derivations gets its type to
+    // one a door reads. Walked rather than assumed: a derivation in the middle is easy to miss.
+    for (var source : configuration.sources().entrySet()) {
+      if (!reaches(source.getValue().name(), configuration)) {
+        findings.add(
+            new Manifest.Finding(
+                "no-reader",
+                source.getKey(),
+                "writes '%s', which no destination reads and no derivation turns into one"
+                    .formatted(source.getValue().name())));
+      }
+    }
+
+    for (var door : configuration.destinationReads().entrySet()) {
+      for (String type : door.getValue()) {
+        if (!produced.contains(type)) {
+          findings.add(
+              new Manifest.Finding(
+                  "no-writer",
+                  door.getKey(),
+                  "reads '%s', which nothing in this charter can produce".formatted(type)));
+        }
+      }
+    }
+
+    for (DerivationSpec<?> derivation : configuration.derivations()) {
+      for (SurrogateType<?> input : derivation.inputTypes()) {
+        if (!produced.contains(input.name())) {
+          findings.add(
+              new Manifest.Finding(
+                  "no-writer",
+                  derivation.name(),
+                  "reads a %s, which nothing in this charter can produce".formatted(input.name())));
+        }
+      }
+      if (!read.contains(derivation.outputType().name())) {
+        findings.add(
+            new Manifest.Finding(
+                "no-reader",
+                derivation.name(),
+                "makes '%s', which nothing reads".formatted(derivation.outputType().name())));
+      }
+    }
+
+    for (QuerySpec<?, ?> query : configuration.queries()) {
+      if (!produced.contains(query.inputType().name())) {
+        findings.add(
+            new Manifest.Finding(
+                "no-writer",
+                query.name(),
+                "asks about a %s, which nothing in this charter can produce"
+                    .formatted(query.inputType().name())));
+      }
+    }
+    return findings;
+  }
+
+  /** Whether any destination reads this type, or a type reachable from it by deriving. */
+  private static boolean reaches(String type, Configuration configuration) {
+    java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+    java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(type));
+    java.util.Set<String> doorsRead = new java.util.LinkedHashSet<>();
+    configuration.destinationReads().values().forEach(doorsRead::addAll);
+    while (!pending.isEmpty()) {
+      String next = pending.removeFirst();
+      if (!seen.add(next)) {
+        continue;
+      }
+      if (doorsRead.contains(next)) {
+        return true;
+      }
+      for (DerivationSpec<?> derivation : configuration.derivations()) {
+        for (SurrogateType<?> input : derivation.inputTypes()) {
+          if (input.name().equals(next)) {
+            pending.add(derivation.outputType().name());
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**

@@ -18,6 +18,8 @@ package org.jwcarman.loch.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.loch.Charter;
@@ -33,6 +35,7 @@ import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;
 import org.jwcarman.loch.lattice.Label;
+import org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -135,6 +138,72 @@ class CharterAutoConfigurationTest {
               // test exists to catch.
               assertThat(context.getBean(Reveal.class).reveal(held).granted()).contains("a note");
             });
+  }
+
+  /**
+   * The endpoint reports declarations, and the drill-down answers about one type.
+   *
+   * <p>Worth a wiring test rather than a unit test: the endpoint only exists when Actuator is on
+   * the classpath AND the endpoint has been exposed, and a condition that silently never matches is
+   * how this module has failed before.
+   */
+  @Test
+  @DisplayName("exposes a charter endpoint that can be drilled into by surrogate type")
+  void exposes_a_charter_endpoint() {
+    endpointRunner()
+        .withPropertyValues("management.endpoints.web.exposure.include=charter")
+        .run(
+            context -> {
+              assertThat(context).hasSingleBean(CharterEndpoint.class);
+              CharterEndpoint endpoint = context.getBean(CharterEndpoint.class);
+
+              Map<String, Object> all = endpoint.charter();
+              assertThat(all.get("sealed")).isEqualTo(true);
+              assertThat(all.get("axes")).isEqualTo(List.of("tenant", "clearance"));
+              assertThat(entries(all, "sources")).contains("notes");
+              assertThat(entries(all, "destinations")).contains("reporting");
+
+              // One section on its own.
+              assertThat(entries(endpoint.section("sources"), "sources")).contains("notes");
+              assertThat(endpoint.section("no-such-section")).isNull();
+
+              // Everything about the one type, and nothing about anything else.
+              Map<String, Object> note = endpoint.named("types", "note");
+              assertThat(note.get("type")).isEqualTo("note");
+              assertThat(entries(note, "concealedBy")).contains("notes");
+              assertThat(entries(note, "revealedAt")).contains("reporting");
+
+              // One named declaration.
+              assertThat(endpoint.named("sources", "notes")).containsEntry("name", "notes");
+              assertThat(endpoint.named("sources", "no-such-door")).isNull();
+
+              // A type nobody declared is answered, not refused.
+              Map<String, Object> nothing = endpoint.named("types", "no-such-type");
+              assertThat(entries(nothing, "concealedBy")).isEmpty();
+              assertThat(entries(nothing, "revealedAt")).isEmpty();
+            });
+  }
+
+  /** And it is not there for an application that never exposed it. */
+  @Test
+  @DisplayName("does not expose the endpoint unless it was asked for")
+  void does_not_expose_the_endpoint_by_default() {
+    endpointRunner().run(context -> assertThat(context).doesNotHaveBean(CharterEndpoint.class));
+  }
+
+  /** The endpoint infrastructure too, because that is what decides whether one is available. */
+  private ApplicationContextRunner endpointRunner() {
+    return runner
+        .withConfiguration(
+            AutoConfigurations.of(
+                CharterEndpointAutoConfiguration.class, EndpointAutoConfiguration.class))
+        .withUserConfiguration(AnApplication.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<String> entries(Map<String, Object> report, String section) {
+    return ((List<Map<String, Object>>) report.get(section))
+        .stream().map(entry -> (String) entry.get("name")).toList();
   }
 
   /** An application with no vocabulary gets no charter, rather than a guessed one. */
