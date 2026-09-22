@@ -228,7 +228,6 @@ final class Engine {
       Label label,
       AccessContext context) {
     return new AuditRecord(
-        storage.clock().instant(),
         operation,
         value,
         Optional.ofNullable(target),

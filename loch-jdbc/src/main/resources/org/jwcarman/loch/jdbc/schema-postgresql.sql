@@ -9,7 +9,11 @@ CREATE TABLE IF NOT EXISTS loch_value (
   payload      BYTEA       NOT NULL,
   label        BYTEA       NOT NULL,
   derivation   TEXT,
-  concealed_at      TIMESTAMPTZ NOT NULL,
+  -- No timestamp. When a value was concealed is written down once, in loch_audit, by the same
+  -- transaction that writes this row -- one act, one time. A column here would be a second
+  -- copy of that fact, disagreeing with it by however long the two clock reads were apart,
+  -- and the trail's copy is the better one: chain-ordered, and it outlives erasure, which
+  -- this table deliberately does not.
   -- What this value hashes to, over its own bytes and the digests of whatever it was made from.
   --
   -- Every fresh value starts its own graph: it has no parents, so it hashes from the root alone.
@@ -74,7 +78,7 @@ CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
 -- and against which ceiling, which is exactly the thing a refusal must never tell its caller.
 CREATE TABLE IF NOT EXISTS loch_audit (
   entry_id    BIGSERIAL PRIMARY KEY,
-  decided_at  TIMESTAMPTZ NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL,
   operation   TEXT        NOT NULL,
   value_id    TEXT,
   target      TEXT,
@@ -101,4 +105,4 @@ CREATE TABLE IF NOT EXISTS loch_audit (
 );
 
 CREATE INDEX IF NOT EXISTS loch_audit_value ON loch_audit (value_id);
-CREATE INDEX IF NOT EXISTS loch_audit_decided_at ON loch_audit (decided_at);
+CREATE INDEX IF NOT EXISTS loch_audit_recorded_at ON loch_audit (recorded_at);

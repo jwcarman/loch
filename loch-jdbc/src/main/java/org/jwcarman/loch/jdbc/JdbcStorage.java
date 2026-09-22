@@ -82,7 +82,7 @@ public final class JdbcStorage implements Storage {
   private static final String INSERT_AUDIT =
       """
       INSERT INTO loch_audit
-        (decided_at, operation, value_id, target, outcome, reason, detail, label, previous, digest,
+        (recorded_at, operation, value_id, target, outcome, reason, detail, label, previous, digest,
          root_id, who)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
@@ -90,8 +90,8 @@ public final class JdbcStorage implements Storage {
   private static final String INSERT_VALUE =
       """
       INSERT INTO loch_value
-        (value_id, value_type, payload, label, derivation, concealed_at, digest, root_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (value_id, value_type, payload, label, derivation, digest, root_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       """;
 
   private static final String SELECT_METADATA =
@@ -232,16 +232,18 @@ public final class JdbcStorage implements Storage {
     // Ordered, because a line has a predecessor rather than parents. An advisory lock rather than
     // a row: the first append has nothing to lock, and inventing a row only to lock it is how the
     // same fact ends up stored twice.
-    byte[] previous = lockTrailHead(connection);
+    Predecessor head = lockTrailHead(connection);
+    byte[] previous = head.digest();
     byte[] detail = protected_(entry.detail());
     byte[] label = protected_(entry.label());
-    // Truncated once, and the same value is stored and signed. TIMESTAMPTZ keeps microseconds and
-    // Instant.now() offers nanoseconds, so signing what was in hand rather than what reached the
-    // column made every line fail its own check the moment it was read back.
-    Instant decidedAt = entry.decidedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    byte[] digest = lineDigest(rootId, previous, decidedAt, entry, detail, label);
+    // The database's clock, not this process's: a trail signs facts it witnessed, and when some
+    // application server believed it decided something is not one of them. Truncated once, because
+    // TIMESTAMPTZ keeps microseconds and an Instant offers nanoseconds -- signing what was in hand
+    // rather than what reached the column made every line fail its own check when it was read back.
+    Instant recordedAt = head.recordedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    byte[] digest = lineDigest(rootId, previous, recordedAt, entry, detail, label);
     try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
-      statement.setTimestamp(1, Timestamp.from(decidedAt));
+      statement.setTimestamp(1, Timestamp.from(recordedAt));
       statement.setString(2, entry.operation().name());
       statement.setString(3, entry.value());
       statement.setString(4, entry.target().orElse(null));
@@ -277,29 +279,18 @@ public final class JdbcStorage implements Storage {
       throws SQLException {
     byte[] payload = encode(value.type().type(), value.value());
     byte[] label = labels.encode(value.label().encode());
-    // Signed, and the same value reaches the column. When a value was taken in is a fact somebody
-    // would want to change, so leaving it out of the digest left it free to change.
-    Instant concealedAt = clock().instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     // From the parents, which are immutable and already written, so nothing here is locked and two
     // derivations never wait on each other. A fresh value has none and starts its own graph.
     byte[] digest =
-        digestOf(
-            rootId,
-            id,
-            value.type().name(),
-            payload,
-            label,
-            concealedAt,
-            parentDigests(connection, value));
+        digestOf(rootId, id, value.type().name(), payload, label, parentDigests(connection, value));
     try (PreparedStatement statement = connection.prepareStatement(INSERT_VALUE)) {
       statement.setString(1, id);
       statement.setString(2, value.type().name());
       statement.setBytes(3, payload);
       statement.setBytes(4, label);
       statement.setString(5, value.lineage().derivation().orElse(null));
-      statement.setTimestamp(6, Timestamp.from(concealedAt));
-      statement.setBytes(7, digest);
-      statement.setString(8, rootId);
+      statement.setBytes(6, digest);
+      statement.setString(7, rootId);
       statement.executeUpdate();
     }
   }
@@ -336,13 +327,7 @@ public final class JdbcStorage implements Storage {
    * does not hold, no node can be forged at all.
    */
   private byte[] digestOf(
-      String under,
-      String id,
-      String type,
-      byte[] payload,
-      byte[] label,
-      Instant concealedAt,
-      List<byte[]> parents) {
+      String under, String id, String type, byte[] payload, byte[] label, List<byte[]> parents) {
     javax.crypto.Mac mac = keyed(under);
     for (byte[] parent : parents) {
       feed(mac, parent);
@@ -351,7 +336,6 @@ public final class JdbcStorage implements Storage {
     feed(mac, type.getBytes(UTF_8));
     feed(mac, payload);
     feed(mac, label);
-    feed(mac, concealedAt.toString().getBytes(UTF_8));
     return mac.doFinal();
   }
 
@@ -391,16 +375,35 @@ public final class JdbcStorage implements Storage {
   /** One name every appender waits on, so the trail has one order. */
   private static final long TRAIL_LOCK = 0x10C_A0D17L;
 
-  private static byte[] lockTrailHead(Connection connection) throws SQLException {
-    try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+  /**
+   * The line this one follows, and the moment this one is being written.
+   *
+   * <p>Both come back from the database, and the time is read <i>while the lock is held</i>. That
+   * is the whole point of taking it here rather than in the caller: the lock is what decides this
+   * line's position in the chain, so a clock sampled after it cannot disagree with that position.
+   * {@code now()} would not do -- it is the transaction's start time, fixed before the lock was
+   * ever asked for, so two appenders could still land in an order their timestamps deny.
+   *
+   * <p>It costs nothing. The lock had to be taken anyway, and a statement that takes it can return
+   * a column while it is at it.
+   */
+  private record Predecessor(byte[] digest, Instant recordedAt) {}
+
+  private static Predecessor lockTrailHead(Connection connection) throws SQLException {
+    Instant recordedAt;
+    try (PreparedStatement lock =
+        connection.prepareStatement("SELECT pg_advisory_xact_lock(?), clock_timestamp() AS now")) {
       lock.setLong(1, TRAIL_LOCK);
-      lock.execute();
+      try (ResultSet rows = lock.executeQuery()) {
+        rows.next();
+        recordedAt = rows.getTimestamp("now").toInstant();
+      }
     }
     try (PreparedStatement statement =
             connection.prepareStatement(
                 "SELECT digest FROM loch_audit ORDER BY entry_id DESC LIMIT 1");
         ResultSet rows = statement.executeQuery()) {
-      return rows.next() ? rows.getBytes("digest") : null;
+      return new Predecessor(rows.next() ? rows.getBytes("digest") : null, recordedAt);
     }
   }
 
@@ -413,14 +416,14 @@ public final class JdbcStorage implements Storage {
   private byte[] lineDigest(
       String under,
       byte[] previous,
-      Instant decidedAt,
+      Instant recordedAt,
       AuditRecord entry,
       byte[] detail,
       byte[] label) {
     return lineDigest(
         under,
         previous,
-        decidedAt,
+        recordedAt,
         entry.operation().name(),
         entry.value(),
         entry.target().orElse(null),
@@ -434,7 +437,7 @@ public final class JdbcStorage implements Storage {
   private byte[] lineDigest(
       String under,
       byte[] previous,
-      Instant decidedAt,
+      Instant recordedAt,
       String operation,
       String value,
       String target,
@@ -445,7 +448,7 @@ public final class JdbcStorage implements Storage {
       String who) {
     javax.crypto.Mac mac = keyed(under);
     feed(mac, previous);
-    feed(mac, decidedAt.toString().getBytes(UTF_8));
+    feed(mac, recordedAt.toString().getBytes(UTF_8));
     feed(mac, operation.getBytes(UTF_8));
     feed(mac, value.getBytes(UTF_8));
     feed(mac, target == null ? null : target.getBytes(UTF_8));
@@ -493,7 +496,7 @@ public final class JdbcStorage implements Storage {
         PreparedStatement statement =
             connection.prepareStatement(
                 """
-                SELECT entry_id, decided_at, operation, value_id, target, outcome, reason, detail, label,
+                SELECT entry_id, recorded_at, operation, value_id, target, outcome, reason, detail, label,
                        previous, digest, root_id, who
                 FROM loch_audit ORDER BY entry_id
                 """);
@@ -508,7 +511,7 @@ public final class JdbcStorage implements Storage {
             lineDigest(
                 rows.getString("root_id"),
                 previous,
-                rows.getTimestamp("decided_at").toInstant(),
+                rows.getTimestamp("recorded_at").toInstant(),
                 rows.getString("operation"),
                 rows.getString("value_id"),
                 rows.getString("target"),
@@ -540,8 +543,8 @@ public final class JdbcStorage implements Storage {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "SELECT value_id, value_type, payload, label, digest, root_id, concealed_at"
-                    + " FROM loch_value ORDER BY concealed_at, value_id");
+                "SELECT value_id, value_type, payload, label, digest, root_id"
+                    + " FROM loch_value ORDER BY value_id");
         ResultSet rows = statement.executeQuery()) {
       java.util.Map<String, byte[]> seen = new java.util.LinkedHashMap<>();
       java.util.List<String[]> pending = new java.util.ArrayList<>();
@@ -550,7 +553,6 @@ public final class JdbcStorage implements Storage {
       java.util.Map<String, byte[]> labelsById = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> types = new java.util.LinkedHashMap<>();
       java.util.Map<String, String> rootIds = new java.util.LinkedHashMap<>();
-      java.util.Map<String, Instant> concealedAt = new java.util.LinkedHashMap<>();
       while (rows.next()) {
         String id = rows.getString("value_id");
         pending.add(new String[] {id});
@@ -559,7 +561,6 @@ public final class JdbcStorage implements Storage {
         labelsById.put(id, rows.getBytes("label"));
         types.put(id, rows.getString("value_type"));
         rootIds.put(id, rows.getString("root_id"));
-        concealedAt.put(id, rows.getTimestamp("concealed_at").toInstant());
       }
       for (String[] row : pending) {
         String id = row[0];
@@ -581,7 +582,6 @@ public final class JdbcStorage implements Storage {
                     types.get(id),
                     payloads.get(id),
                     labelsById.get(id),
-                    concealedAt.get(id),
                     parents)
                 : null;
         if (computed == null || !java.util.Arrays.equals(computed, stored.get(id))) {

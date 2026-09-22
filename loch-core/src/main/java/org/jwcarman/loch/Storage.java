@@ -88,16 +88,6 @@ public interface Storage {
   }
 
   /**
-   * What the time is, for the lines this writes down.
-   *
-   * <p>A seam rather than a call to {@code Instant.now()}, because a trail is a sequence of claims
-   * about when things happened and a test that cannot pin the time cannot assert any of them.
-   */
-  default java.time.Clock clock() {
-    return java.time.Clock.systemUTC();
-  }
-
-  /**
    * A fresh identifier for a value nobody has seen yet.
    *
    * <p>Time-ordered, because this is the primary key of the table values are kept in: a random

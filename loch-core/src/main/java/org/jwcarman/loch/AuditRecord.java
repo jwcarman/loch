@@ -15,7 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -45,7 +44,6 @@ import java.util.Optional;
  * @param context whatever the application contributed about who was asking
  */
 public record AuditRecord(
-    Instant decidedAt,
     Operation operation,
     String value,
     Optional<String> target,
@@ -75,7 +73,6 @@ public record AuditRecord(
   }
 
   public AuditRecord {
-    Objects.requireNonNull(decidedAt, "an audit record needs a time");
     Objects.requireNonNull(operation, "an audit record needs an operation");
     context = Map.copyOf(context);
   }
@@ -88,9 +85,8 @@ public record AuditRecord(
    */
   @Override
   public String toString() {
-    return "%s %s %s%s %s%s%s%s"
+    return "%s %s%s %s%s%s%s"
         .formatted(
-            decidedAt,
             operation,
             value,
             target.map(" -> "::concat).orElse(""),
