@@ -28,6 +28,14 @@ package org.jwcarman.loch.lattice;
  *
  * @param <T> what the axis this constrains is written in
  */
+// S2326 says T is unused, and at runtime it is: Any carries no T, and erasure removes the parameter
+// everywhere. T is here so a constraint and the axis it constrains have to agree while the code is
+// being written -- a constraint on a tenant axis cannot be attached to an axis written in anything
+// else, and Constraint.<Tenant>any() is still a tenant constraint although it holds no tenant.
+// Erasing T would make every constraint assignable to every axis and move that mismatch to a
+// ClassCastException inside a ceiling check at request time, which is the one place a policy
+// decision must not fail.
+@SuppressWarnings("java:S2326")
 public sealed interface Constraint<T> {
 
   /** At or below one value: the ordinary case, and what every ceiling used to be. */

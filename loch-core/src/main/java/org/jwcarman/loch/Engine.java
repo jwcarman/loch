@@ -499,12 +499,66 @@ final class Engine {
       AtomicReference<Label> refused,
       AtomicReference<String> because) {
     String id = spec.name();
+    Derived.Refused<O> unusable = unusable(spec, parents, context);
+    if (unusable != null) {
+      return unusable;
+    }
+    // Once, not once per parent: a ceiling that reads ambient context is doing real work. Before
+    // any parent is looked at, and deliberately before the type check: a caller who may not reach
+    // a value must not learn what kind of value it is.
+    Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
+    if (ceiling == null) {
+      return new Derived.Refused<>(
+          Derived.Reason.ABOVE_CEILING, "'" + id + COULD_NOT_SAY_WHAT_IT_ACCEPTS);
+    }
+
+    List<String> parentIds = new ArrayList<>();
+    for (Surrogate<?> parent : parents) {
+      parentIds.add(parent.id());
+    }
+    Vetted<O> vetted = vetting(spec, parents, parentIds, ceiling, refused, because);
+    if (vetted.refusal() != null) {
+      return vetted.refusal();
+    }
+
+    // Only now, and only for parents every check above let through.
+    Read<O> read = reading(parents, vetted.wanted());
+    if (read.refusal() != null) {
+      return read.refusal();
+    }
+
+    Optional<O> produced = producing(spec, read.inputs(), context);
+    if (produced == null) {
+      // It has already seen the plaintext, so this refusal has to be recorded like any other.
+      return new Derived.Refused<>(
+          Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
+    }
+    if (produced.isEmpty()) {
+      return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
+    }
+
+    Relabelled<O> relabelled = relabelling(spec, vetted.joined(), because);
+    if (relabelled.refusal() != null) {
+      return relabelled.refusal();
+    }
+    return writing(spec, produced.get(), relabelled.label(), vetted.joined(), parentIds, context);
+  }
+
+  /**
+   * The refusals that need neither a ceiling nor a parent: nothing to read, and not offered here.
+   *
+   * <p>{@code null} means nothing here refused it. The arity mismatch in the middle is not a
+   * refusal at all -- a fixed-arity capability cannot be called with the wrong number of handles,
+   * so reaching it means the spec and the capability that declared it disagree. That is a bug here,
+   * not there.
+   */
+  private <O> Derived.Refused<O> unusable(
+      DerivationSpec<O> spec, List<Surrogate<?>> parents, AccessContext context) {
+    String id = spec.name();
     if (parents.isEmpty()) {
       return new Derived.Refused<>(
           Derived.Reason.NO_PARENTS, "'" + id + "' needs at least one value");
     }
-    // A fixed-arity capability cannot be called with the wrong number of handles, so reaching this
-    // means the spec and the capability that declared it disagree. That is a bug here, not there.
     if (!spec.fold() && parents.size() != spec.inputTypes().size()) {
       throw new IllegalStateException(
           "'%s' reads %d values and was given %d"
@@ -514,37 +568,55 @@ final class Engine {
       return new Derived.Refused<>(
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
-    // Once, not once per parent: a ceiling that reads ambient context is doing real work.
-    Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
-    if (ceiling == null) {
-      return new Derived.Refused<>(
-          Derived.Reason.ABOVE_CEILING, "'" + id + COULD_NOT_SAY_WHAT_IT_ACCEPTS);
-    }
+    return null;
+  }
 
-    // Labels first, for every parent at once, and no plaintext anywhere near this. A fold over ten
-    // parents used to be ten round trips here and ten more below; it is one and one.
-    List<String> parentIds = new ArrayList<>();
-    for (Surrogate<?> parent : parents) {
-      parentIds.add(parent.id());
-    }
-    java.util.Map<String, StoredMetadata> labels = storage.metadata(parentIds);
+  /**
+   * What checking the parents produced: what may now be decoded, and the label the result carries
+   * -- or the refusal that stopped it, in which case neither of the others was reached.
+   */
+  private record Vetted<O>(
+      Map<String, TypeRef<?>> wanted, Label joined, Derived.Refused<O> refusal) {
 
-    java.util.Map<String, TypeRef<?>> wanted = new java.util.LinkedHashMap<>();
+    static <O> Vetted<O> refusing(Derived.Reason reason, String detail) {
+      return new Vetted<>(null, null, new Derived.Refused<>(reason, detail));
+    }
+  }
+
+  /**
+   * Every parent's label and type, against the position it was handed in at.
+   *
+   * <p>Labels first, for every parent at once, and no plaintext anywhere near this. A fold over ten
+   * parents used to be ten round trips here and ten more below; it is one and one.
+   *
+   * <p>The ceiling is checked before the type, for the same reason it is checked before anything: a
+   * caller who may not reach a value learns nothing about it beyond that.
+   */
+  private <O> Vetted<O> vetting(
+      DerivationSpec<O> spec,
+      List<Surrogate<?>> parents,
+      List<String> parentIds,
+      Ceiling ceiling,
+      AtomicReference<Label> refused,
+      AtomicReference<String> because) {
+    String id = spec.name();
+    Map<String, StoredMetadata> labels = storage.metadata(parentIds);
+    Map<String, TypeRef<?>> wanted = new LinkedHashMap<>();
     Label joined = null;
     for (int position = 0; position < parents.size(); position++) {
       Surrogate<?> parent = parents.get(position);
       SurrogateType<?> expected = spec.typeAt(position);
       StoredMetadata entry = labels.get(parent.id());
       if (entry == null) {
-        return new Derived.Refused<>(Derived.Reason.NO_SUCH_VALUE, NOT_HOLDING + parent.id());
+        return Vetted.refusing(Derived.Reason.NO_SUCH_VALUE, NOT_HOLDING + parent.id());
       }
       if (!admits(ceiling, entry.label())) {
         because.set(because(entry.label(), ceiling));
-        return new Derived.Refused<>(
+        return Vetted.refusing(
             Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
       }
       if (!entry.typeName().equals(expected.name())) {
-        return new Derived.Refused<>(
+        return Vetted.refusing(
             Derived.Reason.WRONG_TYPE,
             "'%s' reads a %s in position %d, but %s is a %s"
                 .formatted(id, expected.name(), position + 1, parent.id(), entry.typeName()));
@@ -554,71 +626,109 @@ final class Engine {
       joined = joined == null ? entry.label() : joined.join(entry.label());
       refused.set(joined);
     }
+    return new Vetted<>(wanted, joined, null);
+  }
 
-    // Only now, and only for parents every check above let through.
-    java.util.Map<String, Object> read = storage.values(wanted);
+  /** The plaintext, in the order the parents were handed in -- or the refusal instead of it. */
+  private record Read<O>(List<Object> inputs, Derived.Refused<O> refusal) {}
+
+  /** Decodes only what every check above let through, and refuses a parent erased meanwhile. */
+  private <O> Read<O> reading(List<Surrogate<?>> parents, Map<String, TypeRef<?>> wanted) {
+    Map<String, Object> read = storage.values(wanted);
     List<Object> inputs = new ArrayList<>();
     for (Surrogate<?> parent : parents) {
       Object input = read.get(parent.id());
       if (input == null) {
-        return new Derived.Refused<>(Derived.Reason.NO_SUCH_VALUE, NOT_HOLDING + parent.id());
+        return new Read<>(
+            null, new Derived.Refused<>(Derived.Reason.NO_SUCH_VALUE, NOT_HOLDING + parent.id()));
       }
       inputs.add(input);
     }
+    return new Read<>(inputs, null);
+  }
 
-    Optional<O> produced;
+  /**
+   * Runs the application's function over the plaintext.
+   *
+   * <p>{@code null} means it threw; an empty {@link Optional} means it declined. Both are recorded
+   * refusals rather than exceptions, because by this point it has been handed the plaintext.
+   *
+   * <p>A function that answers null has broken its own contract, and that is normalised where it
+   * arrives rather than checked later: it is the same event as one that threw, and neither may end
+   * as a NullPointerException thrown out of the library, past the audit, after the value was read.
+   */
+  private <O> Optional<O> producing(
+      DerivationSpec<O> spec, List<Object> inputs, AccessContext context) {
     try {
-      // Normalised where it arrives, not checked later. A function that answers null has broken
-      // its own contract, but it has already been handed the plaintext -- so this is the same
-      // event as one that threw, and both end as a recorded refusal rather than a
-      // NullPointerException thrown out of the library, past the audit, after the value was read.
-      produced =
-          Objects.requireNonNullElse(
-              spec.function().apply(List.copyOf(inputs), context), Optional.empty());
+      return Objects.requireNonNullElse(
+          spec.function().apply(List.copyOf(inputs), context), Optional.empty());
     } catch (RuntimeException _) {
-      // It has already seen the plaintext, so this refusal has to be recorded like any other.
-      return new Derived.Refused<>(
-          Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
+      return null;
     }
-    if (produced.isEmpty()) {
-      return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
-    }
+  }
 
-    Label label = joined;
-    if (spec.relabel() != null) {
-      try {
-        label = spec.relabel().apply(joined);
-      } catch (RuntimeException _) {
-        return new Derived.Refused<>(
-            Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
-      }
-      // Answering with nothing is not answering. The plaintext has already been read, so this
-      // has to be a recorded refusal rather than a NullPointerException thrown past the audit.
-      if (label == null) {
-        return new Derived.Refused<>(
-            Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
-      }
-      if (!label.atOrBelow(joined)) {
-        because.set(because(label, joined));
-        return new Derived.Refused<>(
-            Derived.Reason.NOT_A_LOWERING,
-            "'%s' relabelled a value as something not below it".formatted(id));
-      }
-      // atOrBelow cannot see this one. An axis a label stops mentioning joins as bottom, so a
-      // label that drops one is at or below everything -- including the label it came from. The
-      // check that runs at the door has to run here too, because this is the other way a value
-      // can come to exist with a required axis missing.
-      if (leavesARequiredAxisUnsaid(label)) {
-        because.set(because(label, joined));
-        return new Derived.Refused<>(
-            Derived.Reason.NOT_A_LOWERING,
-            ("'%s' relabelled a value so that a required axis is unsaid. Unsaid is the bottom of"
-                    + " its order, which is below every ceiling, so the result would have been"
-                    + " readable by everyone.")
-                .formatted(id));
-      }
-    }
+  /**
+   * The label the result will carry, or the refusal that says the relabelling was not a lowering.
+   */
+  private record Relabelled<O>(Label label, Derived.Refused<O> refusal) {
 
+    static <O> Relabelled<O> refusing(String detail) {
+      return new Relabelled<>(null, new Derived.Refused<>(Derived.Reason.NOT_A_LOWERING, detail));
+    }
+  }
+
+  /**
+   * What a privileged derivation asked for, checked against what it was allowed to ask for.
+   *
+   * <p>An ordinary derivation carries the join and comes straight back out. A privileged one has to
+   * name a label at or below it, and has to leave no required axis unsaid.
+   */
+  private <O> Relabelled<O> relabelling(
+      DerivationSpec<O> spec, Label joined, AtomicReference<String> because) {
+    String id = spec.name();
+    if (spec.relabel() == null) {
+      return new Relabelled<>(joined, null);
+    }
+    Label label;
+    try {
+      label = spec.relabel().apply(joined);
+    } catch (RuntimeException _) {
+      label = null;
+    }
+    // Answering with nothing is not answering, and is the same event as throwing. The plaintext has
+    // already been read, so this has to be a recorded refusal rather than a NullPointerException
+    // thrown past the audit.
+    if (label == null) {
+      return Relabelled.refusing("'" + id + "' could not say what it was lowering to");
+    }
+    if (!label.atOrBelow(joined)) {
+      because.set(because(label, joined));
+      return Relabelled.refusing("'%s' relabelled a value as something not below it".formatted(id));
+    }
+    // atOrBelow cannot see this one. An axis a label stops mentioning joins as bottom, so a label
+    // that drops one is at or below everything -- including the label it came from. The check that
+    // runs at the door has to run here too, because this is the other way a value can come to exist
+    // with a required axis missing.
+    if (leavesARequiredAxisUnsaid(label)) {
+      because.set(because(label, joined));
+      return Relabelled.refusing(
+          ("'%s' relabelled a value so that a required axis is unsaid. Unsaid is the bottom of its"
+                  + " order, which is below every ceiling, so the result would have been readable"
+                  + " by everyone.")
+              .formatted(id));
+    }
+    return new Relabelled<>(label, null);
+  }
+
+  /** The child and the line saying it was made, written as one act. */
+  private <O> Derived<O> writing(
+      DerivationSpec<O> spec,
+      O value,
+      Label label,
+      Label joined,
+      List<String> parentIds,
+      AccessContext context) {
+    String id = spec.name();
     String newId = storage.freshId();
     AuditRecord entry =
         entry(
@@ -632,8 +742,7 @@ final class Engine {
     try {
       storage.put(
           newId,
-          new StoredValue(
-              produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
+          new StoredValue(value, spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
           entry);
     } catch (RuntimeException _) {
       // A parent can be erased while the derivation function is running: every check passed, the

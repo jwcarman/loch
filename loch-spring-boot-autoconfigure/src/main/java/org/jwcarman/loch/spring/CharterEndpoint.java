@@ -96,6 +96,11 @@ public class CharterEndpoint {
   }
 
   /** One section of it. */
+  // S1168 wants an empty map here. Null is Actuator's documented contract for a @ReadOperation:
+  // org.springframework.boot.actuate.endpoint.web.servlet.AbstractWebMvcEndpointHandlerMapping
+  // maps a null return to HTTP 404. An empty map would answer a misspelled section with 200 and
+  // an empty body, which says the section exists and has nothing in it -- a worse answer.
+  @SuppressWarnings("java:S1168")
   @ReadOperation
   public Map<String, Object> section(@Selector String section) {
     Manifest manifest = charter.manifest();
@@ -126,6 +131,11 @@ public class CharterEndpoint {
    * <p>A type nobody declared answers with empty lists rather than 404. That it is mentioned
    * nowhere is the answer, and a different fact from there being no such section.
    */
+  // S1168 wants an empty map here. Null is Actuator's documented contract for a @ReadOperation:
+  // a null return becomes HTTP 404. Both nulls below are that answer -- no such section, and no
+  // such declaration in a section that does exist. An empty map would turn a typo'd URL into a
+  // 200 with an empty body, which asserts the thing exists and is empty.
+  @SuppressWarnings("java:S1168")
   @ReadOperation
   public Map<String, Object> named(@Selector String section, @Selector String name) {
     Manifest manifest = charter.manifest();
