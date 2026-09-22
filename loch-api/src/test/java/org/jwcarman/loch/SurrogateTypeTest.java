@@ -118,6 +118,6 @@ class SurrogateTypeTest {
   @Test
   @DisplayName("prints as its name and nothing else")
   void prints_as_its_name() {
-    assertThat(SurrogateType.of("note", String.class).toString()).isEqualTo("note");
+    assertThat(SurrogateType.of("note", String.class)).hasToString("note");
   }
 }

@@ -43,8 +43,9 @@ class DuplicateRegistrationTest {
     DefaultCharter charter = new DefaultCharter(TENANT);
     charter.destination("outbox", ctx -> Ceiling.nothing(), STRING_TYPE);
     charter.destination(Destinations.fixed("outbox", Ceiling.of(TENANT, Constraint.any())));
+    MemoryStorage storage = new MemoryStorage();
 
-    assertThatThrownBy(() -> charter.seal(new MemoryStorage()))
+    assertThatThrownBy(() -> charter.seal(storage))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("outbox");
   }
@@ -65,8 +66,9 @@ class DuplicateRegistrationTest {
         STRING_TYPE,
         String::toLowerCase,
         d -> d.accepting(Ceiling.of(TENANT, Constraint.any())));
+    MemoryStorage storage = new MemoryStorage();
 
-    assertThatThrownBy(() -> charter.seal(new MemoryStorage()))
+    assertThatThrownBy(() -> charter.seal(storage))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("upper");
   }

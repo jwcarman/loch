@@ -48,8 +48,9 @@ class DefaultCharterInternalsTest {
     void refuses_to_be_sealed_twice() {
       DefaultCharter charter = new DefaultCharter(TENANT);
       charter.seal(new MemoryStorage());
+      MemoryStorage secondStorage = new MemoryStorage();
 
-      assertThatThrownBy(() -> charter.seal(new MemoryStorage()))
+      assertThatThrownBy(() -> charter.seal(secondStorage))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("already sealed");
     }
@@ -74,7 +75,7 @@ class DefaultCharterInternalsTest {
             try {
               charter.seal(new MemoryStorage());
               successes.incrementAndGet();
-            } catch (IllegalStateException e) {
+            } catch (IllegalStateException _) {
               failures.incrementAndGet();
             }
           };
@@ -99,7 +100,7 @@ class DefaultCharterInternalsTest {
           try {
             latch.await();
             return;
-          } catch (InterruptedException e) {
+          } catch (InterruptedException _) {
             interrupted = true;
           }
         }
@@ -120,8 +121,9 @@ class DefaultCharterInternalsTest {
     void refuses_two_sources_with_the_same_name() {
       DefaultCharter charter = new DefaultCharter(TENANT);
       charter.source("mail", STRING_TYPE, Label.of(TENANT, "acme"));
+      Label duplicateLabel = Label.of(TENANT, "acme");
 
-      assertThatThrownBy(() -> charter.source("mail", STRING_TYPE, Label.of(TENANT, "acme")))
+      assertThatThrownBy(() -> charter.source("mail", STRING_TYPE, duplicateLabel))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("mail");
     }
@@ -194,14 +196,6 @@ class DefaultCharterInternalsTest {
     private final Conceal<String> source =
         charter.source("mail", STRING_TYPE, Label.of(TENANT, "acme"));
 
-    private final Derivation<String, String> upper =
-        charter.derivation(
-            "upper",
-            STRING_TYPE,
-            STRING_TYPE,
-            String::toUpperCase,
-            d -> d.accepting(Ceiling.of(TENANT, Constraint.any())));
-
     private final Query<String, String> mentions =
         charter.query(
             "mentions",
@@ -211,6 +205,12 @@ class DefaultCharterInternalsTest {
             d -> d.accepting(Ceiling.of(TENANT, Constraint.any())));
 
     {
+      charter.derivation(
+          "upper",
+          STRING_TYPE,
+          STRING_TYPE,
+          String::toUpperCase,
+          d -> d.accepting(Ceiling.of(TENANT, Constraint.any())));
       charter.seal(new MemoryStorage());
     }
 
@@ -241,7 +241,7 @@ class DefaultCharterInternalsTest {
     @Test
     @DisplayName("the questions it was declared with")
     void the_questions_it_was_declared_with() {
-      assertThat(charter.queries()).extracting(spec -> spec.name()).containsExactly("mentions");
+      assertThat(charter.queries()).extracting(QuerySpec::name).containsExactly("mentions");
     }
 
     @Test

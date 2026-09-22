@@ -38,7 +38,7 @@ class CompressionTest {
     byte[] encoded = codec.encode(original);
 
     assertThat(codec.decode(encoded)).isEqualTo(original);
-    assertThat(encoded.length).isLessThan(original.length);
+    assertThat(encoded).hasSizeLessThan(original.length);
   }
 
   @Test
@@ -51,7 +51,7 @@ class CompressionTest {
     assertThat(codec.decode(encoded)).isEqualTo(original);
     // One marker byte and nothing else: gzip's own framing would have cost more than four
     // bytes ever save, so the marker says "stored" and the body is exactly what came in.
-    assertThat(encoded.length).isEqualTo(original.length + 1);
+    assertThat(encoded).hasSize(original.length + 1);
   }
 
   @Test
