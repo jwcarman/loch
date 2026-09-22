@@ -57,7 +57,6 @@
 
   <modules>
     <module>loch-bom</module>
-    <module>loch-coverage</module>
     <module>loch-api</module>
     <module>loch-core</module>
     <module>loch-jdbc</module>
@@ -100,9 +99,11 @@
     <sonar.exclusions>loch-example/**</sonar.exclusions>
     <sonar.coverage.exclusions>loch-example/**</sonar.coverage.exclusions>
 
-    <!-- One report over every module: a line is covered by whichever module's tests ran it, and
-         most of loch-core is exercised from loch-jdbc's tests against a real database. -->
-    <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/loch-coverage/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+    <!-- Each module's own report, and no aggregator. A module's number is then about the tests
+         that module has, which is the thing worth holding it to. The cost is that coverage does
+         not cross a module boundary: code exercised only from another module's tests reads as
+         uncovered, and the answer to that is a test where the code lives. -->
+    <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/*/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
   </properties>
 
   <dependencyManagement>
