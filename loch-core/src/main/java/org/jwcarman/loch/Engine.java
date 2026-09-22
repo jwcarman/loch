@@ -527,13 +527,11 @@ final class Engine {
       return read.refusal();
     }
 
-    Optional<O> produced = producing(spec, read.inputs(), context);
-    if (produced == null) {
-      // It has already seen the plaintext, so this refusal has to be recorded like any other.
-      return new Derived.Refused<>(
-          Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
+    Produced<O> produced = producing(spec, read.inputs(), context);
+    if (produced.refusal() != null) {
+      return produced.refusal();
     }
-    if (produced.isEmpty()) {
+    if (produced.value().isEmpty()) {
       return new Derived.Refused<>(Derived.Reason.DECLINED, "'" + id + "' declined");
     }
 
@@ -541,7 +539,8 @@ final class Engine {
     if (relabelled.refusal() != null) {
       return relabelled.refusal();
     }
-    return writing(spec, produced.get(), relabelled.label(), vetted.joined(), parentIds, context);
+    return writing(
+        spec, produced.value().get(), relabelled.label(), vetted.joined(), parentIds, context);
   }
 
   /**
@@ -650,22 +649,40 @@ final class Engine {
   /**
    * Runs the application's function over the plaintext.
    *
-   * <p>{@code null} means it threw; an empty {@link Optional} means it declined. Both are recorded
-   * refusals rather than exceptions, because by this point it has been handed the plaintext.
+   * <p>Three things it can do, two answers. Returning a value is the ordinary one. Returning an
+   * empty {@link Optional} is declining, which is its right. Returning {@code null} has broken its
+   * own contract, and is normalised here to declining rather than checked later. Throwing is the
+   * remaining one, and becomes a refusal that says so.
    *
-   * <p>A function that answers null has broken its own contract, and that is normalised where it
-   * arrives rather than checked later: it is the same event as one that threw, and neither may end
-   * as a NullPointerException thrown out of the library, past the audit, after the value was read.
+   * <p>None of them may end as a NullPointerException thrown out of the library, past the audit,
+   * after the value was read. By this point the function has been handed the plaintext, so every
+   * way it can end has to be something the trail can record.
    */
-  private <O> Optional<O> producing(
+  private <O> Produced<O> producing(
       DerivationSpec<O> spec, List<Object> inputs, AccessContext context) {
     try {
-      return Objects.requireNonNullElse(
-          spec.function().apply(List.copyOf(inputs), context), Optional.empty());
+      return new Produced<>(
+          Objects.requireNonNullElse(
+              spec.function().apply(List.copyOf(inputs), context), Optional.empty()),
+          null);
     } catch (RuntimeException _) {
-      return null;
+      // It has already seen the plaintext, so this refusal has to be recorded like any other.
+      return new Produced<>(
+          Optional.empty(),
+          new Derived.Refused<>(
+              Derived.Reason.DECLINED, "'" + spec.name() + "' failed while reading the value"));
     }
   }
+
+  /**
+   * What the derivation produced, or the refusal that says it failed while holding the plaintext.
+   *
+   * <p>Two different answers, so two different fields. An empty {@code value} means the function
+   * declined, which is its right; a non-null {@code refusal} means it threw. Carrying both in one
+   * nullable Optional would make "declined" and "broke" the same answer to anyone who forgot the
+   * null check, and this is the one place in the library holding a decoded value.
+   */
+  private record Produced<O>(Optional<O> value, Derived.Refused<O> refusal) {}
 
   /**
    * The label the result will carry, or the refusal that says the relabelling was not a lowering.
