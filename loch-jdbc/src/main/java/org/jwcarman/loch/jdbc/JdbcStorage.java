@@ -436,6 +436,28 @@ public final class JdbcStorage implements Storage {
   }
 
   /**
+   * The digest of the last line written, for publishing somewhere this database cannot reach.
+   *
+   * <p>The one thing verification cannot do on its own is notice lines cut from the end: what
+   * remains is a valid trail that simply stopped earlier, and no structure over data an attacker
+   * controls can say otherwise. An anchor is the answer -- write this down elsewhere, periodically,
+   * and compare. It is one digest, so a log line or a printout will do.
+   *
+   * @return the head, or empty when nothing has been recorded yet
+   */
+  public byte[] head() {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT digest FROM loch_audit ORDER BY entry_id DESC LIMIT 1");
+        ResultSet rows = statement.executeQuery()) {
+      return rows.next() ? rows.getBytes("digest") : new byte[0];
+    } catch (SQLException e) {
+      throw new IllegalStateException("could not read the head of the trail", e);
+    }
+  }
+
+  /**
    * Where the trail stops agreeing with itself.
    *
    * <p>A line that was edited fails its own digest. A line that was removed leaves the next one

@@ -87,6 +87,23 @@ public interface Storage {
     return found;
   }
 
+  /**
+   * A fresh identifier for a value nobody has seen yet.
+   *
+   * <p>Time-ordered, because this is the primary key of the table values are kept in: a random
+   * identifier scatters every insert across the index, while a v7 appends near the last one.
+   *
+   * <p><b>It discloses when the value was created</b>, to the millisecond, and a surrogate is the
+   * one thing here designed to travel -- into a log, into another service, to a model. That is a
+   * real disclosure, and the reason this is a method rather than a constant: an application that
+   * would rather leak nothing overrides it and pays for the scattered index instead.
+   *
+   * <p>74 bits of randomness either way, which is what keeps one unguessable.
+   */
+  default String freshId() {
+    return "sur_" + com.fasterxml.uuid.Generators.timeBasedEpochGenerator().generate();
+  }
+
   boolean contains(String id);
 
   /**

@@ -46,5 +46,12 @@
       <groupId>org.jwcarman.codec</groupId>
       <artifactId>codec-core</artifactId>
     </dependency>
+
+    <!-- Time-ordered identifiers. A value table keyed by a random v4 fragments every insert
+         across the index; v7 appends. -->
+    <dependency>
+      <groupId>com.fasterxml.uuid</groupId>
+      <artifactId>java-uuid-generator</artifactId>
+    </dependency>
   </dependencies>
 </project>

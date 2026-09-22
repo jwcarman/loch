@@ -505,6 +505,40 @@ class JdbcCharterTest {
         .storage(axes);
   }
 
+  /**
+   * What this cannot catch, stated as a test so nobody has to discover it.
+   *
+   * <p>Cutting lines off the end leaves a chain that verifies, because what remains is exactly the
+   * trail as it stood earlier. Nothing inside the database knows the removed lines ever existed --
+   * and that is not a gap in the implementation, it is what truncation is. No structure over data
+   * an attacker controls can tell you about entries they deleted.
+   *
+   * <p>Closing it takes something outside: the head digest published where whoever can write to
+   * this database cannot reach, and compared afterwards. {@link JdbcStorage#head()} is that digest.
+   */
+  @Test
+  @DisplayName("cannot notice lines cut from the end, which is what an anchor is for")
+  void cannot_notice_a_truncation() throws SQLException {
+    card();
+    edge.set(AccessContext.of("tenant", "acme"));
+    vendorLlm.reveal(card());
+    byte[] anchored = storage.head();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      assertThat(
+              statement.executeUpdate(
+                  "DELETE FROM loch_audit WHERE entry_id ="
+                      + " (SELECT MAX(entry_id) FROM loch_audit)"))
+          .isPositive();
+    }
+
+    // The chain still agrees with itself, which is exactly the problem.
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+    // And the head somebody wrote down elsewhere is what gives it away.
+    assertThat(storage.head()).isNotEqualTo(anchored);
+  }
+
   @Test
   @DisplayName("a fresh store over the same database reads what the last one wrote")
   void survives_a_restart() {

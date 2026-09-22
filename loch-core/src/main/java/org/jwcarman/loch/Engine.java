@@ -95,7 +95,7 @@ final class Engine {
     if (label == null) {
       audit(
           AuditRecord.Operation.HOLD,
-          freshId(),
+          storage.freshId(),
           source,
           AuditRecord.Outcome.REFUSED,
           Why.of("the source could not say how to label this"),
@@ -109,7 +109,7 @@ final class Engine {
     if (leavesARequiredAxisUnsaid(label)) {
       audit(
           AuditRecord.Operation.HOLD,
-          freshId(),
+          storage.freshId(),
           source,
           AuditRecord.Outcome.REFUSED,
           Why.of("the label leaves a required axis unsaid"),
@@ -122,7 +122,7 @@ final class Engine {
                   + " by everyone.")
               .formatted(source));
     }
-    String id = freshId();
+    String id = storage.freshId();
     // One act: the value and the record that it arrived. The source is named, so the record says
     // which door it came in through.
     AuditRecord entry =
@@ -297,18 +297,6 @@ final class Engine {
         .orElseThrow(() -> new IllegalArgumentException("this store is not holding " + id));
   }
 
-  /**
-   * A fresh identifier for a value nobody has seen yet.
-   *
-   * <p>Random rather than sequential, and that is load-bearing rather than incidental. Two values
-   * at the same label are indistinguishable to a ceiling, so within a label the thing that
-   * separates your record from somebody else's is that they cannot name it. 122 random bits is what
-   * makes that true, and it is also why a surrogate in a log file matters.
-   */
-  private static String freshId() {
-    return "sur_" + java.util.UUID.randomUUID();
-  }
-
   public boolean holds(String id) {
     return storage.contains(id);
   }
@@ -443,7 +431,7 @@ final class Engine {
     if (result instanceof Derived.Refused<O> refused) {
       audit(
           AuditRecord.Operation.DERIVE,
-          parents.isEmpty() ? freshId() : parents.getFirst().id(),
+          parents.isEmpty() ? storage.freshId() : parents.getFirst().id(),
           spec.name(),
           AuditRecord.Outcome.REFUSED,
           Why.of(refused.reason().name(), because.get()),
@@ -559,7 +547,7 @@ final class Engine {
       }
     }
 
-    String newId = freshId();
+    String newId = storage.freshId();
     AuditRecord entry =
         entry(
             AuditRecord.Operation.DERIVE,
