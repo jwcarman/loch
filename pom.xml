@@ -57,6 +57,7 @@
 
   <modules>
     <module>loch-bom</module>
+    <module>loch-coverage</module>
     <module>loch-api</module>
     <module>loch-core</module>
     <module>loch-jdbc</module>
@@ -82,6 +83,26 @@
     <spotless.version>3.10.2</spotless.version>
     <license.plugin.version>5.1.2</license.plugin.version>
     <license.owner>James Carman</license.owner>
+
+    <jacoco.version>0.8.15</jacoco.version>
+    <sonar.plugin.version>5.7.0.6970</sonar.plugin.version>
+
+    <!-- Set by the jacoco prepare-agent execution in the ci profile, and empty otherwise so that
+         surefire's argLine resolves to nothing rather than to a literal when jacoco is not on. -->
+    <jacocoArgLine></jacocoArgLine>
+
+    <sonar.organization>jwcarman</sonar.organization>
+    <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+    <sonar.projectKey>jwcarman_loch</sonar.projectKey>
+
+    <!-- The example is a demonstration of the library rather than part of it. Analysing it reports
+         on how a sample application is written, which is nobody's quality gate. -->
+    <sonar.exclusions>loch-example/**</sonar.exclusions>
+    <sonar.coverage.exclusions>loch-example/**</sonar.coverage.exclusions>
+
+    <!-- One report over every module: a line is covered by whichever module's tests ran it, and
+         most of loch-core is exercised from loch-jdbc's tests against a real database. -->
+    <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/loch-coverage/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
   </properties>
 
   <dependencyManagement>
@@ -171,6 +192,9 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>@{jacocoArgLine}</argLine>
+        </configuration>
       </plugin>
 
       <plugin>
@@ -244,4 +268,44 @@ limitations under the License.]]></inlineHeader>
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- Coverage is measured in CI, where the report is consumed. Locally it is a slower build
+         for a number nobody reads. -->
+    <profile>
+      <id>ci</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>${jacoco.version}</version>
+            <configuration>
+              <propertyName>jacocoArgLine</propertyName>
+            </configuration>
+            <executions>
+              <execution>
+                <id>prepare-agent</id>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>report</id>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+                <configuration>
+                  <formats>
+                    <format>XML</format>
+                  </formats>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
 </project>

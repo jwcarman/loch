@@ -53,5 +53,16 @@ jobs:
     # The JDBC tests run a real Postgres through Testcontainers, because the storage uses
     # advisory locks, recursive CTEs and FOR SHARE -- none of which an in-memory stand-in has.
     # Docker is already on ubuntu-latest, so there is nothing to install.
+    #
+    # One build, analysed in place. Dependabot-triggered workflows cannot see repository secrets,
+    # so the SonarCloud goal only runs when a token is present -- and the build still has to pass
+    # without it, which is what a fork sees.
     - name: Build with Maven
-      run: mvn -B verify
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        if [ -n "$SONAR_TOKEN" ]; then
+          mvn -Pci -B verify sonar:sonar -Dsonar.qualitygate.wait=true
+        else
+          mvn -Pci -B verify
+        fi
