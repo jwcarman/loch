@@ -90,10 +90,6 @@ class JdbcCharterTest {
   private static final Axis<DataClass> DATA =
       Axis.ladder("dataClass", DataClass.NONE, DataClass.PII, DataClass.CARDHOLDER);
 
-  private static Label label(String tenant, Integrity integrity, DataClass dataClass) {
-    return Label.of(TENANT, tenant).with(INTEGRITY, integrity).with(DATA, dataClass);
-  }
-
   record Card(String number, String holder) {}
 
   private static final SurrogateType<Card> CARD = SurrogateType.of(Card.class);
@@ -109,7 +105,6 @@ class JdbcCharterTest {
   private Conceal<Card> cards;
   private Reveal<Card> vendorLlm;
   private Reveal<Card> paymentProcessor;
-  private Reveal<Last4> last4Processor;
   private Conceal<List<Card>> cardLists;
   private Reveal<List<Card>> cardListProcessor;
   private Reveal<List<Card>> cardListVendor;
@@ -203,7 +198,7 @@ class JdbcCharterTest {
             LAST4,
             cardList);
     paymentProcessor = processor.reading(CARD);
-    last4Processor = processor.reading(LAST4);
+    processor.reading(LAST4);
 
     // A generic container is its own type, so it needs its own source and its own sinks.
     cardLists =
@@ -431,9 +426,9 @@ class JdbcCharterTest {
               java.util.Optional.empty(),
               java.util.Map.of());
         };
+    String cardId = card.id();
 
-    assertThatThrownBy(() -> storage.erase(card.id(), failing))
-        .isInstanceOf(RuntimeException.class);
+    assertThatThrownBy(() -> storage.erase(cardId, failing)).isInstanceOf(RuntimeException.class);
 
     // The whole transaction rolled back: the values are still here, so nothing is missing and the
     // verifier reports no tampering. Written separately, these two assertions both failed.
@@ -494,7 +489,7 @@ class JdbcCharterTest {
                       acme();
                       try {
                         cardLast4.derive(card);
-                      } catch (RuntimeException expected) {
+                      } catch (RuntimeException _) {
                         // The parent went first. That is a legitimate outcome of the race.
                       }
                     });
@@ -754,7 +749,7 @@ class JdbcCharterTest {
   /** Erasure is a reachability query, walked over the lineage the value digests cover. */
   @Test
   @DisplayName("erasing a value takes everything ever derived from it")
-  void erasing_takes_everything_derived_from_it() throws SQLException {
+  void erasing_takes_everything_derived_from_it() {
     Surrogate<Card> card = card();
     acme();
     Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
@@ -952,11 +947,11 @@ class JdbcCharterTest {
   @Test
   @DisplayName("holds a generic container and gives it back")
   void holds_a_generic_container() {
-    List<Card> cards =
+    List<Card> cardBatch =
         List.of(new Card("4111111111114821", "A"), new Card("4111111111119999", "B"));
 
     acme();
-    Surrogate<List<Card>> held = cardLists.conceal(cards);
+    Surrogate<List<Card>> held = cardLists.conceal(cardBatch);
 
     acme();
     assertThat(cardListProcessor.reveal(held).granted())
@@ -973,8 +968,8 @@ class JdbcCharterTest {
   @DisplayName("a handle claiming the wrong element type is refused")
   void a_handle_claiming_the_wrong_element_type_is_refused() {
     acme();
-    Surrogate<List<Card>> cards = cardLists.conceal(List.of(new Card("4111111111114821", "A")));
-    Surrogate<List<Last4>> lying = Surrogate.of(cards.id());
+    Surrogate<List<Card>> concealed = cardLists.conceal(List.of(new Card("4111111111114821", "A")));
+    Surrogate<List<Last4>> lying = Surrogate.of(concealed.id());
 
     acme();
     assertThat(last4ListProcessor.reveal(lying).allowed()).isFalse();
@@ -985,11 +980,11 @@ class JdbcCharterTest {
   @DisplayName("asking what a value is labelled does not decode the value")
   void asking_for_a_label_does_not_decode_the_value() {
     acme();
-    Surrogate<List<Card>> cards = cardLists.conceal(List.of(new Card("4111111111114821", "A")));
+    Surrogate<List<Card>> concealed = cardLists.conceal(List.of(new Card("4111111111114821", "A")));
 
     // No type is supplied here, and none is needed: the label is read without touching the payload.
-    assertThat(store.label(cards).says(DATA, DataClass.CARDHOLDER)).isTrue();
-    assertThat(store.lineage(cards).asserted()).isTrue();
+    assertThat(store.label(concealed).says(DATA, DataClass.CARDHOLDER)).isTrue();
+    assertThat(store.lineage(concealed).asserted()).isTrue();
   }
 
   /** A label governs disclosure, not destruction, so erasure is named separately or not granted. */
