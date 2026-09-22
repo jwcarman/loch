@@ -45,6 +45,11 @@ record DerivationSpec<O>(
     Predicate<AccessContext> availableTo,
     boolean fold) {
 
+  /** What this may read, or null when the application's function did not say. */
+  Ceiling ceilingFor(AccessContext context) {
+    return ceiling == null ? null : ceiling.apply(context);
+  }
+
   /** Whether this weakens labels, which is what a manifest wants to list. */
   boolean privileged() {
     return relabel != null;

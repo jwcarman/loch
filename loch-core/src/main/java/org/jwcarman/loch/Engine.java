@@ -103,8 +103,8 @@ final class Engine {
       throw new AccessDeniedException(
           "SOURCE_CANNOT_LABEL", "'" + source + "' could not say what it labels values");
     }
-    // The only door an incomplete label can come in through. A derived label is the join of its
-    // parents and join only moves up, so nothing downstream can lose what was said here.
+    // One of two places a label can be incomplete. Join only moves up, so an ordinary derivation
+    // cannot lose what was said here -- but a privileged one may relabel, so deriving checks too.
     if (leavesARequiredAxisUnsaid(label)) {
       audit(
           AuditRecord.Operation.CONCEAL,
@@ -171,11 +171,14 @@ final class Engine {
    * The same treatment for a question's or a derivation's ceiling, which is equally application
    * code.
    *
-   * <p>Returns {@code null} for "could not be evaluated", which is not the same as an empty {@link
-   * Optional}: empty is a ceiling that deliberately accepts anything, and conflating the two would
-   * turn a crashing policy into a permissive one.
+   * <p>{@code null} means the ceiling did not decide, and every caller treats that as a refusal.
+   * There is deliberately no second shape for "accepts anything": a derivation or a question
+   * without a ceiling is refused at configuration, so a ceiling is always present and always has to
+   * be consulted. This used to return an {@code Optional}, where empty was documented as accepting
+   * anything -- nothing could produce that empty on purpose, but application code ending in {@code
+   * .orElse(null)} produced it by accident, and the check was skipped.
    */
-  private Optional<Ceiling> ceilingOf(java.util.function.Supplier<Optional<Ceiling>> ceiling) {
+  private Ceiling ceilingOf(java.util.function.Supplier<Ceiling> ceiling) {
     try {
       return ceiling.get();
     } catch (RuntimeException e) {
@@ -372,14 +375,14 @@ final class Engine {
           "'%s' asks about a %s, but %s is a %s"
               .formatted(name, spec.inputType().name(), held.id(), entry.typeName()));
     }
-    Optional<Ceiling> ceiling = ceilingOf(() -> spec.ceilingFor(context));
+    Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING,
           "'" + name + "' could not say what it accepts, so it does not accept this");
     }
-    if (ceiling.isPresent() && !ceiling.get().permits(entry.label())) {
-      because.set(because(entry.label(), ceiling.get()));
+    if (!ceiling.permits(entry.label())) {
+      because.set(because(entry.label(), ceiling));
       return new Answer.Refused(
           Answer.Reason.ABOVE_CEILING, held.id() + " may not be looked at by '" + name + "'");
     }
@@ -462,8 +465,7 @@ final class Engine {
           Derived.Reason.NOT_AVAILABLE_HERE, "'" + id + "' is not offered here");
     }
     // Once, not once per parent: a ceiling that reads ambient context is doing real work.
-    Optional<Ceiling> ceiling =
-        ceilingOf(() -> Optional.ofNullable(spec.ceiling()).map(f -> f.apply(context)));
+    Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Derived.Refused<>(
           Derived.Reason.ABOVE_CEILING,
@@ -494,8 +496,8 @@ final class Engine {
             "'%s' reads a %s in position %d, but %s is a %s"
                 .formatted(id, expected.name(), position + 1, parent.id(), entry.typeName()));
       }
-      if (ceiling.isPresent() && !ceiling.get().permits(entry.label())) {
-        because.set(because(entry.label(), ceiling.get()));
+      if (!ceiling.permits(entry.label())) {
+        because.set(because(entry.label(), ceiling));
         return new Derived.Refused<>(
             Derived.Reason.ABOVE_CEILING, parent.id() + " may not reach '" + id + "'");
       }
@@ -542,6 +544,19 @@ final class Engine {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING,
             "'%s' relabelled a value as something not below it".formatted(id));
+      }
+      // atOrBelow cannot see this one. An axis a label stops mentioning joins as bottom, so a
+      // label that drops one is at or below everything -- including the label it came from. The
+      // check that runs at the door has to run here too, because this is the other way a value
+      // can come to exist with a required axis missing.
+      if (leavesARequiredAxisUnsaid(label)) {
+        because.set(because(label, joined));
+        return new Derived.Refused<>(
+            Derived.Reason.NOT_A_LOWERING,
+            ("'%s' relabelled a value so that a required axis is unsaid. Unsaid is the bottom of"
+                    + " its order, which is below every ceiling, so the result would have been"
+                    + " readable by everyone.")
+                .formatted(id));
       }
     }
 

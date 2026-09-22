@@ -84,6 +84,27 @@ class PolicyThatCannotDecideTest {
           String::toUpperCase,
           d -> d.accepting(ctx -> Ceiling.of(TENANT, Constraint.any())).lowering(joined -> boom()));
 
+  /**
+   * The quiet way to fail to decide. A ceiling that reads a tenant out of an empty context and ends
+   * {@code .orElse(null)} has not thrown, has not decided, and looks from here exactly like a
+   * ceiling that was never consulted.
+   */
+  private final Query<String, String> queryWhoseCeilingIsNull =
+      config.query(
+          "query-ceiling-null",
+          STRING_TYPE,
+          String.class,
+          (v, q, ctx) -> v.equals(q),
+          d -> d.accepting(ctx -> null));
+
+  private final Derivation<String, String> derivationWhoseCeilingIsNull =
+      config.derivation(
+          "derivation-ceiling-null",
+          STRING_TYPE,
+          STRING_TYPE,
+          String::toUpperCase,
+          d -> d.accepting(ctx -> null));
+
   private final Derivation<String, String> functionThrows =
       config.derivation(
           "function",
@@ -167,6 +188,32 @@ class PolicyThatCannotDecideTest {
         .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }
 
+  /**
+   * Answering with nothing is not answering yes.
+   *
+   * <p>A ceiling is mandatory -- a derivation that does not call {@code accepting(...)} is refused
+   * at configuration -- so there is no such thing as a derivation that deliberately accepts
+   * anything. A null on this path is therefore always a bug, and the only safe reading of a bug in
+   * a gate is that the gate did not open.
+   */
+  @Test
+  @DisplayName("is not a query whose ceiling answered with nothing")
+  void is_not_a_query_whose_ceiling_answered_with_nothing() {
+    Answer result = queryWhoseCeilingIsNull.ask(held, "secret");
+
+    assertThat(result).isInstanceOf(Answer.Refused.class);
+    assertThat(((Answer.Refused) result).reason()).isEqualTo(Answer.Reason.ABOVE_CEILING);
+  }
+
+  @Test
+  @DisplayName("is not a derivation whose ceiling answered with nothing")
+  void is_not_a_derivation_whose_ceiling_answered_with_nothing() {
+    Derived<String> result = derivationWhoseCeilingIsNull.derive(held);
+
+    assertThat(result.made()).isEmpty();
+    assertThat(((Derived.Refused<String>) result).reason()).isEqualTo(Derived.Reason.ABOVE_CEILING);
+  }
+
   /** Nothing above reached the caller as a stack trace, and every one of them was recorded. */
   @Test
   @DisplayName("is recorded as a refusal, never raised as an exception")
@@ -178,8 +225,10 @@ class PolicyThatCannotDecideTest {
     queryWhoseGateThrows.ask(held, "secret");
     derivationWhoseCeilingThrows.derive(held);
     loweringThrows.derive(held);
+    queryWhoseCeilingIsNull.ask(held, "secret");
+    derivationWhoseCeilingIsNull.derive(held);
 
-    assertThat(storage.audit()).hasSize(5);
+    assertThat(storage.audit()).hasSize(7);
     assertThat(storage.audit())
         .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
   }

@@ -15,7 +15,6 @@
  */
 package org.jwcarman.loch;
 
-import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.jwcarman.loch.lattice.Ceiling;
@@ -28,7 +27,8 @@ record QuerySpec<I, Q>(
     Function<AccessContext, Ceiling> ceiling,
     Predicate<AccessContext> availableTo) {
 
-  Optional<Ceiling> ceilingFor(AccessContext context) {
-    return Optional.ofNullable(ceiling).map(f -> f.apply(context));
+  /** What this may look at, or null when the application's function did not say. */
+  Ceiling ceilingFor(AccessContext context) {
+    return ceiling == null ? null : ceiling.apply(context);
   }
 }

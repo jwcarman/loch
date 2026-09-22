@@ -152,6 +152,47 @@ class RequiredAxisTest {
     assertThat(own.label(low.conceal(new Note("fine")).id()).says(LEVEL, Level.LOW)).isTrue();
   }
 
+  /**
+   * The invariant has to survive derivation, not just the door.
+   *
+   * <p>Concealing is the only place a label is asserted rather than computed, so it is where the
+   * required-axis check was written. But a privileged derivation may rewrite the label, and {@code
+   * atOrBelow} cannot catch a label that simply stops mentioning an axis: an unsaid axis joins as
+   * bottom, so {@code Label.nothing()} is at or below absolutely everything. The natural way to
+   * write the bug is an {@code of} where a {@code with} was meant.
+   */
+  @Test
+  @DisplayName("cannot be dropped by a lowering, which is where atOrBelow cannot see it")
+  void cannot_be_dropped_by_a_lowering() {
+    DefaultCharter own = new DefaultCharter(TENANT, LEVEL).currentAccess(edge::get);
+    Conceal<Note> door =
+        own.source("notes", NOTE_TYPE, ctx -> Label.of(TENANT, "acme").with(LEVEL, Level.HIGH));
+    Derivation<Note, Note> redact =
+        own.derivation(
+            "redact",
+            NOTE_TYPE,
+            NOTE_TYPE,
+            note -> new Note("redacted"),
+            d ->
+                d.accepting(
+                        ctx ->
+                            Ceiling.of(TENANT, Constraint.any())
+                                .with(LEVEL, Constraint.atMost(Level.HIGH)))
+                    // `of` where `with` was meant: the level survives, the tenant vanishes.
+                    .lowering(joined -> Label.of(LEVEL, Level.LOW)));
+    MemoryStorage storage = new MemoryStorage();
+    own.seal(storage);
+    edge.set(AccessContext.of(Map.of("tenant", "acme")));
+
+    Derived<Note> result = redact.derive(door.conceal(new Note("ours")));
+
+    assertThat(result.made()).isEmpty();
+    assertThat(((Derived.Refused<Note>) result).reason()).isEqualTo(Derived.Reason.NOT_A_LOWERING);
+    assertThat(storage.audit(AuditRecord.Operation.DERIVE))
+        .isNotEmpty()
+        .allSatisfy(entry -> assertThat(entry.outcome()).isEqualTo(AuditRecord.Outcome.REFUSED));
+  }
+
   @Test
   @DisplayName("so nothing unattributed is ever there to be read")
   void nothing_unattributed_is_ever_there_to_be_read() {
