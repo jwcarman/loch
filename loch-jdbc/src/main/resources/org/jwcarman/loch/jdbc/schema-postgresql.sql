@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   -- whole token, and storing it plainly was this library deciding somebody else's data was
   -- harmless. It was also Map.toString(), whose iteration order is salted per JVM and which is
   -- ambiguous for any value containing a comma or an equals sign -- unqueryable AND unparseable.
-  who         BYTEA       NOT NULL
+  context     BYTEA       NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS loch_audit_value ON loch_audit (value_id);

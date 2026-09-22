@@ -118,7 +118,16 @@ public interface Storage {
    * deleted too, so the only way anything can later tell a lawful erasure from a quiet one is if
    * the erasure wrote down what it took.
    *
+   * <p>Takes the line to write for each value rather than leaving the caller to write them
+   * afterwards, because the two have to commit together. An erasure whose deletes land and whose
+   * lines do not has destroyed values the trail never says were destroyed -- which is exactly what
+   * an out-of-band deletion looks like, so the verifier reports tampering on a system nobody
+   * attacked, and there is no second attempt that can repair it: the values are already gone, so
+   * erasing again finds nothing and writes nothing.
+   *
+   * @param lineFor the record to write for a value that was removed, called once per value
    * @return the values removed, the root included, in no particular order
    */
-  java.util.List<String> erase(String root);
+  java.util.List<String> erase(
+      String root, java.util.function.Function<String, AuditRecord> lineFor);
 }

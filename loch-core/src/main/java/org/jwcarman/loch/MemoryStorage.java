@@ -97,7 +97,7 @@ public final class MemoryStorage implements Storage {
   }
 
   @Override
-  public List<String> erase(String root) {
+  public List<String> erase(String root, java.util.function.Function<String, AuditRecord> lineFor) {
     Set<String> doomed = new HashSet<>();
     Deque<String> pending = new ArrayDeque<>();
     pending.add(root);
@@ -121,6 +121,7 @@ public final class MemoryStorage implements Storage {
         removed.add(id);
       }
     }
+    removed.forEach(id -> record(lineFor.apply(id)));
     return removed;
   }
 }

@@ -16,6 +16,7 @@
 package org.jwcarman.loch.jdbc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -35,6 +36,7 @@ import org.jwcarman.codec.jackson.JacksonCodecFactory;
 import org.jwcarman.codec.spi.TypeRef;
 import org.jwcarman.codec.transform.compress.GzipCodec;
 import org.jwcarman.loch.AccessContext;
+import org.jwcarman.loch.AuditRecord;
 import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.DefaultCharter;
 import org.jwcarman.loch.Derivation;
@@ -392,6 +394,52 @@ class JdbcCharterTest {
 
     assertThat(store.holds(card.id())).isFalse();
     assertThat(store.holds(last4.id())).isFalse();
+    assertThat(storage.missingValues()).isEmpty();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+  }
+
+  /**
+   * An erasure that fails partway must leave nothing behind, least of all false evidence.
+   *
+   * <p>When the deletes committed separately from the lines, a failure between them destroyed
+   * values the trail never said were destroyed -- which is exactly what an out-of-band deletion
+   * looks like. The chain still verified, so "check the trail first" did not help, and erasing
+   * again found nothing to erase, so nothing could repair it. A permanent tamper alarm for
+   * something nobody did, which is the way a verifier stops being believed.
+   */
+  @Test
+  @DisplayName("an erasure that fails partway leaves the values and reports no tampering")
+  void an_erasure_that_fails_partway_leaves_no_false_alarm() {
+    Surrogate<Card> card = card();
+    acme();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
+
+    // Fails on the second line, standing in for a dropped connection midway through.
+    java.util.concurrent.atomic.AtomicInteger written =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.function.Function<String, AuditRecord> failing =
+        id -> {
+          if (written.incrementAndGet() == 2) {
+            throw new IllegalStateException("connection dropped mid-erase");
+          }
+          return new AuditRecord(
+              AuditRecord.Operation.ERASE,
+              id,
+              java.util.Optional.of(card.id()),
+              AuditRecord.Outcome.ALLOWED,
+              java.util.Optional.of("erased"),
+              java.util.Optional.empty(),
+              java.util.Optional.empty(),
+              java.util.Map.of());
+        };
+
+    assertThatThrownBy(() -> storage.erase(card.id(), failing))
+        .isInstanceOf(RuntimeException.class);
+
+    // The whole transaction rolled back: the values are still here, so nothing is missing and the
+    // verifier reports no tampering. Written separately, these two assertions both failed.
+    assertThat(store.holds(card)).isTrue();
+    assertThat(store.holds(last4)).isTrue();
     assertThat(storage.missingValues()).isEmpty();
     assertThat(storage.firstBrokenEntry()).isEmpty();
   }

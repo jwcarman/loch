@@ -83,7 +83,7 @@ public final class JdbcStorage implements Storage {
       """
       INSERT INTO loch_audit
         (recorded_at, operation, value_id, target, outcome, reason, detail, label, previous, digest,
-         root_id, who)
+         root_id, context)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
@@ -275,13 +275,13 @@ public final class JdbcStorage implements Storage {
     // Encrypted ONCE, then both signed and stored. A StorageCodec is free to be non-deterministic
     // -- an authenticated cipher uses a fresh nonce every time -- so encrypting a second copy for
     // the digest signs bytes no column ever held, and every line fails its own check on read-back.
-    byte[] who = protectedMap.encode(entry.context());
+    byte[] context = protectedMap.encode(entry.context());
     // The database's clock, not this process's: a trail signs facts it witnessed, and when some
     // application server believed it decided something is not one of them. Truncated once, because
     // TIMESTAMPTZ keeps microseconds and an Instant offers nanoseconds -- signing what was in hand
     // rather than what reached the column made every line fail its own check when it was read back.
     Instant recordedAt = head.recordedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    byte[] digest = lineDigest(rootId, previous, recordedAt, entry, detail, label, who);
+    byte[] digest = lineDigest(rootId, previous, recordedAt, entry, detail, label, context);
     try (PreparedStatement statement = connection.prepareStatement(INSERT_AUDIT)) {
       statement.setTimestamp(1, Timestamp.from(recordedAt));
       statement.setString(2, entry.operation().name());
@@ -294,7 +294,7 @@ public final class JdbcStorage implements Storage {
       statement.setBytes(9, previous);
       statement.setBytes(10, digest);
       statement.setString(11, rootId);
-      statement.setBytes(12, who);
+      statement.setBytes(12, context);
       statement.executeUpdate();
     }
   }
@@ -500,7 +500,7 @@ public final class JdbcStorage implements Storage {
       AuditRecord entry,
       byte[] detail,
       byte[] label,
-      byte[] who) {
+      byte[] context) {
     return lineDigest(
         under,
         previous,
@@ -512,7 +512,7 @@ public final class JdbcStorage implements Storage {
         entry.reason().orElse(null),
         detail,
         label,
-        who);
+        context);
   }
 
   private byte[] lineDigest(
@@ -526,7 +526,7 @@ public final class JdbcStorage implements Storage {
       String reason,
       byte[] detail,
       byte[] label,
-      byte[] who) {
+      byte[] context) {
     javax.crypto.Mac mac = keyed(Domain.LINE, under);
     feed(mac, previous);
     feed(mac, recordedAt.toString().getBytes(UTF_8));
@@ -537,7 +537,7 @@ public final class JdbcStorage implements Storage {
     feed(mac, reason == null ? null : reason.getBytes(UTF_8));
     feed(mac, detail);
     feed(mac, label);
-    feed(mac, who);
+    feed(mac, context);
     return mac.doFinal();
   }
 
@@ -578,7 +578,7 @@ public final class JdbcStorage implements Storage {
             connection.prepareStatement(
                 """
                 SELECT entry_id, recorded_at, operation, value_id, target, outcome, reason, detail, label,
-                       previous, digest, root_id, who
+                       previous, digest, root_id, context
                 FROM loch_audit ORDER BY entry_id
                 """);
         ResultSet rows = statement.executeQuery()) {
@@ -600,7 +600,7 @@ public final class JdbcStorage implements Storage {
                 rows.getString("reason"),
                 rows.getBytes("detail"),
                 rows.getBytes("label"),
-                rows.getBytes("who"));
+                rows.getBytes("context"));
         if (!java.util.Arrays.equals(digest, rows.getBytes("digest"))) {
           return java.util.Optional.of(rows.getLong("entry_id"));
         }
@@ -866,7 +866,7 @@ public final class JdbcStorage implements Storage {
   }
 
   @Override
-  public List<String> erase(String root) {
+  public List<String> erase(String root, java.util.function.Function<String, AuditRecord> lineFor) {
     return inTransactionReturning(
         "could not erase " + root,
         connection -> {
@@ -883,6 +883,11 @@ public final class JdbcStorage implements Storage {
           }
           try (Statement tidy = connection.createStatement()) {
             tidy.executeUpdate(DELETE_CLOSURE_OF_GONE);
+          }
+          // In this transaction, with the deletes. A value destroyed without a line saying so is
+          // indistinguishable from one somebody deleted behind the library's back.
+          for (String id : removed) {
+            insertAudit(connection, lineFor.apply(id));
           }
           return removed;
         });

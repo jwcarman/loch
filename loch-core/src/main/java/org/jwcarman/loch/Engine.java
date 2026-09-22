@@ -321,22 +321,29 @@ final class Engine {
           Revealed.Reason.ABOVE_CEILING,
           "erasing is refused: this store was not told who may erase");
     }
-    List<String> removed = storage.erase(root.id());
-    // One line per value, not one per call. Every other operation writes a line naming the value
-    // it acted on, and erasure is the operation where that matters most: it is the only one that
-    // makes a value stop existing, so the trail is the only thing left that can say the value ever
-    // did. A single line saying "41 values removed" cannot distinguish a lawful erasure from
-    // somebody quietly deleting a row, because nothing afterwards knows which 41.
-    for (String id : removed) {
-      audit(
-          AuditRecord.Operation.ERASE,
-          id,
-          root.id(),
-          AuditRecord.Outcome.ALLOWED,
-          Why.of("erased"),
-          null,
-          asking);
-    }
+    // One line per value, not one per call, and written by the storage inside the same
+    // transaction as the deletes. Every other operation writes a line naming the value it acted
+    // on, and erasure is where that matters most: it is the only operation that makes a value
+    // stop existing, so the trail becomes the only thing that can say the value ever did. A
+    // single line saying "41 values removed" cannot tell a lawful erasure from a quiet deletion,
+    // because nothing afterwards knows which 41.
+    //
+    // Handing the line to storage rather than writing them here is what makes it repairable. Done
+    // afterwards, a crash between the deletes and the lines leaves values destroyed that the
+    // trail never says were destroyed, the chain still verifies, and erasing again finds nothing
+    // to erase -- a permanent tamper alarm for something nobody did.
+    List<String> removed =
+        storage.erase(
+            root.id(),
+            id ->
+                entry(
+                    AuditRecord.Operation.ERASE,
+                    id,
+                    root.id(),
+                    AuditRecord.Outcome.ALLOWED,
+                    Why.of("erased"),
+                    null,
+                    asking));
     return removed.size();
   }
 

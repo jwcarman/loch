@@ -175,8 +175,9 @@ class ArityTest {
     }
 
     @Override
-    public java.util.List<String> erase(String root) {
-      return kept.erase(root);
+    public java.util.List<String> erase(
+        String root, java.util.function.Function<String, AuditRecord> lineFor) {
+      return kept.erase(root, lineFor);
     }
   }
 }
