@@ -120,6 +120,18 @@ class WhatACharterPermitsTest {
         .contains("tenant=acme");
   }
 
+  /**
+   * A question looks like the safe way to use a value, and a reviewer should meet that where they
+   * meet the list of questions rather than in a javadoc nobody opens.
+   */
+  @Test
+  @DisplayName("says that questions read a value a bit at a time")
+  void says_that_questions_read_a_value_a_bit_at_a_time() {
+    assertThat(charter.manifest().toString())
+        .contains("enough questions read the value")
+        .contains("a ceiling is what limits who may ask");
+  }
+
   @Test
   @DisplayName("is answerable before it has been sealed to anything")
   void is_answerable_before_sealing() {

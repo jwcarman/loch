@@ -19,16 +19,25 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * What a store is configured to allow, in a form a person can read.
+ * What a charter permits, in a form a person can read.
  *
  * <p>Worth printing at startup and worth pasting into a review. No algebra can tell you whether a
  * check is strong enough -- an endorsement that merely confirms a record exists looks exactly like
  * one that ties it to the person who asked -- so the list being short, named and in front of
  * somebody is the control.
  *
- * <p>The section that matters is the label-weakening operations. Everything else in the design
- * makes labels more constrained; these are the only things that can make them less, and there
- * should be few enough to read in one sitting.
+ * <p>Two sections are what a reviewer came for. The <b>label-weakening operations</b>: everything
+ * else in the design makes labels more constrained, these are the only things that can make them
+ * less, and there should be few enough to read in one sitting.
+ *
+ * <p>And the <b>questions</b>. A question never hands the value over, which makes it look like the
+ * safe way to use one -- but each answer is a bit and the asker chooses the question, so enough of
+ * them read the value a piece at a time. Nothing here counts them, deliberately: a budget small
+ * enough to stop reconstruction is small enough to make the feature useless, and what actually
+ * distinguishes a probe from a question is the shape of what the caller may choose, which only the
+ * person who wrote it knows. What limits the exposure is the ceiling -- a value you may not ask
+ * about gives you no questions at all -- and what makes it visible is the trail, which records
+ * every question against the value it was asked about.
  */
 public record Manifest(
     String bottom,
@@ -83,6 +92,11 @@ public record Manifest(
     }
     section(lines, "derivations", derivations, "  no value can be made from another");
     section(lines, "questions", questions, "  no question can be asked without taking the value");
+    if (!questions.isEmpty()) {
+      lines.add(
+          "    (each answer is one bit and the asker chooses the question, so enough questions"
+              + " read the value; a ceiling is what limits who may ask at all)");
+    }
     lines.add("");
     List<Entry> weakening = weakening();
     lines.add("  " + weakening.size() + " operation(s) can WEAKEN a label:");
