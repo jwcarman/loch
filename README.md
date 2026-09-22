@@ -4,17 +4,12 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Java](https://img.shields.io/badge/dynamic/xml?url=https://raw.githubusercontent.com/jwcarman/loch/main/pom.xml&query=//*[local-name()='maven.compiler.release']/text()&label=Java&color=orange)](https://openjdk.org/)
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=coverage)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=bugs)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
-[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
-[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jwcarman_loch&metric=coverage)](https://sonarcloud.io/summary/new_code?id=jwcarman_loch)
 
 **Opaque references to sensitive values, for Java.**
 
