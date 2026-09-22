@@ -306,21 +306,71 @@ class JdbcCharterTest {
   }
 
   /**
-   * The trail is a chain, so editing it is not quiet.
+   * Every value hashes from its own bytes and whatever it was made from.
    *
-   * <p>An audit whose central claim is "we write it down no matter what" is worth only as much as
-   * its resistance to being rewritten afterwards. Every line carries the digest of the one before
-   * it, so a modified, deleted, reordered or inserted row breaks the chain -- and covering it up
-   * means recomputing every digest after the change.
+   * <p>A fresh value starts its own graph. Everything derived from it hashes from parents that are
+   * immutable and already written, so nothing is locked and no global order exists -- a value is
+   * fixed by its ancestry, not by when it arrived.
+   */
+  @Test
+  @DisplayName("writes values whose digests agree with their ancestry")
+  void writes_values_whose_digests_agree() {
+    Surrogate<Card> card = card();
+
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
+
+    assertThat(last4).isNotNull();
+    assertThat(storage.brokenValues()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("notices a value somebody edited, and everything derived from it")
+  void notices_an_edited_value() throws SQLException {
+    Surrogate<Card> card = card();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement("UPDATE loch_value SET payload = ? WHERE value_id = ?")) {
+      statement.setBytes(
+          1, "not what was stored".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      statement.setString(2, card.id());
+      assertThat(statement.executeUpdate()).isPositive();
+    }
+
+    // The value itself, and the one made from what it used to be.
+    assertThat(storage.brokenValues()).contains(card.id(), last4.id());
+  }
+
+  /** Removing one leaves its children hashing from something that is not there. */
+  @Test
+  @DisplayName("notices a value somebody deleted, through the children it left behind")
+  void notices_a_deleted_value() throws SQLException {
+    Surrogate<Card> card = card();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.prepareStatement("DELETE FROM loch_value WHERE value_id = ?")) {
+      statement.setString(1, card.id());
+      assertThat(statement.executeUpdate()).isPositive();
+    }
+
+    assertThat(storage.brokenValues()).contains(last4.id());
+  }
+
+  /**
+   * The trail is a chain, because a line has a predecessor rather than parents.
+   *
+   * <p>Values hash from their ancestry and need no order. Accesses have no ancestry -- a refused
+   * read makes nothing -- so the only thing a line can name is the one before it.
    */
   @Test
   @DisplayName("writes a trail that verifies")
-  void writes_a_trail_that_verifies() throws SQLException {
+  void writes_a_trail_that_verifies() {
     card();
     edge.set(AccessContext.of("tenant", "acme"));
     vendorLlm.reveal(card());
 
-    assertThat(rowCount("loch_audit")).isGreaterThan(1);
     assertThat(storage.firstBrokenEntry()).isEmpty();
   }
 
@@ -340,23 +390,69 @@ class JdbcCharterTest {
     assertThat(storage.firstBrokenEntry()).isPresent();
   }
 
-  /** Removing a line is the interesting one: what is gone cannot speak for itself. */
+  /**
+   * And notices a deletion that was covered up, which is the one that matters.
+   *
+   * <p>Removing a line and leaving it is easy to catch. The real case is somebody who removes one
+   * and then repairs the chain behind it -- re-pointing what followed at what preceded, so the
+   * trail reads as though the line never existed. That works against a plain hash chain. It does
+   * not work here, because the digests are keyed and they do not have the key.
+   */
   @Test
-  @DisplayName("notices a line somebody deleted")
-  void notices_a_deleted_line() throws SQLException {
+  @DisplayName("notices a deletion even when somebody repaired the chain behind it")
+  void notices_a_covered_up_deletion() throws SQLException {
     card();
     edge.set(AccessContext.of("tenant", "acme"));
     vendorLlm.reveal(card());
+    card();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
 
     try (Connection connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
-      assertThat(
-              statement.executeUpdate(
-                  "DELETE FROM loch_audit WHERE entry_id = (SELECT MIN(entry_id) FROM loch_audit)"))
-          .isPositive();
+      // Take out the second line and stitch the third onto the first, the way somebody covering
+      // their tracks would. Every digest still looks locally plausible.
+      statement.executeUpdate(
+          """
+          UPDATE loch_audit SET previous = (
+              SELECT previous FROM loch_audit ORDER BY entry_id OFFSET 1 LIMIT 1)
+          WHERE entry_id = (SELECT entry_id FROM loch_audit ORDER BY entry_id OFFSET 2 LIMIT 1)
+          """);
+      statement.executeUpdate(
+          "DELETE FROM loch_audit WHERE entry_id ="
+              + " (SELECT entry_id FROM loch_audit ORDER BY entry_id OFFSET 1 LIMIT 1)");
     }
 
     assertThat(storage.firstBrokenEntry()).isPresent();
+  }
+
+  /**
+   * And the key is what makes any of that hold against somebody determined.
+   *
+   * <p>The test above catches a repair that re-pointed the chain without re-signing it. A careful
+   * attacker would re-sign, and against an unkeyed chain that works -- recompute everything after
+   * the gap and it agrees with itself again. They cannot, because the digests are an HMAC under a
+   * root this database does not hold.
+   *
+   * <p>That property cannot be demonstrated by a test holding the key. What can be shown is that
+   * the digests depend on it: read the same intact trail under a different root and every line
+   * disagrees.
+   */
+  @Test
+  @DisplayName("cannot be verified, or forged, without the root it was written under")
+  void cannot_be_verified_without_the_root() {
+    card();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+
+    JdbcStorage underAnotherRoot =
+        new JdbcStorageConfig()
+            .dataSource(dataSource)
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .rootedIn(() -> "somebody else's key".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+
+    assertThat(underAnotherRoot.firstBrokenEntry()).isPresent();
   }
 
   @Test

@@ -108,7 +108,7 @@ class AuditThroughputTest {
     System.out.printf(
         "%n  audit chain: 1 writer -> %d/s, %d writers -> %d/s%n%n", alone, WRITERS, together);
 
-    assertThat(storage.firstBrokenEntry()).isEmpty();
+    assertThat(storage.brokenValues()).isEmpty();
   }
 
   private long appendsPerSecond(int writers, int each) throws Exception {
@@ -163,7 +163,7 @@ class AuditThroughputTest {
         total, WRITERS, took.toMillis(), perSecond);
 
     assertThat(rowCount()).isEqualTo(total);
-    assertThat(storage.firstBrokenEntry()).isEmpty();
+    assertThat(storage.brokenValues()).isEmpty();
   }
 
   private int rowCount() throws Exception {

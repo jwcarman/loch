@@ -9,7 +9,22 @@ CREATE TABLE IF NOT EXISTS loch_value (
   payload      BYTEA       NOT NULL,
   label        BYTEA       NOT NULL,
   derivation   TEXT,
-  held_at      TIMESTAMPTZ NOT NULL
+  held_at      TIMESTAMPTZ NOT NULL,
+  -- What this value hashes to, over its own bytes and the digests of whatever it was made from.
+  --
+  -- Every fresh value starts its own graph: it has no parents, so it hashes from the root alone.
+  -- Everything derived from it hashes from its parents, which are immutable and already written,
+  -- so nothing has to be locked and two derivations never wait on each other. There is no global
+  -- order here and none is needed -- a value is fixed by its ancestry, not by when it arrived.
+  --
+  -- Editing a value changes its digest, which breaks every descendant. Deleting one leaves its
+  -- children hashing from something that is not there. Covering either up means recomputing the
+  -- whole graph below it, which is exactly the work this makes necessary.
+  --
+  -- The root is where that stops being merely expensive. Rooted in a constant, somebody with write
+  -- access can recompute a graph after editing it. Rooted in a secret the database does not hold,
+  -- they cannot forge a single node.
+  digest       BYTEA       NOT NULL
 );
 
 -- The immediate parentage, in the order the parents were given.
@@ -62,22 +77,18 @@ CREATE TABLE IF NOT EXISTS loch_audit (
   reason      TEXT,
   detail      BYTEA,
   label       BYTEA,
-  -- Each line carries the digest of the one before it and its own, so the trail is a chain. A
-  -- modified row, a deleted row and a reordered row all break it, and breaking it silently is not
-  -- possible without the digests of everything after it as well.
+  -- Each line names the digest of the line before it. Values hash from their parents. A line has
+  -- no parents, only a predecessor, so the trail is a chain where the graph of values is a DAG.
   --
-  -- The digest covers what is actually stored, ciphertext included, so verifying needs no key --
-  -- whoever can read the table can check it, and cannot quietly edit it.
+  -- Keyed, and that is the whole point. An unkeyed chain catches a careless edit and nothing else:
+  -- delete a line, recompute the ones after it, and the chain agrees with itself again. Under an
+  -- HMAC whose key this database does not hold, the ones after it cannot be recomputed, so a
+  -- deletion leaves a break nobody can repair.
   --
-  -- The chain lives here and nowhere else. An earlier version also kept the latest digest in a
-  -- one-row table, which was never a second source of truth -- verification never read it -- only
-  -- somewhere to take a lock. Storing the same fact twice earned exactly what it usually does: a
-  -- test reset this table and not that one, and got a chain that reported itself broken.
-  --
-  -- Appending takes an advisory lock instead, which needs no row and works when the table is
-  -- empty. Measured at about 180 appends a second from one writer and 900 from eight, so the
-  -- serialisation is not the ceiling it looks like: it is held for the read and the insert, while
-  -- most of an operation is the value, its lineage, encoding and the network.
+  -- The cost is that appends are ordered -- each needs the digest of whatever came last, which is
+  -- an advisory lock, not a table lock. Measured at about 180 appends a second from one writer and
+  -- 900 from eight: writers still overlap on the value, the lineage, the encoding and the network,
+  -- and queue only at the end.
   previous    BYTEA,
   digest      BYTEA       NOT NULL,
   who         TEXT        NOT NULL

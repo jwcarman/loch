@@ -33,8 +33,13 @@ import org.jwcarman.loch.lattice.Axes;
  */
 public final class JdbcStorageConfig {
 
+  /** The root of a graph nobody has rooted: tamper-evident, and forgeable by whoever can write. */
+  private static final byte[] ROOTED_IN_THE_OPEN =
+      "loch".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
   private DataSource dataSource;
   private CodecFactory codecs;
+  private java.util.function.Supplier<byte[]> root = () -> ROOTED_IN_THE_OPEN;
   private StorageCodec storageCodec;
   private boolean migrate = true;
 
@@ -121,10 +126,27 @@ public final class JdbcStorageConfig {
    */
   public JdbcStorage storage(Axes axes) {
     JdbcStorage storage =
-        JdbcStorage.of(dataSourceOrFail(), codecsOrFail(), storageCodecOrFail(), axes);
+        JdbcStorage.of(dataSourceOrFail(), codecsOrFail(), storageCodecOrFail(), axes, root);
     if (migrates()) {
       storage.migrate();
     }
     return storage;
+  }
+
+  /**
+   * What a fresh value hashes from, having no parents of its own.
+   *
+   * <p>Every value carries a digest over its own bytes and its parents', so editing one breaks
+   * everything derived from it. Where that stops being merely expensive is here. Left alone, the
+   * root is a published constant and somebody with write access can recompute a graph after editing
+   * it -- an edit is still visible to anyone holding an earlier copy of a digest, but it can be
+   * covered up. Given a secret this database does not hold, no node can be forged at all.
+   *
+   * <p>A supplier rather than a value, so the secret can come from wherever secrets come from and
+   * need never be written down beside the thing it protects.
+   */
+  public JdbcStorageConfig rootedIn(java.util.function.Supplier<byte[]> root) {
+    this.root = Objects.requireNonNull(root, "a root must not be null");
+    return this;
   }
 }
