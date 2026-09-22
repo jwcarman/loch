@@ -18,6 +18,7 @@ package org.jwcarman.loch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.codec.spi.TypeRef;
@@ -43,6 +44,17 @@ class SurrogateTypeTest {
 
     assertThat(type.name()).isEqualTo("note");
     assertThat(type.type()).isEqualTo(TypeRef.of(String.class));
+  }
+
+  @Test
+  @DisplayName("carries a generic container's TypeRef unchanged")
+  void carries_a_generic_containers_type_ref() {
+    TypeRef<List<String>> listOfStrings = TypeRef.listOf(TypeRef.of(String.class));
+
+    SurrogateType<List<String>> type = SurrogateType.of("notes", listOfStrings);
+
+    assertThat(type.name()).isEqualTo("notes");
+    assertThat(type.type()).isEqualTo(listOfStrings);
   }
 
   @Test

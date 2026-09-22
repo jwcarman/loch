@@ -18,14 +18,22 @@ package org.jwcarman.loch.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.loch.Charter;
 import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.DefaultCharter;
+import org.jwcarman.loch.Derivation;
 import org.jwcarman.loch.MemoryStorage;
+import org.jwcarman.loch.Query;
 import org.jwcarman.loch.Reveal;
 import org.jwcarman.loch.Storage;
 import org.jwcarman.loch.Surrogate;
@@ -35,6 +43,7 @@ import org.jwcarman.loch.lattice.Axis;
 import org.jwcarman.loch.lattice.Ceiling;
 import org.jwcarman.loch.lattice.Constraint;
 import org.jwcarman.loch.lattice.Label;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -64,6 +73,8 @@ class CharterAutoConfigurationTest {
   private static final Axis<Clearance> CLEARANCE =
       Axis.ladder("clearance", Clearance.OPEN, Clearance.CLOSED);
   private static final SurrogateType<String> NOTE = SurrogateType.of("note", String.class);
+  private static final SurrogateType<String> SUMMARY = SurrogateType.of("summary", String.class);
+  private static final SurrogateType<String> PHANTOM = SurrogateType.of("phantom", String.class);
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -101,6 +112,80 @@ class CharterAutoConfigurationTest {
     }
   }
 
+  /**
+   * An application with enough vocabulary to exercise every section of the charter endpoint: a
+   * derivation, a question, and a door that reads a type nothing here ever produces -- the
+   * endpoint's one provable finding.
+   */
+  @Configuration(proxyBeanMethods = false)
+  static class ARichApplication {
+
+    @Bean
+    Axes axes() {
+      return Axes.of(TENANT, CLEARANCE);
+    }
+
+    @Bean
+    Storage storage() {
+      return new MemoryStorage();
+    }
+
+    @Bean
+    Conceal<String> notes(Charter charter) {
+      return charter.source(
+          "notes", NOTE, ctx -> Label.of(TENANT, "acme").with(CLEARANCE, Clearance.OPEN));
+    }
+
+    @Bean
+    Reveal<String> reporting(Charter charter) {
+      return charter
+          .destination(
+              "reporting",
+              Ceiling.of(TENANT, Constraint.any())
+                  .with(CLEARANCE, Constraint.atMost(Clearance.OPEN)),
+              NOTE)
+          .reading(NOTE);
+    }
+
+    /** Reads a type nothing in this charter can ever produce -- a finding by construction. */
+    @Bean
+    Reveal<String> phantomSink(Charter charter) {
+      return charter
+          .destination(
+              "phantom-sink",
+              Ceiling.of(TENANT, Constraint.any())
+                  .with(CLEARANCE, Constraint.atMost(Clearance.OPEN)),
+              PHANTOM)
+          .reading(PHANTOM);
+    }
+
+    @Bean
+    Derivation<String, String> summarize(Charter charter) {
+      return charter.derivation(
+          "summarize",
+          NOTE,
+          SUMMARY,
+          note -> note.substring(0, Math.min(3, note.length())),
+          d ->
+              d.accepting(
+                  Ceiling.of(TENANT, Constraint.any())
+                      .with(CLEARANCE, Constraint.atMost(Clearance.OPEN))));
+    }
+
+    @Bean
+    Query<String, Integer> longerThan(Charter charter) {
+      return charter.query(
+          "longer-than",
+          NOTE,
+          Integer.class,
+          (value, against, ctx) -> value.length() > against,
+          q ->
+              q.accepting(
+                  Ceiling.of(TENANT, Constraint.any())
+                      .with(CLEARANCE, Constraint.atMost(Clearance.OPEN))));
+    }
+  }
+
   @Test
   @DisplayName("constitutes a charter from the axes an application declared")
   void constitutes_a_charter_from_the_axes() {
@@ -112,6 +197,53 @@ class CharterAutoConfigurationTest {
               assertThat(context.getBean(Charter.class).axes())
                   .isEqualTo(Axes.of(TENANT, CLEARANCE));
             });
+  }
+
+  /**
+   * The manifest is meant to be seen -- {@link CharterProperties} says so -- so whether it goes to
+   * the log is the property's whole reason to exist, and the only way to prove the property does
+   * anything is to watch the logger it controls.
+   */
+  @Nested
+  @DisplayName("logging the manifest at startup")
+  class LoggingTheManifest {
+
+    private Logger sealerLog;
+    private ListAppender<ILoggingEvent> appender;
+
+    @BeforeEach
+    void attachAppender() {
+      sealerLog = (Logger) LoggerFactory.getLogger(CharterAutoConfiguration.class);
+      appender = new ListAppender<>();
+      appender.start();
+      sealerLog.addAppender(appender);
+    }
+
+    @AfterEach
+    void detachAppender() {
+      sealerLog.detachAppender(appender);
+    }
+
+    @Test
+    @DisplayName("logs it by default")
+    void logs_it_by_default() {
+      runner
+          .withUserConfiguration(AnApplication.class)
+          .run(context -> assertThat(context).hasNotFailed());
+
+      assertThat(appender.list).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("stays quiet when an application says not to")
+    void stays_quiet_when_told_not_to() {
+      runner
+          .withUserConfiguration(AnApplication.class)
+          .withPropertyValues("loch.log-manifest=false")
+          .run(context -> assertThat(context).hasNotFailed());
+
+      assertThat(appender.list).isEmpty();
+    }
   }
 
   /**
@@ -184,6 +316,95 @@ class CharterAutoConfigurationTest {
             });
   }
 
+  /**
+   * The rest of what the endpoint can be asked: every section by name, a declaration drilled into
+   * within each of them, and the one finding this charter can prove -- a door reading a type
+   * nothing here can ever produce.
+   */
+  @Nested
+  @DisplayName("drilling further into the endpoint")
+  class DrillingFurtherIntoTheEndpoint {
+
+    private final ApplicationContextRunner richRunner =
+        runner
+            .withConfiguration(
+                AutoConfigurations.of(
+                    CharterEndpointAutoConfiguration.class, EndpointAutoConfiguration.class))
+            .withUserConfiguration(ARichApplication.class)
+            .withPropertyValues("management.endpoints.web.exposure.include=charter");
+
+    @Test
+    @DisplayName("answers every section by name")
+    void answers_every_section_by_name() {
+      richRunner.run(
+          context -> {
+            CharterEndpoint endpoint = context.getBean(CharterEndpoint.class);
+
+            assertThat(entries(endpoint.section("types"), "types"))
+                .contains("note", "summary", "phantom");
+            assertThat(entries(endpoint.section("destinations"), "destinations"))
+                .contains("reporting", "phantom-sink");
+            assertThat(entries(endpoint.section("derivations"), "derivations"))
+                .contains("summarize");
+            assertThat(entries(endpoint.section("questions"), "questions")).contains("longer-than");
+            assertThat(findingKinds(endpoint.section("findings"))).contains("no-writer");
+          });
+    }
+
+    @Test
+    @DisplayName("drills into one declaration per section")
+    void drills_into_one_declaration_per_section() {
+      richRunner.run(
+          context -> {
+            CharterEndpoint endpoint = context.getBean(CharterEndpoint.class);
+
+            assertThat(endpoint.named("destinations", "reporting"))
+                .containsEntry("name", "reporting");
+            assertThat(endpoint.named("derivations", "summarize"))
+                .containsEntry("name", "summarize");
+            assertThat(endpoint.named("questions", "longer-than"))
+                .containsEntry("name", "longer-than");
+
+            // A section this endpoint has never heard of, unlike an unmatched name within one.
+            assertThat(endpoint.named("no-such-section", "whatever")).isNull();
+          });
+    }
+
+    /**
+     * {@code madeBy} and {@code readBy} are different questions -- what turns into this type, and
+     * what this type turns into -- and a type that does both answers each one narrowly.
+     */
+    @Test
+    @DisplayName("tells apart what a type is made from and what it is made into")
+    void tells_apart_made_from_and_made_into() {
+      richRunner.run(
+          context -> {
+            CharterEndpoint endpoint = context.getBean(CharterEndpoint.class);
+
+            Map<String, Object> note = endpoint.named("types", "note");
+            assertThat(entries(note, "readBy")).contains("summarize");
+            assertThat(entries(note, "madeBy")).isEmpty();
+
+            Map<String, Object> summary = endpoint.named("types", "summary");
+            assertThat(entries(summary, "madeBy")).contains("summarize");
+            assertThat(entries(summary, "readBy")).isEmpty();
+          });
+    }
+
+    /** The finding a type-level drill-down can prove: a door reading what nothing produces. */
+    @Test
+    @DisplayName("carries a type's own finding into its drill-down")
+    void carries_a_types_own_finding() {
+      richRunner.run(
+          context -> {
+            CharterEndpoint endpoint = context.getBean(CharterEndpoint.class);
+
+            Map<String, Object> phantom = endpoint.named("types", "phantom");
+            assertThat(findingKinds(phantom)).contains("no-writer");
+          });
+    }
+  }
+
   /** And it is not there for an application that never exposed it. */
   @Test
   @DisplayName("does not expose the endpoint unless it was asked for")
@@ -204,6 +425,15 @@ class CharterAutoConfigurationTest {
   private static List<String> entries(Map<String, Object> report, String section) {
     return ((List<Map<String, Object>>) report.get(section))
         .stream().map(entry -> (String) entry.get("name")).toList();
+  }
+
+  /** {@code findings} entries are shaped differently from every other section: no {@code name}. */
+  private static List<String> findingKinds(Map<String, Object> report) {
+    List<?> findings = (List<?>) report.get("findings");
+    return findings.stream()
+        .map(entry -> (Map<?, ?>) entry)
+        .map(entry -> (String) entry.get("kind"))
+        .toList();
   }
 
   /** An application with no vocabulary gets no charter, rather than a guessed one. */

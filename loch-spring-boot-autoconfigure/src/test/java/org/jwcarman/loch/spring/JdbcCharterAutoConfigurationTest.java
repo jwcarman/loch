@@ -17,6 +17,9 @@ package org.jwcarman.loch.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.jwcarman.loch.Charter;
@@ -25,12 +28,16 @@ import org.jwcarman.loch.jdbc.JdbcStorage;
 import org.jwcarman.loch.jdbc.StorageCodec;
 import org.jwcarman.loch.lattice.Axes;
 import org.jwcarman.loch.lattice.Axis;
+import org.postgresql.ds.PGSimpleDataSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * What the JDBC module contributes, and what it deliberately does not.
@@ -39,8 +46,16 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
  * does not bring one into force, because whichever module happens to be on the classpath should not
  * be the thing that decides when an application's authority stops growing.
  */
+@Testcontainers
 @DisplayName("The JDBC charter auto-configuration")
 class JdbcCharterAutoConfigurationTest {
+
+  @Container
+  static final PostgreSQLContainer POSTGRES =
+      new PostgreSQLContainer("postgres:17-alpine")
+          .withDatabaseName("charter")
+          .withUsername("charter")
+          .withPassword("charter");
 
   private static final Axis<String> TENANT = Axis.matching("tenant");
 
@@ -143,5 +158,65 @@ class JdbcCharterAutoConfigurationTest {
               assertThat(context).hasSingleBean(Storage.class);
               assertThat(context).doesNotHaveBean(JdbcStorage.class);
             });
+  }
+
+  /**
+   * Migration left on is the default, and only a real Postgres proves it happened: the schema is
+   * Postgres-specific, so H2 cannot run it and every other test here turns it off.
+   */
+  @Test
+  @DisplayName("migrates the schema by default, since nobody said not to")
+  void migrates_the_schema_by_default() throws Exception {
+    new ApplicationContextRunner()
+        .withConfiguration(
+            AutoConfigurations.of(
+                CharterAutoConfiguration.class, JdbcCharterAutoConfiguration.class))
+        .withUserConfiguration(AnApplicationOnPostgres.class)
+        .run(context -> assertThat(context).hasNotFailed());
+
+    PGSimpleDataSource dataSource = postgresDataSource();
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement();
+        ResultSet rows = statement.executeQuery("SELECT * FROM loch_value")) {
+      assertThat(rows.next()).isFalse();
+    }
+  }
+
+  private static PGSimpleDataSource postgresDataSource() {
+    PGSimpleDataSource dataSource = new PGSimpleDataSource();
+    dataSource.setUrl(POSTGRES.getJdbcUrl());
+    dataSource.setUser(POSTGRES.getUsername());
+    dataSource.setPassword(POSTGRES.getPassword());
+    return dataSource;
+  }
+
+  @Configuration(proxyBeanMethods = false)
+  static class AnApplicationOnPostgres {
+
+    @Bean
+    Axes axes() {
+      return Axes.of(TENANT);
+    }
+
+    @Bean
+    DataSource dataSource() {
+      return postgresDataSource();
+    }
+
+    @Bean
+    StorageCodec storageCodec() {
+      return StorageCodec.of(
+          new org.jwcarman.codec.spi.Codec<byte[]>() {
+            @Override
+            public byte[] encode(byte[] value) {
+              return value;
+            }
+
+            @Override
+            public byte[] decode(byte[] encoded) {
+              return encoded;
+            }
+          });
+    }
   }
 }
