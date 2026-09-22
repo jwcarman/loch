@@ -718,7 +718,14 @@ public final class DefaultCharter implements Charter {
     return spec.fold() ? "many " + types : types;
   }
 
-  /** How a value is labelled. For a report or an operator, never for a decision. */
+  /**
+   * How a value is labelled. For a report or an operator, never for a decision.
+   *
+   * <p>Deliberately not on {@link Charter}. A label names a tenant or a project codeword, which is
+   * why storage encrypts it and the audit protects it like a value; handing it out from the object
+   * every bean holds, with no ceiling and no line in the record, would say it is ordinary. Whoever
+   * constructs a charter keeps this, the same way it keeps {@code seal} and {@code erase}.
+   */
   public Label label(Surrogate<?> surrogate) {
     return label(surrogate.id());
   }

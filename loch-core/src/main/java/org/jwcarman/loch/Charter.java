@@ -41,9 +41,15 @@ import org.jwcarman.loch.lattice.Label;
  * destroy customer data" is <i>none, structurally</i>. If that changes, erasure earns a portal like
  * every other operation, rather than a method on the object everybody is handed.
  *
- * <p>What is here is declaring and reporting. Reporting is safe to publish: it says what the system
- * permits and how a value is labelled, which is what a manifest, an operator and an audit need, and
- * none of it is a way to move a value anywhere.
+ * <p>{@code label}, which says how a value is labelled, is not here either, and it is the one whose
+ * absence is easiest to argue with -- it moves no value anywhere. But a label names a tenant or a
+ * project codeword, which is why storage encrypts it on disk and why the audit protects it exactly
+ * like a value. Offering it from the object every bean is handed, with no ceiling and no line in
+ * the record, said the opposite: that a label is ordinary. It could not be both.
+ *
+ * <p>What is here is declaring and what the system permits. A manifest is a statement about the
+ * declarations rather than about any value, so it stays: it says what this application can do, not
+ * what any particular value is.
  */
 public interface Charter {
 
@@ -135,12 +141,6 @@ public interface Charter {
    * release, and fail on a change nobody meant to make.
    */
   Manifest manifest();
-
-  /** How a value is labelled. For a report or an operator, never for a decision. */
-  Label label(Surrogate<?> surrogate);
-
-  /** The same, for an identifier that arrived without its type. */
-  Label label(String id);
 
   /** Where a value came from. */
   Lineage lineage(Surrogate<?> surrogate);
