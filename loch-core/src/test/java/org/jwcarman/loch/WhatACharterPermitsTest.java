@@ -252,9 +252,10 @@ class WhatACharterPermitsTest {
   @DisplayName("hands out a view of itself that nothing can change underneath it")
   void hands_out_a_view_nothing_can_change() {
     Manifest before = charter.manifest();
+    var destinations = before.destinations();
 
-    assertThat(before.destinations()).isNotEmpty();
-    org.assertj.core.api.Assertions.assertThatThrownBy(() -> before.destinations().clear())
+    assertThat(destinations).isNotEmpty();
+    org.assertj.core.api.Assertions.assertThatThrownBy(destinations::clear)
         .isInstanceOf(UnsupportedOperationException.class);
     assertThat(charter.manifest().destinations()).hasSameSizeAs(before.destinations());
   }
@@ -263,17 +264,17 @@ class WhatACharterPermitsTest {
   @Test
   @DisplayName("does not let anything it constituted act until it is sealed")
   void nothing_acts_before_sealing() {
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> cards.conceal(new Card("4111111111114821")))
+    Card card = new Card("4111111111114821");
+    Surrogate<Card> cardHandle = Surrogate.of("sur_x");
+    Surrogate<Last4> last4Handle = Surrogate.of("sur_x");
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> cards.conceal(card))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("before its charter is sealed");
-    org.assertj.core.api.Assertions.assertThatThrownBy(() -> truncate.derive(Surrogate.of("sur_x")))
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> truncate.derive(cardHandle))
         .isInstanceOf(IllegalStateException.class);
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> approvalDesk.reveal(Surrogate.of("sur_x")))
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> approvalDesk.reveal(last4Handle))
         .isInstanceOf(IllegalStateException.class);
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> mentions.ask(Surrogate.of("sur_x"), "4111"))
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> mentions.ask(cardHandle, "4111"))
         .isInstanceOf(IllegalStateException.class);
   }
 }

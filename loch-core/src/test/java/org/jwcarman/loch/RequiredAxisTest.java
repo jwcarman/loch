@@ -70,18 +70,6 @@ class RequiredAxisTest {
                   .orElseGet(Label::nothing)
                   .with(LEVEL, Level.HIGH));
 
-  private final Reveal<Note> reporting =
-      config
-          .destination(
-              "reporting",
-              ctx ->
-                  ctx.get("tenant")
-                      .map(tenant -> Ceiling.of(TENANT, Constraint.atMost(tenant)))
-                      .orElseGet(() -> Ceiling.of(TENANT, Constraint.any()))
-                      .with(LEVEL, Constraint.atMost(Level.HIGH)),
-              NOTE_TYPE)
-          .reading(NOTE_TYPE);
-
   private final MemoryStorage kept = new MemoryStorage();
 
   {
@@ -107,8 +95,9 @@ class RequiredAxisTest {
   @DisplayName("refuses the write when it was not, rather than storing something anyone can read")
   void refuses_the_write_when_it_was_not_said() {
     edge.set(AccessContext.empty());
+    Note note = new Note("who does this belong to?");
 
-    assertThatThrownBy(() -> notes.conceal(new Note("who does this belong to?")))
+    assertThatThrownBy(() -> notes.conceal(note))
         .isInstanceOf(AccessDeniedException.class)
         .hasMessageContaining("readable by everyone");
   }
@@ -130,9 +119,9 @@ class RequiredAxisTest {
     MemoryStorage storage = new MemoryStorage();
     own.seal(storage);
     edge.set(AccessContext.empty());
+    Note orphan = new Note("orphan");
 
-    assertThatThrownBy(() -> watched.conceal(new Note("orphan")))
-        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> watched.conceal(orphan)).isInstanceOf(AccessDeniedException.class);
 
     assertThat(own.holds("nothing")).isFalse();
     assertThat(kept.everything()).isEmpty();
@@ -247,9 +236,9 @@ class RequiredAxisTest {
   @DisplayName("so nothing unattributed is ever there to be read")
   void nothing_unattributed_is_ever_there_to_be_read() {
     edge.set(AccessContext.empty());
+    Note orphan = new Note("orphan");
 
-    assertThatThrownBy(() -> notes.conceal(new Note("orphan")))
-        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> notes.conceal(orphan)).isInstanceOf(AccessDeniedException.class);
 
     // Nothing was stored, so there is nothing for any tenant to read. Asserting against a
     // fabricated identifier proved nothing: it is refused whether or not the orphan was written.

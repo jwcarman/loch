@@ -37,10 +37,12 @@ import org.jwcarman.loch.lattice.Label;
  */
 final class Engine {
 
+  private static final String NOT_HOLDING = "this store is not holding ";
+  private static final String COULD_NOT_SAY_WHAT_IT_ACCEPTS =
+      "' could not say what it accepts, so it does not accept this";
+
   private final Axes axes;
   private final Map<String, DestinationSpec> destinations;
-  private final List<DerivationSpec<?>> derivations;
-  private final List<QuerySpec<?, ?>> queries;
   private final AccessContextProvider ambient;
   private final java.util.function.BiPredicate<Label, AccessContext> mayErase;
   private final Storage storage;
@@ -63,8 +65,6 @@ final class Engine {
             "two derivations are registered as '" + derivation.name() + "'");
       }
     }
-    this.derivations = List.copyOf(config.derivations());
-    this.queries = List.copyOf(config.queries());
     this.ambient = config.currentAccess();
     this.mayErase = config.mayErase();
   }
@@ -88,7 +88,7 @@ final class Engine {
     Label label;
     try {
       label = labelling.apply(value, asking);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       label = null;
     }
     if (label == null) {
@@ -138,13 +138,6 @@ final class Engine {
   }
 
   /**
-   * Whether a label leaves an axis unsaid that this store said it must not.
-   *
-   * <p>Checked at the one door a label is written through. Unsaid is the bottom of an axis's order,
-   * which is below every ceiling, so a value that left a required axis unsaid would be readable by
-   * everyone -- silently, and in the direction nobody would notice.
-   */
-  /**
    * Whether a reader holding this ceiling may see a value labelled so.
    *
    * <p>Not simply {@link Ceiling#permits}, because a ceiling can only judge the axes a label speaks
@@ -161,6 +154,13 @@ final class Engine {
     return !leavesARequiredAxisUnsaid(label) && ceiling.permits(label);
   }
 
+  /**
+   * Whether a label leaves an axis unsaid that this store said it must not.
+   *
+   * <p>Checked at the one door a label is written through. Unsaid is the bottom of an axis's order,
+   * which is below every ceiling, so a value that left a required axis unsaid would be readable by
+   * everyone -- silently, and in the direction nobody would notice.
+   */
   private boolean leavesARequiredAxisUnsaid(Label label) {
     for (Axis<?> axis : axes) {
       if (label.unsaid(axis)) {
@@ -179,7 +179,7 @@ final class Engine {
   private Ceiling ceilingOf(DestinationSpec destination, AccessContext context) {
     try {
       return destination.ceiling(context);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       return null;
     }
   }
@@ -198,7 +198,7 @@ final class Engine {
   private Ceiling ceilingOf(java.util.function.Supplier<Ceiling> ceiling) {
     try {
       return ceiling.get();
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       return null;
     }
   }
@@ -207,7 +207,7 @@ final class Engine {
   private boolean offeredHere(java.util.function.BooleanSupplier availableTo) {
     try {
       return availableTo.getAsBoolean();
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       return false;
     }
   }
@@ -222,12 +222,11 @@ final class Engine {
   }
 
   /**
-   * Writes the line, and refuses the access if it cannot be written.
+   * Writes the record. There is no way to turn this off, which is the point of it.
    *
    * <p>A control whose log is silently dropping entries still produces the report, so an access
    * that cannot be audited does not happen.
    */
-  /** Writes the record. There is no way to turn this off, which is the point of it. */
   private void audit(
       AuditRecord.Operation operation,
       String value,
@@ -291,8 +290,6 @@ final class Engine {
     return parents > 1 ? "combined from " + parents + " values" : null;
   }
 
-  /** How a derivation's parents read in the manifest: positionally, or as many of one type. */
-  /** What a refusal is allowed to say about labels, which by default is nothing. */
   /**
    * What the record says about a refusal, and what the caller never hears.
    *
@@ -310,9 +307,7 @@ final class Engine {
   }
 
   private StoredMetadata metadataOf(String id) {
-    return storage
-        .metadata(id)
-        .orElseThrow(() -> new IllegalArgumentException("this store is not holding " + id));
+    return storage.metadata(id).orElseThrow(() -> new IllegalArgumentException(NOT_HOLDING + id));
   }
 
   public boolean holds(String id) {
@@ -341,7 +336,7 @@ final class Engine {
     boolean permitted;
     try {
       permitted = mayErase.test(entry.label(), asking);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       permitted = false;
     }
     if (!permitted) {
@@ -401,6 +396,13 @@ final class Engine {
     return answer;
   }
 
+  /**
+   * What a refusal is allowed to say about labels, which by default is nothing.
+   *
+   * <p>{@code refused} and {@code because} are filled in only as far as the check got before saying
+   * no, so the caller's audit line says exactly what was known at the point of refusal -- never
+   * more, and never a label this call never actually looked at.
+   */
   private <I, Q> Answer answering(
       QuerySpec<I, Q> spec,
       Surrogate<I> held,
@@ -415,15 +417,13 @@ final class Engine {
     }
     StoredMetadata entry = storage.metadata(held.id()).orElse(null);
     if (entry == null) {
-      return new Answer.Refused(
-          Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
+      return new Answer.Refused(Answer.Reason.NO_SUCH_VALUE, NOT_HOLDING + held.id());
     }
     refused.set(entry.label());
     Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Answer.Refused(
-          Answer.Reason.ABOVE_CEILING,
-          "'" + name + "' could not say what it accepts, so it does not accept this");
+          Answer.Reason.ABOVE_CEILING, "'" + name + COULD_NOT_SAY_WHAT_IT_ACCEPTS);
     }
     if (!admits(ceiling, entry.label())) {
       because.set(because(entry.label(), ceiling));
@@ -438,13 +438,12 @@ final class Engine {
     }
     I subject = storage.value(held.id(), spec.inputType().type()).orElse(null);
     if (subject == null) {
-      return new Answer.Refused(
-          Answer.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id());
+      return new Answer.Refused(Answer.Reason.NO_SUCH_VALUE, NOT_HOLDING + held.id());
     }
     boolean answer;
     try {
       answer = spec.asking().test(subject, against, context);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       // It has already read the plaintext, so this refusal is recorded like any other.
       return new Answer.Refused(
           Answer.Reason.NOT_AVAILABLE_HERE, "'" + name + "' failed while reading the value");
@@ -518,8 +517,7 @@ final class Engine {
     Ceiling ceiling = ceilingOf(() -> spec.ceilingFor(context));
     if (ceiling == null) {
       return new Derived.Refused<>(
-          Derived.Reason.ABOVE_CEILING,
-          "'" + id + "' could not say what it accepts, so it does not accept this");
+          Derived.Reason.ABOVE_CEILING, "'" + id + COULD_NOT_SAY_WHAT_IT_ACCEPTS);
     }
 
     // Labels first, for every parent at once, and no plaintext anywhere near this. A fold over ten
@@ -537,8 +535,7 @@ final class Engine {
       SurrogateType<?> expected = spec.typeAt(position);
       StoredMetadata entry = labels.get(parent.id());
       if (entry == null) {
-        return new Derived.Refused<>(
-            Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
+        return new Derived.Refused<>(Derived.Reason.NO_SUCH_VALUE, NOT_HOLDING + parent.id());
       }
       if (!admits(ceiling, entry.label())) {
         because.set(because(entry.label(), ceiling));
@@ -563,8 +560,7 @@ final class Engine {
     for (Surrogate<?> parent : parents) {
       Object input = read.get(parent.id());
       if (input == null) {
-        return new Derived.Refused<>(
-            Derived.Reason.NO_SUCH_VALUE, "this store is not holding " + parent.id());
+        return new Derived.Refused<>(Derived.Reason.NO_SUCH_VALUE, NOT_HOLDING + parent.id());
       }
       inputs.add(input);
     }
@@ -572,7 +568,7 @@ final class Engine {
     Optional<O> produced;
     try {
       produced = spec.function().apply(List.copyOf(inputs), context);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       // It has already seen the plaintext, so this refusal has to be recorded like any other.
       return new Derived.Refused<>(
           Derived.Reason.DECLINED, "'" + id + "' failed while reading the value");
@@ -588,7 +584,7 @@ final class Engine {
     if (spec.relabel() != null) {
       try {
         label = spec.relabel().apply(joined);
-      } catch (RuntimeException e) {
+      } catch (RuntimeException _) {
         return new Derived.Refused<>(
             Derived.Reason.NOT_A_LOWERING, "'" + id + "' could not say what it was lowering to");
       }
@@ -635,7 +631,7 @@ final class Engine {
           new StoredValue(
               produced.get(), spec.outputType(), label, Lineage.derivedFrom(parentIds, id)),
           entry);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       // A parent can be erased while the derivation function is running: every check passed, the
       // plaintext was read, and by the time the child is written its ancestry is gone. The read
       // happened, so this is a refusal that has to be recorded, not an exception that escapes
@@ -672,7 +668,7 @@ final class Engine {
     if (entry == null) {
       return denied(
           Revealed.Reason.NO_SUCH_VALUE,
-          "this store is not holding " + held.id(),
+          NOT_HOLDING + held.id(),
           null,
           held.id(),
           to,
@@ -687,7 +683,7 @@ final class Engine {
     if (ceiling == null) {
       return denied(
           Revealed.Reason.ABOVE_CEILING,
-          "'" + to + "' could not say what it accepts, so it does not accept this",
+          "'" + to + COULD_NOT_SAY_WHAT_IT_ACCEPTS,
           null,
           held.id(),
           to,
@@ -727,8 +723,6 @@ final class Engine {
         .value(held.id(), expected.type())
         .<Revealed<T>>map(Revealed.Allowed::new)
         .orElseGet(
-            () ->
-                new Revealed.Denied<>(
-                    Revealed.Reason.NO_SUCH_VALUE, "this store is not holding " + held.id()));
+            () -> new Revealed.Denied<>(Revealed.Reason.NO_SUCH_VALUE, NOT_HOLDING + held.id()));
   }
 }

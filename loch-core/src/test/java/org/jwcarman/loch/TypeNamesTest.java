@@ -36,9 +36,6 @@ import org.jwcarman.loch.lattice.Label;
 @DisplayName("A stored type name")
 class TypeNamesTest {
 
-  private static final SurrogateType<Card> CARD_TYPE = SurrogateType.of(Card.class);
-  private static final SurrogateType<Invoice> INVOICE_TYPE = SurrogateType.of(Invoice.class);
-
   interface Value {}
 
   record Card(String number) implements Value {}
@@ -59,8 +56,6 @@ class TypeNamesTest {
   @Test
   @DisplayName("comes from the kebab-cased simple name when nobody says otherwise")
   void comes_from_the_kebab_cased_simple_name() {
-    var c = config();
-
     assertThat(SurrogateType.of(Card.class).name()).isEqualTo("card");
     assertThat(SurrogateType.of(DisputeClaim.class).name()).isEqualTo("dispute-claim");
   }
@@ -77,7 +72,6 @@ class TypeNamesTest {
     assertThat(SurrogateType.of("billing.mail/v3", Mail.class).name()).isEqualTo("billing.mail/v3");
   }
 
-  /** The check the short default needs in order to be safe. */
   /**
    * The check the short default needs in order to be safe.
    *
@@ -104,8 +98,6 @@ class TypeNamesTest {
   @Test
   @DisplayName("said twice for the same type is not saying two things")
   void said_twice_for_the_same_type_is_fine() {
-    var c = config();
-
     assertThat(SurrogateType.of("thing", Card.class).name()).isEqualTo("thing");
     assertThat(SurrogateType.of("thing", Card.class).name()).isEqualTo("thing");
   }

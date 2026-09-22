@@ -110,7 +110,7 @@ class ArityTest {
             "notes.join",
             NOTE,
             NOTE,
-            notes -> new Note(notes.size() + " notes"),
+            parts -> new Note(parts.size() + " notes"),
             d -> d.accepting(Ceiling.of(TENANT, Constraint.atMost("acme"))));
     counted.seal(counting);
 
@@ -148,13 +148,13 @@ class ArityTest {
     }
 
     @Override
-    public void put(String id, StoredValue value, AuditRecord record) {
-      kept.put(id, value, record);
+    public void put(String id, StoredValue value, AuditRecord entry) {
+      kept.put(id, value, entry);
     }
 
     @Override
-    public void record(AuditRecord record) {
-      kept.record(record);
+    public void record(AuditRecord entry) {
+      kept.record(entry);
     }
 
     @Override

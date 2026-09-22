@@ -36,7 +36,7 @@ public interface Storage {
    * nothing accounts for or an account of a value that does not exist, and the second is worse: it
    * is evidence of something that never happened.
    */
-  void put(String id, StoredValue value, AuditRecord record);
+  void put(String id, StoredValue value, AuditRecord entry);
 
   /**
    * Keeps a record of something that stored no value: a read, a question, anything refused.
@@ -44,7 +44,7 @@ public interface Storage {
    * <p>Most of the trail is this. A refusal produces no value at all, and refusals are what an
    * auditor came to look at.
    */
-  void record(AuditRecord record);
+  void record(AuditRecord entry);
 
   /** The label, the lineage and what it was stored as -- without decoding the value. */
   Optional<StoredMetadata> metadata(String id);
