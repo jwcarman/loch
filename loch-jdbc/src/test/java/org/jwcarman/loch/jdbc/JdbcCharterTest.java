@@ -18,12 +18,17 @@ package org.jwcarman.loch.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.sql.DataSource;
@@ -40,7 +45,10 @@ import org.jwcarman.loch.AuditRecord;
 import org.jwcarman.loch.Conceal;
 import org.jwcarman.loch.DefaultCharter;
 import org.jwcarman.loch.Derivation;
+import org.jwcarman.loch.Lineage;
 import org.jwcarman.loch.Reveal;
+import org.jwcarman.loch.StoredMetadata;
+import org.jwcarman.loch.StoredValue;
 import org.jwcarman.loch.Surrogate;
 import org.jwcarman.loch.SurrogateType;
 import org.jwcarman.loch.lattice.Axes;
@@ -997,5 +1005,559 @@ class JdbcCharterTest {
     assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> store.erase(card)))
         .isInstanceOf(org.jwcarman.loch.AccessDeniedException.class);
     assertThat(store.holds(card)).isTrue();
+  }
+
+  private AuditRecord aQueryLine(String value) {
+    return new AuditRecord(
+        AuditRecord.Operation.QUERY,
+        value,
+        Optional.empty(),
+        AuditRecord.Outcome.ALLOWED,
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Map.of());
+  }
+
+  /** A data source nothing can ever connect through, so every write on it fails the same way. */
+  private DataSource unreachableDataSource() {
+    PGSimpleDataSource bad = new PGSimpleDataSource();
+    bad.setServerNames(new String[] {"127.0.0.1"});
+    bad.setPortNumbers(new int[] {1});
+    bad.setDatabaseName("nope");
+    bad.setConnectTimeout(1);
+    return bad;
+  }
+
+  @Test
+  @DisplayName("cannot create the schema when the database cannot be reached")
+  void cannot_migrate_when_the_database_is_unreachable() {
+    assertThatThrownBy(
+            () ->
+                new JdbcStorageConfig()
+                    .dataSource(unreachableDataSource())
+                    .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+                    .storedPlainly()
+                    .storage(Axes.of(TENANT, INTEGRITY, DATA)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not create the store schema");
+  }
+
+  @Test
+  @DisplayName("cannot write when the database cannot be reached")
+  void cannot_write_when_the_database_is_unreachable() {
+    JdbcStorage unreachable =
+        new JdbcStorageConfig()
+            .dataSource(unreachableDataSource())
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+    AuditRecord line = aQueryLine("x");
+
+    assertThatThrownBy(() -> unreachable.record(line))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not record");
+  }
+
+  /** A connection whose {@code rollback()} always fails, everything else left alone. */
+  private Connection connectionWhoseRollbackFails(Connection real) {
+    return connectionThatFails(real, "rollback", "rollback refused");
+  }
+
+  /** A connection whose {@code close()} always fails, everything else left alone. */
+  private Connection connectionWhoseCloseFails(Connection real) {
+    return connectionThatFails(real, "close", "close refused");
+  }
+
+  private Connection connectionThatFails(Connection real, String methodName, String message) {
+    InvocationHandler handler =
+        (proxy, method, args) -> {
+          if (methodName.equals(method.getName()) && method.getParameterCount() == 0) {
+            throw new SQLException(message);
+          }
+          try {
+            return method.invoke(real, args);
+          } catch (InvocationTargetException e) {
+            throw e.getCause();
+          }
+        };
+    return (Connection)
+        Proxy.newProxyInstance(
+            Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, handler);
+  }
+
+  private DataSource dataSourceWhoseRollbackFails() {
+    return dataSourceWrapping(this::connectionWhoseRollbackFails);
+  }
+
+  private DataSource dataSourceWhoseCloseFails() {
+    return dataSourceWrapping(this::connectionWhoseCloseFails);
+  }
+
+  /** Every connection this data source hands out is real, wrapped by the given failure. */
+  private DataSource dataSourceWrapping(java.util.function.UnaryOperator<Connection> wrapper) {
+    return new DataSource() {
+      @Override
+      public Connection getConnection() throws SQLException {
+        return wrapper.apply(dataSource.getConnection());
+      }
+
+      @Override
+      public Connection getConnection(String username, String password) {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public java.io.PrintWriter getLogWriter() {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public void setLogWriter(java.io.PrintWriter out) {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public void setLoginTimeout(int seconds) {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public int getLoginTimeout() {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public java.util.logging.Logger getParentLogger() {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public <T> T unwrap(Class<T> iface) {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+
+      @Override
+      public boolean isWrapperFor(Class<?> iface) {
+        throw new UnsupportedOperationException("not needed by this test");
+      }
+    };
+  }
+
+  /**
+   * Committed separately, a failed rollback would be free to replace the exception that explains
+   * why the write actually failed. It must not: the write's own failure is what a caller needs.
+   */
+  @Test
+  @DisplayName("keeps the original failure when the rollback that follows it fails too")
+  void keeps_the_original_failure_when_rollback_also_fails() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_audit");
+    }
+    JdbcStorage overFailingRollback =
+        new JdbcStorageConfig()
+            .dataSource(dataSourceWhoseRollbackFails())
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+    AuditRecord line = aQueryLine("x");
+
+    assertThatThrownBy(() -> overFailingRollback.record(line))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not record")
+        .hasCauseInstanceOf(SQLException.class);
+  }
+
+  @Test
+  @DisplayName("reports a value naming a root nobody supplies, rather than throwing")
+  void reports_a_value_whose_root_is_unknown() {
+    Axes axes = Axes.of(TENANT, INTEGRITY, DATA);
+    JdbcStorage writer =
+        rooted("r1", Map.of("r1", "first secret".getBytes(StandardCharsets.UTF_8)), axes);
+    StoredValue value =
+        new StoredValue(
+            "a note",
+            SurrogateType.of("note", String.class),
+            Label.of(TENANT, "acme"),
+            Lineage.concealed());
+    writer.put(
+        "note-1",
+        value,
+        new AuditRecord(
+            AuditRecord.Operation.CONCEAL,
+            "note-1",
+            Optional.empty(),
+            AuditRecord.Outcome.ALLOWED,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            Map.of()));
+
+    // "r1" was the writer's root. This reader has never heard of it.
+    JdbcStorage reader =
+        rooted("r2", Map.of("r2", "second secret".getBytes(StandardCharsets.UTF_8)), axes);
+
+    assertThat(reader.brokenValues()).containsExactly("note-1");
+  }
+
+  @Test
+  @DisplayName("cannot sign anything under a root nobody configured")
+  void cannot_sign_under_a_root_nobody_configured() {
+    JdbcStorage storage = rooted("ghost", Map.of(), Axes.of(TENANT, INTEGRITY, DATA));
+    AuditRecord line = aQueryLine("x");
+
+    assertThatThrownBy(() -> storage.record(line))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("nothing supplies the root 'ghost'");
+  }
+
+  @Test
+  @DisplayName("reports a line naming a root truly nobody supplies, rather than throwing")
+  void reports_a_line_whose_root_is_truly_unknown() throws SQLException {
+    JdbcStorage rootedStorage =
+        rooted(
+            "r1",
+            Map.of("r1", "secret".getBytes(StandardCharsets.UTF_8)),
+            Axes.of(TENANT, INTEGRITY, DATA));
+    rootedStorage.record(aQueryLine("x"));
+    assertThat(rootedStorage.firstBrokenEntry()).isEmpty();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement("UPDATE loch_audit SET root_id = ? WHERE entry_id = 1")) {
+      statement.setString(1, "nobody-has-this");
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+
+    assertThat(rootedStorage.firstBrokenEntry()).contains(1L);
+  }
+
+  @Test
+  @DisplayName("notices the first line's predecessor is wrong, even though nothing precedes it")
+  void notices_the_first_lines_predecessor_is_wrong() throws SQLException {
+    card();
+    assertThat(storage.firstBrokenEntry()).isEmpty();
+
+    try (Connection connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement("UPDATE loch_audit SET previous = ? WHERE entry_id = 1")) {
+      statement.setBytes(1, "not null".getBytes(StandardCharsets.UTF_8));
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+
+    assertThat(storage.firstBrokenEntry()).contains(1L);
+  }
+
+  @Test
+  @DisplayName("the head of an empty trail is empty, not absent")
+  void head_of_an_empty_trail_is_empty() {
+    assertThat(storage.head()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("the head reports a broken connection rather than corrupting silently")
+  void head_reports_when_the_table_is_gone() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_audit");
+    }
+
+    assertThatThrownBy(storage::head)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read the head of the trail");
+  }
+
+  @Test
+  @DisplayName("checking the trail reports a broken connection rather than corrupting silently")
+  void first_broken_entry_reports_when_the_table_is_gone() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_audit");
+    }
+
+    assertThatThrownBy(storage::firstBrokenEntry)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read the trail back");
+  }
+
+  /**
+   * The same failure the dropped-table tests exercise, but with the connection's own {@code
+   * close()} failing too -- so the read failure and the close failure both have to be reported
+   * without either one replacing the other.
+   */
+  @Test
+  @DisplayName(
+      "checking the trail reports the read failure even when closing the connection fails too")
+  void first_broken_entry_reports_when_closing_also_fails() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_audit");
+    }
+    JdbcStorage overFailingClose =
+        new JdbcStorageConfig()
+            .dataSource(dataSourceWhoseCloseFails())
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+
+    assertThatThrownBy(overFailingClose::firstBrokenEntry)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read the trail back");
+  }
+
+  @Test
+  @DisplayName(
+      "checking for missing values reports a broken connection rather than corrupting silently")
+  void missing_values_reports_when_the_table_is_gone() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_audit");
+    }
+
+    assertThatThrownBy(storage::missingValues)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not check the values against the trail");
+  }
+
+  @Test
+  @DisplayName(
+      "checking for broken values reports a broken connection rather than corrupting silently")
+  void broken_values_reports_when_the_table_is_gone() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+
+    assertThatThrownBy(storage::brokenValues)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read the values back");
+  }
+
+  @Test
+  @DisplayName("metadata of a value nobody wrote is absent, not an exception")
+  void metadata_of_an_unknown_value_is_absent() {
+    assertThat(storage.metadata("does-not-exist")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("metadata reports a broken connection rather than throwing something unrelated")
+  void metadata_reports_when_the_table_is_gone() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+
+    assertThatThrownBy(() -> storage.metadata("anything"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read anything");
+  }
+
+  @Test
+  @DisplayName("metadata reports the read failure even when closing the connection fails too")
+  void metadata_reports_when_closing_also_fails() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+    JdbcStorage overFailingClose =
+        new JdbcStorageConfig()
+            .dataSource(dataSourceWhoseCloseFails())
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+
+    assertThatThrownBy(() -> overFailingClose.metadata("anything"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read anything");
+  }
+
+  @Test
+  @DisplayName("metadata for no ids at all asks the database nothing")
+  void metadata_for_no_ids_asks_nothing() {
+    assertThat(storage.metadata(List.<String>of())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("metadata for several ids reports a derived value's lineage too")
+  void metadata_for_several_ids_reports_lineage() {
+    Surrogate<Card> card = card();
+    acme();
+    Surrogate<Last4> last4 = cardLast4.derive(card).orThrow();
+
+    Map<String, StoredMetadata> found = storage.metadata(List.of(card.id(), last4.id()));
+
+    assertThat(found.get(card.id()).lineage().asserted()).isTrue();
+    assertThat(found.get(last4.id()).lineage().parents()).containsExactly(card.id());
+    assertThat(found.get(last4.id()).lineage().derivation()).contains("Card.last4");
+  }
+
+  @Test
+  @DisplayName(
+      "metadata for several ids reports a broken connection rather than throwing something"
+          + " unrelated")
+  void metadata_for_several_ids_reports_when_the_table_is_gone() throws SQLException {
+    card();
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+    List<String> ids = List.of("anything");
+
+    assertThatThrownBy(() -> storage.metadata(ids))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read");
+  }
+
+  @Test
+  @DisplayName("no values are asked for, so none are decoded")
+  void values_for_nothing_decodes_nothing() {
+    assertThat(storage.values(Map.of())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "reading several values reports a broken connection rather than throwing something"
+          + " unrelated")
+  void values_reports_when_the_table_is_gone() throws SQLException {
+    Surrogate<Card> card = card();
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+    Map<String, TypeRef<?>> wanted = Map.of(card.id(), TypeRef.of(Card.class));
+
+    assertThatThrownBy(() -> storage.values(wanted))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read");
+  }
+
+  @Test
+  @DisplayName("a value nobody wrote is absent, not an exception")
+  void value_of_an_unknown_id_is_absent() {
+    TypeRef<Card> type = TypeRef.of(Card.class);
+
+    assertThat(storage.value("does-not-exist", type)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "reading a single value reports a broken connection rather than throwing something"
+          + " unrelated")
+  void value_reports_when_the_table_is_gone() throws SQLException {
+    Surrogate<Card> card = card();
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+    String id = card.id();
+    TypeRef<Card> type = TypeRef.of(Card.class);
+
+    assertThatThrownBy(() -> storage.value(id, type))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read " + id);
+  }
+
+  @Test
+  @DisplayName("reading a single value reports the read failure even when closing fails too")
+  void value_reports_when_closing_also_fails() throws SQLException {
+    Surrogate<Card> card = card();
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+    JdbcStorage overFailingClose =
+        new JdbcStorageConfig()
+            .dataSource(dataSourceWhoseCloseFails())
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+    String id = card.id();
+    TypeRef<Card> type = TypeRef.of(Card.class);
+
+    assertThatThrownBy(() -> overFailingClose.value(id, type))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not read " + id);
+  }
+
+  @Test
+  @DisplayName(
+      "looking for a value reports a broken connection rather than throwing something unrelated")
+  void contains_reports_when_the_table_is_gone() throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TABLE loch_value, loch_lineage");
+    }
+
+    assertThatThrownBy(() -> storage.contains("anything"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("could not look for anything");
+  }
+
+  @Test
+  @DisplayName("a single secret roots everything, and refuses anything claiming another root")
+  void a_single_secret_roots_everything() {
+    Axes axes = Axes.of(TENANT, INTEGRITY, DATA);
+    byte[] secret = "only secret".getBytes(StandardCharsets.UTF_8);
+    JdbcStorage single =
+        new JdbcStorageConfig()
+            .dataSource(dataSource)
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .rootedIn("r1", secret)
+            .withoutMigration()
+            .storage(axes);
+    single.record(aQueryLine("x"));
+    assertThat(single.firstBrokenEntry()).isEmpty();
+
+    // "r1" is the only root this configuration knows about; the same secret under another name
+    // does not verify what was written under the first one.
+    JdbcStorage sameSecretDifferentName =
+        new JdbcStorageConfig()
+            .dataSource(dataSource)
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .rootedIn("r2", secret)
+            .withoutMigration()
+            .storage(axes);
+
+    assertThat(sameSecretDifferentName.firstBrokenEntry()).isPresent();
+  }
+
+  @Test
+  @DisplayName("plain storage writes bytes as they are, and reads them back the same way")
+  void stored_plainly_reads_back_what_it_wrote() {
+    JdbcStorage plain =
+        new JdbcStorageConfig()
+            .dataSource(dataSource)
+            .codecs(new JacksonCodecFactory(JsonMapper.builder().build()))
+            .storedPlainly()
+            .withoutMigration()
+            .storage(Axes.of(TENANT, INTEGRITY, DATA));
+    StoredValue value =
+        new StoredValue(
+            "hello there",
+            SurrogateType.of("note", String.class),
+            Label.of(TENANT, "acme"),
+            Lineage.concealed());
+    plain.put(
+        "note-1",
+        value,
+        new AuditRecord(
+            AuditRecord.Operation.CONCEAL,
+            "note-1",
+            Optional.empty(),
+            AuditRecord.Outcome.ALLOWED,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            Map.of()));
+
+    assertThat(plain.value("note-1", TypeRef.of(String.class))).contains("hello there");
   }
 }
