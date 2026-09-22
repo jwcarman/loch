@@ -144,4 +144,15 @@ public interface Charter {
    * release, and fail on a change nobody meant to make.
    */
   Manifest manifest();
+
+  /**
+   * The same, rendered for one access.
+   *
+   * <p>A door whose ceiling reads the tenant out of the access cannot say what it accepts without
+   * one, and in a multi-tenant application that is every door. Rendered for nobody, such a manifest
+   * reports that it could not evaluate a single ceiling -- useless in exactly the case it is for.
+   * There is no such thing as what a door accepts in general, so a manifest names the access it was
+   * rendered for and a build renders one per representative caller.
+   */
+  Manifest manifest(AccessContext as);
 }

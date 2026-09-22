@@ -31,7 +31,11 @@ import java.util.List;
  * should be few enough to read in one sitting.
  */
 public record Manifest(
-    String bottom, List<Entry> destinations, List<Entry> derivations, List<Entry> questions) {
+    String bottom,
+    List<Entry> destinations,
+    List<Entry> derivations,
+    List<Entry> questions,
+    AccessContext renderedFor) {
 
   /**
    * One line of the report.
@@ -60,14 +64,22 @@ public record Manifest(
   @Override
   public String toString() {
     List<String> lines = new ArrayList<>();
-    lines.add("store manifest");
+    lines.add(
+        "charter manifest, as "
+            + (renderedFor.attributes().isEmpty()
+                ? "nobody in particular"
+                : renderedFor.attributes()));
     lines.add("");
     lines.add("  unconstrained label (bottom)");
     lines.add("    " + bottom);
     section(lines, "destinations", destinations, "  nothing may be dereferenced anywhere");
     if (!destinations.isEmpty()) {
       lines.add(
-          "    (ceilings shown for an access naming nobody; some allow more to some callers)");
+          renderedFor.attributes().isEmpty()
+              ? "    (a ceiling that reads the access cannot be shown without one -- render this"
+                  + " manifest for a representative access to see them)"
+              : "    (what these doors accept for this access; another may be offered more or"
+                  + " less)");
     }
     section(lines, "derivations", derivations, "  no value can be made from another");
     section(lines, "questions", questions, "  no question can be asked without taking the value");
@@ -75,7 +87,7 @@ public record Manifest(
     List<Entry> weakening = weakening();
     lines.add("  " + weakening.size() + " operation(s) can WEAKEN a label:");
     if (weakening.isEmpty()) {
-      lines.add("    (none -- labels in this store only ever become more constrained)");
+      lines.add("    (none -- labels under this charter only ever become more constrained)");
     } else {
       weakening.forEach(entry -> lines.add("    " + entry.name() + "  " + entry.detail()));
     }

@@ -671,11 +671,18 @@ public final class DefaultCharter implements Charter {
    * the system can do; it is not a way to do any of it.
    */
   public Manifest manifest() {
+    return manifest(AccessContext.empty());
+  }
+
+  @Override
+  public Manifest manifest(AccessContext as) {
+    Objects.requireNonNull(as, "a manifest is rendered for some access, even an empty one");
     Configuration configuration = configuration();
     List<Manifest.Entry> doors = new ArrayList<>();
     for (DestinationSpec destination : configuration.destinations()) {
       doors.add(
-          new Manifest.Entry(destination.name(), "accepts up to " + accepts(destination), false));
+          new Manifest.Entry(
+              destination.name(), "accepts up to " + accepts(destination, as), false));
     }
     List<Manifest.Entry> derivations = new ArrayList<>();
     for (DerivationSpec<?> derivation : configuration.derivations()) {
@@ -690,7 +697,7 @@ public final class DefaultCharter implements Charter {
       questions.add(
           new Manifest.Entry(query.name(), "asks about " + query.inputType().name(), false));
     }
-    return new Manifest(String.valueOf(Label.nothing()), doors, derivations, questions);
+    return new Manifest(String.valueOf(Label.nothing()), doors, derivations, questions, as);
   }
 
   /**
@@ -700,12 +707,21 @@ public final class DefaultCharter implements Charter {
    * than about one request. A ceiling that reads a tenant will refuse to answer that, and saying so
    * is more honest than printing what it would allow nobody.
    */
-  private static String accepts(DestinationSpec destination) {
+  /**
+   * What this door accepts for one access.
+   *
+   * <p>A ceiling that reads the tenant out of the access cannot be rendered without one, and in a
+   * multi-tenant application that is every ceiling there is -- so a manifest rendered for nobody
+   * printed "could not be evaluated" against every door, which is the report being useless in
+   * exactly the case it exists for. It is rendered for an access because there is no such thing as
+   * what a door accepts in general.
+   */
+  private static String accepts(DestinationSpec destination, AccessContext as) {
     try {
-      Ceiling ceiling = destination.ceiling(AccessContext.empty());
-      return ceiling == null ? "(its ceiling could not be evaluated)" : ceiling.toString();
+      Ceiling ceiling = destination.ceiling(as);
+      return ceiling == null ? "(said nothing for this access)" : ceiling.toString();
     } catch (RuntimeException e) {
-      return "(its ceiling could not be evaluated)";
+      return "(could not decide for this access)";
     }
   }
 

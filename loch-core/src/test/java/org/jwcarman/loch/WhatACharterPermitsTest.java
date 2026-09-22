@@ -86,6 +86,40 @@ class WhatACharterPermitsTest {
           (card, prefix, ctx) -> card.number().startsWith(prefix),
           d -> d.accepting(ctx -> upTo(Sensitivity.PERSONAL)));
 
+  /**
+   * A door whose ceiling reads the access cannot be rendered without one.
+   *
+   * <p>In a multi-tenant application that is every door, so a manifest rendered for nobody reported
+   * that it could not evaluate a single ceiling -- the report being useless in exactly the case it
+   * exists for. There is no such thing as what a door accepts in general.
+   */
+  @Test
+  @DisplayName("shows a tenant-scoped ceiling when it is rendered for a tenant")
+  void shows_a_tenant_scoped_ceiling_for_a_tenant() {
+    DefaultCharter scoped = new DefaultCharter(TENANT, SENSITIVITY);
+    scoped.destination(
+        "reporting",
+        ctx ->
+            Ceiling.of(TENANT, Constraint.atMost(ctx.get("tenant").orElseThrow()))
+                .with(SENSITIVITY, Constraint.atMost(Sensitivity.ORDINARY)),
+        LAST4);
+
+    assertThat(scoped.manifest().toString()).contains("could not decide for this access");
+
+    String forAcme =
+        scoped.manifest(AccessContext.of(java.util.Map.of("tenant", "acme"))).toString();
+
+    assertThat(forAcme).contains("acme").doesNotContain("could not decide");
+  }
+
+  @Test
+  @DisplayName("says which access it was rendered for, because the ceilings depend on it")
+  void says_which_access_it_was_rendered_for() {
+    assertThat(charter.manifest().toString()).contains("nobody in particular");
+    assertThat(charter.manifest(AccessContext.of(java.util.Map.of("tenant", "acme"))).toString())
+        .contains("tenant=acme");
+  }
+
   @Test
   @DisplayName("is answerable before it has been sealed to anything")
   void is_answerable_before_sealing() {
