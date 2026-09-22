@@ -54,9 +54,17 @@ CREATE INDEX IF NOT EXISTS loch_lineage_closure_descendant
 -- and against which ceiling, which is exactly the thing a refusal must never tell its caller.
 -- The head of the chain, one row, locked while a line is written.
 --
--- This serialises writes to the trail, which is a real cost and the reason it is stated here: two
--- threads cannot both append, because each needs the digest of whatever came last. An audit that
--- can be appended to concurrently is an audit whose order can be argued with.
+-- Two threads cannot both append, because each needs the digest of whatever came last. An audit
+-- that can be appended to concurrently is an audit whose order can be argued with.
+--
+-- Measured before believing anything about it: one writer managed about 180 appends a second and
+-- eight managed about 900, so the lock is not the ceiling it looks like. It is held only for the
+-- insert and this update, while most of an operation is the value, its lineage, encoding and the
+-- network -- writers overlap on all of that and queue only at the end.
+--
+-- If that ever stops being true the answer is a Merkle tree over batches rather than a chain, the
+-- way Certificate Transparency does it: concurrent appends, same detection, no total order. Not
+-- worth its machinery at these numbers.
 CREATE TABLE IF NOT EXISTS loch_audit_head (
   only_row    BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (only_row),
   digest      BYTEA
