@@ -97,7 +97,7 @@
     <license.plugin.version>5.1.2</license.plugin.version>
     <license.owner>James Carman</license.owner>
 
-    <jacoco.version>0.8.15</jacoco.version>
+    <jacoco.version>0.8.16</jacoco.version>
     <sonar.plugin.version>5.8.0.7211</sonar.plugin.version>
     <!-- Publishing, in the release profile only. -->
     <source.plugin.version>3.4.0</source.plugin.version>
